@@ -1,0 +1,9 @@
+{
+  "name": "@lokarent/validations",
+  "version": "0.0.1",
+  "description": "Shared Zod validation schemas used by frontend and backend",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "zod": "^3.0.0"
+  }
+}

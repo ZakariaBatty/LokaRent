@@ -1,0 +1,1854 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CompanyStatus {
+  active
+  suspended
+  trial
+  cancelled
+}
+
+enum AgencyStatus {
+  active
+  inactive
+  suspended
+}
+
+enum UserStatus {
+  active
+  suspended
+  deactivated
+}
+
+enum MembershipStatus {
+  active
+  suspended
+  revoked
+}
+
+enum RoleScope {
+  company
+  agency
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum VehicleStatus {
+  available
+  rented
+  maintenance
+  inactive
+  retired
+}
+
+enum FuelType {
+  petrol
+  diesel
+  electric
+  hybrid
+  lpg
+}
+
+enum Transmission {
+  manual
+  automatic
+}
+
+enum InsuranceCoverageType {
+  third_party
+  comprehensive
+  fleet
+}
+
+enum InspectionResult {
+  pass
+  fail
+  conditional
+}
+
+enum MileageSource {
+  contract_pickup
+  contract_return
+  maintenance
+  manual
+}
+
+enum AvailabilityBlockReason {
+  maintenance
+  personal_use
+  hold
+  other
+}
+
+enum VehicleMaintenanceStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+}
+
+enum CustomerType {
+  individual
+  company
+}
+
+enum CustomerStatus {
+  active
+  inactive
+  blacklisted
+}
+
+enum CustomerDocumentType {
+  passport
+  national_id
+  driving_license
+  residence_permit
+}
+
+enum BlacklistSeverity {
+  warning
+  blocked
+  permanent
+}
+
+enum ContactType {
+  phone
+  email
+  whatsapp
+}
+
+enum ReservationStatus {
+  enquiry
+  confirmed
+  active
+  completed
+  cancelled
+  no_show
+}
+
+enum ContractStatus {
+  draft
+  active
+  completed
+  cancelled
+  disputed
+}
+
+enum InspectionEvent {
+  pickup
+  return
+}
+
+enum InspectionCondition {
+  ok
+  scratched
+  dented
+  broken
+  missing
+}
+
+enum SignerType {
+  customer
+  agent
+  witness
+}
+
+enum SignatureEvent {
+  pickup
+  return
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  paid
+  partially_paid
+  overdue
+  voided
+}
+
+enum PaymentMethod {
+  cash
+  bank_transfer
+  cheque
+  card
+  other
+}
+
+enum DepositStatus {
+  held
+  released
+  forfeited
+  partially_released
+}
+
+enum DepositMethod {
+  cash
+  cheque
+  card
+  other
+}
+
+enum DriverStatus {
+  active
+  inactive
+  suspended
+}
+
+enum DriverPricingType {
+  monthly
+  hourly
+  mission
+}
+
+enum DriverDocumentType {
+  driving_license
+  national_id
+  contract
+  other
+}
+
+enum DriverRole {
+  primary
+  additional
+}
+
+// =====================================================================
+// Domain 1 — Multi-Tenant
+// =====================================================================
+
+model Company {
+  id          String        @id @db.Uuid
+  name        String
+  slug        String        @unique
+  countryCode String        @map("country_code") @db.Char(2)
+  timezone    String
+  currency    String        @db.Char(3)
+  language    String        @default("fr")
+  planId      String        @map("plan_id") @db.Uuid
+  status      CompanyStatus
+  trialEndsAt DateTime?     @map("trial_ends_at") @db.Timestamptz()
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?       @map("deleted_by") @db.Uuid
+
+  plan                         Plan                          @relation(fields: [planId], references: [id], onDelete: Restrict)
+  agencies                     Agency[]
+  users                        User[]
+  roles                        Role[]
+  companyMemberships           CompanyMembership[]
+  agencyMemberships            AgencyMembership[]
+  invitations                  Invitation[]
+  vehicleCategories            VehicleCategory[]
+  vehicles                     Vehicle[]
+  vehicleInsurances            VehicleInsurance[]
+  vehicleInspections           VehicleInspection[]
+  vehicleMileageLogs           VehicleMileageLog[]
+  vehicleMaintenances          VehicleMaintenance[]
+  vehicleRegistrations         VehicleRegistration[]
+  vehicleVignettes             VehicleVignette[]
+  vehicleAvailabilityBlocks    VehicleAvailabilityBlock[]
+  customers                    Customer[]
+  customerIndividuals          CustomerIndividual[]
+  customerBusinesses           CustomerBusiness[]
+  customerContacts             CustomerContact[]
+  customerDocuments            CustomerDocument[]
+  customerBlacklists           CustomerBlacklist[]
+  reservations                 Reservation[]
+  reservationPricingSnapshots  ReservationPricingSnapshot[]
+  reservationExtras            ReservationExtra[]
+  reservationTimelineEvents    ReservationTimelineEvent[]
+  contractTemplates            ContractTemplate[]
+  contractTemplateVersions     ContractTemplateVersion[]
+  contracts                    Contract[]
+  contractInspectionItems      ContractInspectionItem[]
+  contractSignatures           ContractSignature[]
+  expenseCategories            ExpenseCategory[]
+  invoices                     Invoice[]
+  invoiceLineItems             InvoiceLineItem[]
+  payments                     Payment[]
+  deposits                     Deposit[]
+  creditNotes                  CreditNote[]
+  expenses                     Expense[]
+  driverPayments               DriverPayment[]
+  drivers                      Driver[]
+  driverPricingRules           DriverPricingRule[]
+  driverDocuments              DriverDocument[]
+  driverReservationAssignments DriverReservationAssignment[]
+  numberSequences              NumberSequence[]
+  settings                     Setting[]
+  documents                    Document[]
+  auditLogs                    AuditLog[]
+  activityLogs                 ActivityLog[]
+
+  @@index([planId])
+  @@index([createdAt])
+  @@map("companies")
+}
+
+model Agency {
+  id          String       @id @db.Uuid
+  companyId   String       @map("company_id") @db.Uuid
+  name        String
+  code        String
+  countryCode String?      @map("country_code") @db.Char(2)
+  timezone    String?
+  currency    String?      @db.Char(3)
+  phone       String?
+  email       String?
+  address     Json?        @db.JsonB
+  status      AgencyStatus
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?      @map("deleted_by") @db.Uuid
+
+  company                   Company                    @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agencyMemberships         AgencyMembership[]
+  invitations               Invitation[]
+  vehicles                  Vehicle[]
+  vehicleInsurances         VehicleInsurance[]
+  vehicleInspections        VehicleInspection[]
+  vehicleMaintenances       VehicleMaintenance[]
+  vehicleAvailabilityBlocks VehicleAvailabilityBlock[]
+  vehicleRegistrations      VehicleRegistration[]
+  vehicleVignettes          VehicleVignette[]
+  customers                 Customer[]
+  reservations              Reservation[]
+  contractTemplates         ContractTemplate[]
+  contracts                 Contract[]
+  invoices                  Invoice[]
+  payments                  Payment[]
+  deposits                  Deposit[]
+  creditNotes               CreditNote[]
+  expenses                  Expense[]
+  driverPayments            DriverPayment[]
+  drivers                   Driver[]
+  numberSequences           NumberSequence[]
+  settings                  Setting[]
+  documents                 Document[]
+  auditLogs                 AuditLog[]
+  activityLogs              ActivityLog[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("agencies")
+}
+
+// =====================================================================
+// Domain 2 — Identity
+// =====================================================================
+
+model User {
+  id              String     @id @db.Uuid
+  companyId       String     @map("company_id") @db.Uuid
+  email           String     @unique
+  emailVerifiedAt DateTime?  @map("email_verified_at") @db.Timestamptz()
+  fullName        String     @map("full_name")
+  phone           String?
+  avatarUrl       String?    @map("avatar_url")
+  locale          String?    @default("fr")
+  timezone        String?
+  status          UserStatus
+  lastLoginAt     DateTime?  @map("last_login_at") @db.Timestamptz()
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt       DateTime?  @map("deleted_at") @db.Timestamptz()
+  deletedBy       String?    @map("deleted_by") @db.Uuid
+
+  company                           Company                      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  companyMemberships                CompanyMembership[]
+  agencyMemberships                 AgencyMembership[]
+  invitationsSent                   Invitation[]                 @relation("InvitationInvitedBy")
+  userPermissionOverrides           UserPermissionOverride[]
+  vehicleMileageLogs                VehicleMileageLog[]
+  vehicleMaintenances               VehicleMaintenance[]
+  vehicleAvailabilityBlocks         VehicleAvailabilityBlock[]
+  customerBlacklistsAdded           CustomerBlacklist[]          @relation("BlacklistAddedBy")
+  customerBlacklistsLifted          CustomerBlacklist[]          @relation("BlacklistLiftedBy")
+  reservationsAssigned              Reservation[]                @relation("ReservationAssignedAgent")
+  reservationsCancelled             Reservation[]                @relation("ReservationCancelledBy")
+  reservationPricingSnapshotsLocked ReservationPricingSnapshot[] @relation("PricingSnapshotLockedBy")
+  reservationTimelineEvents         ReservationTimelineEvent[]   @relation("TimelineEventPerformedBy")
+  contractTemplateVersionsCreated   ContractTemplateVersion[]
+  contractSignatures                ContractSignature[]
+  paymentsRecorded                  Payment[]
+  depositsCollected                 Deposit[]                    @relation("DepositCollectedBy")
+  depositsReleased                  Deposit[]                    @relation("DepositReleasedBy")
+  creditNotesIssued                 CreditNote[]
+  expensesRecorded                  Expense[]
+  driverPaymentsRecorded            DriverPayment[]
+  documentsUploaded                 Document[]
+  auditLogs                         AuditLog[]
+  activityLogs                      ActivityLog[]
+
+  @@index([companyId])
+  @@index([phone])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model Role {
+  id          String    @id @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  name        String
+  description String?
+  scope       RoleScope
+  isSystem    Boolean   @default(false) @map("is_system")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?   @map("deleted_by") @db.Uuid
+
+  company                 Company                  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  rolePermissions         RolePermission[]
+  companyMemberships      CompanyMembership[]
+  agencyMemberships       AgencyMembership[]
+  userPermissionOverrides UserPermissionOverride[]
+  invitations             Invitation[]
+
+  @@unique([id, scope])
+  @@unique([companyId, name, scope])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @db.Uuid
+  key         String   @unique
+  domain      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  rolePermissions         RolePermission[]
+  userPermissionOverrides UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id            String   @id @db.Uuid
+  roleId        String   @map("role_id") @db.Uuid
+  permissionKey String   @map("permission_key")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: NoAction)
+
+  @@unique([roleId, permissionKey])
+  @@map("role_permissions")
+}
+
+model CompanyMembership {
+  id        String           @id @db.Uuid
+  companyId String           @map("company_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  roleId    String           @map("role_id") @db.Uuid
+  roleScope RoleScope        @default(company) @map("role_scope")
+  status    MembershipStatus
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime?        @map("deleted_at") @db.Timestamptz()
+  deletedBy String?          @map("deleted_by") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  user    User    @relation(fields: [userId], references: [id], onDelete: NoAction)
+  role    Role    @relation(fields: [roleId, roleScope], references: [id, scope], onDelete: NoAction)
+
+  @@unique([userId, companyId])
+  @@index([companyId])
+  @@index([roleId, roleScope])
+  @@index([createdAt])
+  @@map("company_memberships")
+}
+
+model AgencyMembership {
+  id        String           @id @db.Uuid
+  companyId String           @map("company_id") @db.Uuid
+  agencyId  String           @map("agency_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  roleId    String           @map("role_id") @db.Uuid
+  roleScope RoleScope        @default(agency) @map("role_scope")
+  isPrimary Boolean          @default(false) @map("is_primary")
+  status    MembershipStatus
+  joinedAt  DateTime?        @map("joined_at") @db.Timestamptz()
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime?        @map("deleted_at") @db.Timestamptz()
+  deletedBy String?          @map("deleted_by") @db.Uuid
+
+  company                 Company                  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency                  Agency                   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  user                    User                     @relation(fields: [userId], references: [id], onDelete: NoAction)
+  role                    Role                     @relation(fields: [roleId, roleScope], references: [id, scope], onDelete: NoAction)
+  userPermissionOverrides UserPermissionOverride[]
+
+  @@unique([userId, agencyId])
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([roleId, roleScope])
+  @@index([isPrimary])
+  @@index([createdAt])
+  @@map("agency_memberships")
+}
+
+model UserPermissionOverride {
+  id                 String    @id @db.Uuid
+  userId             String    @map("user_id") @db.Uuid
+  agencyMembershipId String    @map("agency_membership_id") @db.Uuid
+  permissionKey      String    @map("permission_key")
+  roleId             String    @map("role_id") @db.Uuid
+  reason             String
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz()
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  user             User             @relation(fields: [userId], references: [id], onDelete: NoAction)
+  agencyMembership AgencyMembership @relation(fields: [agencyMembershipId], references: [id], onDelete: NoAction)
+  permission       Permission       @relation(fields: [permissionKey], references: [key], onDelete: NoAction)
+  role             Role             @relation(fields: [roleId], references: [id], onDelete: NoAction)
+
+  @@index([userId])
+  @@index([agencyMembershipId])
+  @@index([createdAt])
+  @@map("user_permission_overrides")
+}
+
+model Invitation {
+  id         String           @id @db.Uuid
+  companyId  String           @map("company_id") @db.Uuid
+  agencyId   String?          @map("agency_id") @db.Uuid
+  email      String
+  roleId     String           @map("role_id") @db.Uuid
+  invitedBy  String           @map("invited_by") @db.Uuid
+  tokenHash  String           @unique @map("token_hash")
+  status     InvitationStatus
+  expiresAt  DateTime         @map("expires_at") @db.Timestamptz()
+  acceptedAt DateTime?        @map("accepted_at") @db.Timestamptz()
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+
+  company       Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency        Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  role          Role    @relation(fields: [roleId], references: [id], onDelete: NoAction)
+  invitedByUser User    @relation("InvitationInvitedBy", fields: [invitedBy], references: [id], onDelete: NoAction)
+
+  @@unique([companyId, email])
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([email])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@map("invitations")
+}
+
+// =====================================================================
+// Domain 4 — Fleet
+// =====================================================================
+
+model VehicleCategory {
+  id        String    @id @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy String?   @map("deleted_by") @db.Uuid
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  vehicles Vehicle[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([createdAt])
+  @@map("vehicle_categories")
+}
+
+model Vehicle {
+  id           String        @id @db.Uuid
+  companyId    String        @map("company_id") @db.Uuid
+  agencyId     String        @map("agency_id") @db.Uuid
+  categoryId   String        @map("category_id") @db.Uuid
+  code         String
+  plate        String
+  vin          String?
+  brand        String
+  model        String
+  year         Int           @db.SmallInt
+  color        String?
+  fuelType     FuelType      @map("fuel_type")
+  transmission Transmission
+  seats        Int?          @db.SmallInt
+  status       VehicleStatus
+  notes        String?
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt    DateTime?     @map("deleted_at") @db.Timestamptz()
+  deletedBy    String?       @map("deleted_by") @db.Uuid
+
+  // NOTE: `category_id` replaces the legacy `category text` column per PRISMA_IMPLEMENTATION_PLAN.md (FK precedence).
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency   Agency          @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  category VehicleCategory @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+
+  vehicleInsurances         VehicleInsurance[]
+  vehicleInspections        VehicleInspection[]
+  vehicleMileageLogs        VehicleMileageLog[]
+  vehicleMaintenances       VehicleMaintenance[]
+  vehicleAvailabilityBlocks VehicleAvailabilityBlock[]
+  reservations              Reservation[]
+  contracts                 Contract[]
+  expenses                  Expense[]
+  vehicleRegistrations      VehicleRegistration[]
+  vehicleVignettes          VehicleVignette[]
+
+  @@unique([companyId, plate])
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([categoryId])
+  @@map("vehicles")
+}
+
+model VehicleInsurance {
+  id            String                 @id @db.Uuid
+  companyId     String                 @map("company_id") @db.Uuid
+  agencyId      String                 @map("agency_id") @db.Uuid
+  vehicleId     String                 @map("vehicle_id") @db.Uuid
+  provider      String
+  policyNumber  String                 @map("policy_number")
+  coverageType  InsuranceCoverageType? @map("coverage_type")
+  startsAt      DateTime               @map("starts_at") @db.Date
+  expiresAt     DateTime               @map("expires_at") @db.Date
+  premiumAmount Decimal?               @map("premium_amount") @db.Decimal(14, 4)
+  currency      String?                @db.Char(3)
+  documentUrl   String?                @map("document_url")
+  createdAt     DateTime               @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime               @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt     DateTime?              @map("deleted_at") @db.Timestamptz()
+  deletedBy     String?                @map("deleted_by") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, expiresAt])
+  @@map("vehicle_insurances")
+}
+
+model VehicleRegistration {
+  id                 String    @id @db.Uuid
+  companyId          String    @map("company_id") @db.Uuid
+  agencyId           String    @map("agency_id") @db.Uuid
+  vehicleId          String    @map("vehicle_id") @db.Uuid
+  registrationNumber String    @map("registration_number")
+  issuedAt           DateTime? @map("issued_at") @db.Date
+  expiresAt          DateTime  @map("expires_at") @db.Date
+  issuingAuthority   String?   @map("issuing_authority")
+  documentUrl        String?   @map("document_url")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only expiry record (created_at only; no updated_at, no soft delete) per DATABASE_PHASE1.md.
+  // `expires_at` NOT NULL — the compliance alert fires 30 days before it.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, expiresAt])
+  @@map("vehicle_registrations")
+}
+
+model VehicleVignette {
+  id          String   @id @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  agencyId    String   @map("agency_id") @db.Uuid
+  vehicleId   String   @map("vehicle_id") @db.Uuid
+  taxYear     Int      @map("tax_year") @db.SmallInt
+  paidAt      DateTime @map("paid_at") @db.Date
+  expiresAt   DateTime @map("expires_at") @db.Date
+  amount      Decimal? @db.Decimal(14, 4)
+  currency    String?  @db.Char(3)
+  documentUrl String?  @map("document_url")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only expiry record (created_at only; no updated_at, no soft delete) per DATABASE_PHASE1.md.
+  // `amount` is Decimal(14,4) + currency CHAR(3) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4 (supersedes PHASE1 numeric(10,2)).
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@unique([vehicleId, taxYear])
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, expiresAt])
+  @@map("vehicle_vignettes")
+}
+
+model VehicleInspection {
+  id          String           @id @db.Uuid
+  companyId   String           @map("company_id") @db.Uuid
+  agencyId    String           @map("agency_id") @db.Uuid
+  vehicleId   String           @map("vehicle_id") @db.Uuid
+  inspectedAt DateTime         @map("inspected_at") @db.Date
+  expiresAt   DateTime         @map("expires_at") @db.Date
+  result      InspectionResult
+  center      String?
+  cost        Decimal?         @db.Decimal(14, 4)
+  currency    String?          @db.Char(3)
+  documentUrl String?          @map("document_url")
+  createdAt   DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime?        @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?          @map("deleted_by") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, expiresAt])
+  @@map("vehicle_inspections")
+}
+
+model VehicleMileageLog {
+  id          String        @id @db.Uuid
+  companyId   String        @map("company_id") @db.Uuid
+  vehicleId   String        @map("vehicle_id") @db.Uuid
+  mileage     Int
+  recordedAt  DateTime      @map("recorded_at") @db.Timestamptz()
+  source      MileageSource
+  referenceId String?       @map("reference_id") @db.Uuid
+  recordedBy  String?       @map("recorded_by") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only (no updatedAt, no soft delete) per PRISMA_IMPLEMENTATION_PLAN.md § 7 / § 8.
+  // `reference_id` is a polymorphic pointer to the source record — intentionally no FK.
+
+  company        Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  recordedByUser User?   @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+  vehicle        Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([createdAt])
+  @@index([vehicleId, recordedAt])
+  @@map("vehicle_mileage_logs")
+}
+
+model VehicleMaintenance {
+  id               String                   @id @db.Uuid
+  companyId        String                   @map("company_id") @db.Uuid
+  agencyId         String                   @map("agency_id") @db.Uuid
+  vehicleId        String                   @map("vehicle_id") @db.Uuid
+  status           VehicleMaintenanceStatus @default(scheduled)
+  type             String
+  performedAt      DateTime                 @map("performed_at") @db.Date
+  mileageAtService Int?                     @map("mileage_at_service")
+  description      String?
+  cost             Decimal?                 @db.Decimal(14, 4)
+  currencyCode     String?                  @map("currency_code") @db.Char(3)
+  provider         String?
+  nextDueAt        DateTime?                @map("next_due_at") @db.Date
+  nextDueMileage   Int?                     @map("next_due_mileage")
+  recordedBy       String                   @map("recorded_by") @db.Uuid
+  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime                 @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt        DateTime?                @map("deleted_at") @db.Timestamptz()
+  deletedBy        String?                  @map("deleted_by") @db.Uuid
+
+  // Canonical columns per FINAL_DATABASE_SOURCE_OF_TRUTH.md; soft-delete per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+
+  company        Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  recordedByUser User    @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+  vehicle        Vehicle @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, status])
+  @@map("vehicle_maintenances")
+}
+
+model VehicleAvailabilityBlock {
+  id            String                  @id @db.Uuid
+  companyId     String                  @map("company_id") @db.Uuid
+  agencyId      String                  @map("agency_id") @db.Uuid
+  vehicleId     String                  @map("vehicle_id") @db.Uuid
+  reason        AvailabilityBlockReason
+  startsAt      DateTime                @map("starts_at") @db.Timestamptz()
+  endsAt        DateTime                @map("ends_at") @db.Timestamptz()
+  reservationId String?                 @map("reservation_id") @db.Uuid
+  notes         String?
+  createdBy     String?                 @map("created_by") @db.Uuid
+  createdAt     DateTime                @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime                @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt     DateTime?               @map("deleted_at") @db.Timestamptz()
+  deletedBy     String?                 @map("deleted_by") @db.Uuid
+
+  company       Company      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency        Agency       @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  createdByUser User?        @relation(fields: [createdBy], references: [id], onDelete: NoAction)
+  vehicle       Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+  reservation   Reservation? @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([createdAt])
+  @@index([vehicleId, startsAt, endsAt])
+  @@map("vehicle_availability_blocks")
+}
+
+// =====================================================================
+// Domain 5 — Customers
+// =====================================================================
+
+model Customer {
+  id        String         @id @db.Uuid
+  companyId String         @map("company_id") @db.Uuid
+  agencyId  String         @map("agency_id") @db.Uuid
+  code      String
+  type      CustomerType
+  email     String?
+  phone     String?
+  status    CustomerStatus
+  notes     String?
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime?      @map("deleted_at") @db.Timestamptz()
+  deletedBy String?        @map("deleted_by") @db.Uuid
+
+  company      Company             @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency       Agency              @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  individual   CustomerIndividual?
+  business     CustomerBusiness?
+  contacts     CustomerContact[]
+  documents    CustomerDocument[]
+  blacklist    CustomerBlacklist[]
+  reservations Reservation[]
+  contracts    Contract[]
+  invoices     Invoice[]
+  payments     Payment[]
+  deposits     Deposit[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
+  @@index([agencyId, status])
+  @@index([type])
+  @@index([createdAt])
+  @@map("customers")
+}
+
+model CustomerIndividual {
+  id                      String    @id @db.Uuid
+  customerId              String    @unique @map("customer_id") @db.Uuid
+  companyId               String    @map("company_id") @db.Uuid
+  firstName               String    @map("first_name")
+  lastName                String    @map("last_name")
+  dateOfBirth             DateTime? @map("date_of_birth") @db.Date
+  nationality             String?   @db.Char(2)
+  drivingLicenseNumber    String?   @map("driving_license_number")
+  drivingLicenseExpiresAt DateTime? @map("driving_license_expires_at") @db.Date
+  drivingLicenseCountry   String?   @map("driving_license_country") @db.Char(2)
+  cinNumber               String?   @map("cin_number")
+  cinExpiresAt            DateTime? @map("cin_expires_at") @db.Date
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt               DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([drivingLicenseExpiresAt])
+  @@map("customer_individuals")
+}
+
+model CustomerBusiness {
+  id                 String   @id @db.Uuid
+  customerId         String   @unique @map("customer_id") @db.Uuid
+  companyId          String   @map("company_id") @db.Uuid
+  companyName        String   @map("company_name")
+  registrationNumber String?  @map("registration_number")
+  taxId              String?  @map("tax_id")
+  contactPersonName  String?  @map("contact_person_name")
+  contactPersonPhone String?  @map("contact_person_phone")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+
+  @@index([companyId])
+  @@index([taxId])
+  @@map("customer_businesses")
+}
+
+model CustomerContact {
+  id         String      @id @db.Uuid
+  companyId  String      @map("company_id") @db.Uuid
+  customerId String      @map("customer_id") @db.Uuid
+  type       ContactType
+  value      String
+  isPrimary  Boolean     @default(false) @map("is_primary")
+  createdAt  DateTime    @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime    @updatedAt @map("updated_at") @db.Timestamptz()
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([customerId, type])
+  @@map("customer_contacts")
+}
+
+model CustomerDocument {
+  id             String               @id @db.Uuid
+  companyId      String               @map("company_id") @db.Uuid
+  customerId     String               @map("customer_id") @db.Uuid
+  type           CustomerDocumentType
+  documentNumber String               @map("document_number")
+  issuedAt       DateTime?            @map("issued_at") @db.Date
+  expiresAt      DateTime?            @map("expires_at") @db.Date
+  issuingCountry String?              @map("issuing_country") @db.Char(2)
+  documentUrl    String?              @map("document_url")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime             @updatedAt @map("updated_at") @db.Timestamptz()
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([customerId, type, expiresAt])
+  @@map("customer_documents")
+}
+
+model CustomerBlacklist {
+  id         String            @id @db.Uuid
+  companyId  String            @map("company_id") @db.Uuid
+  customerId String            @map("customer_id") @db.Uuid
+  reason     String
+  severity   BlacklistSeverity
+  addedBy    String            @map("added_by") @db.Uuid
+  liftedAt   DateTime?         @map("lifted_at") @db.Timestamptz()
+  liftedBy   String?           @map("lifted_by") @db.Uuid
+  liftReason String?           @map("lift_reason")
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only (no updatedAt, no soft delete) per PRISMA_IMPLEMENTATION_PLAN.md § 8; `lifted_*` fields record a lift instead of deletion.
+
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  addedByUser  User     @relation("BlacklistAddedBy", fields: [addedBy], references: [id], onDelete: NoAction)
+  liftedByUser User?    @relation("BlacklistLiftedBy", fields: [liftedBy], references: [id], onDelete: NoAction)
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("customer_blacklist")
+}
+
+// =====================================================================
+// Domain 6 — Reservations
+// =====================================================================
+
+model ReservationSource {
+  id         String   @id @db.Uuid
+  key        String   @unique
+  label      String
+  isExternal Boolean  @default(false) @map("is_external")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Global lookup table (no company_id); seeded at deploy. No FKs, no soft delete, no updatedAt.
+
+  reservations Reservation[]
+
+  @@map("reservation_sources")
+}
+
+model Reservation {
+  id                 String            @id @db.Uuid
+  companyId          String            @map("company_id") @db.Uuid
+  agencyId           String            @map("agency_id") @db.Uuid
+  code               String
+  customerId         String            @map("customer_id") @db.Uuid
+  vehicleId          String            @map("vehicle_id") @db.Uuid
+  sourceId           String            @map("source_id") @db.Uuid
+  assignedAgentId    String?           @map("assigned_agent_id") @db.Uuid
+  status             ReservationStatus @default(enquiry)
+  startsAt           DateTime          @map("starts_at") @db.Timestamptz()
+  endsAt             DateTime          @map("ends_at") @db.Timestamptz()
+  pickupLocation     String?           @map("pickup_location")
+  returnLocation     String?           @map("return_location")
+  days               Int               @db.SmallInt
+  pricePerDay        Decimal           @map("price_per_day") @db.Decimal(14, 4)
+  extrasTotal        Decimal           @default(0) @map("extras_total") @db.Decimal(14, 4)
+  discountAmount     Decimal           @default(0) @map("discount_amount") @db.Decimal(14, 4)
+  discountReason     String?           @map("discount_reason")
+  totalAmount        Decimal           @map("total_amount") @db.Decimal(14, 4)
+  currency           String            @db.Char(3)
+  depositAmount      Decimal           @default(0) @map("deposit_amount") @db.Decimal(14, 4)
+  advanceAmount      Decimal           @default(0) @map("advance_amount") @db.Decimal(14, 4)
+  internalNotes      String?           @map("internal_notes")
+  cancellationReason String?           @map("cancellation_reason")
+  cancelledAt        DateTime?         @map("cancelled_at") @db.Timestamptz()
+  cancelledBy        String?           @map("cancelled_by") @db.Uuid
+  confirmedAt        DateTime?         @map("confirmed_at") @db.Timestamptz()
+  activatedAt        DateTime?         @map("activated_at") @db.Timestamptz()
+  completedAt        DateTime?         @map("completed_at") @db.Timestamptz()
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt          DateTime?         @map("deleted_at") @db.Timestamptz()
+  deletedBy          String?           @map("deleted_by") @db.Uuid
+
+  // Monetary columns are Decimal(14,4) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4 (supersedes PHASE1 numeric(10,2)).
+
+  company            Company                       @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency             Agency                        @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  customer           Customer                      @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  vehicle            Vehicle                       @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+  source             ReservationSource             @relation(fields: [sourceId], references: [id], onDelete: NoAction)
+  assignedAgent      User?                         @relation("ReservationAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: NoAction)
+  cancelledByUser    User?                         @relation("ReservationCancelledBy", fields: [cancelledBy], references: [id], onDelete: NoAction)
+  contract           Contract?
+  invoice            Invoice?
+  payments           Payment[]
+  deposits           Deposit[]
+  expenses           Expense[]
+  driverPayments     DriverPayment[]
+  pricingSnapshots   ReservationPricingSnapshot[]
+  extras             ReservationExtra[]
+  timelineEvents     ReservationTimelineEvent[]
+  availabilityBlocks VehicleAvailabilityBlock[]
+  driverAssignments  DriverReservationAssignment[]
+
+  @@unique([companyId, code])
+  @@index([agencyId, status])
+  @@index([vehicleId, startsAt, endsAt])
+  @@index([customerId, status])
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([createdAt])
+  @@map("reservations")
+}
+
+model ReservationPricingSnapshot {
+  id             String   @id @db.Uuid
+  companyId      String   @map("company_id") @db.Uuid
+  reservationId  String   @map("reservation_id") @db.Uuid
+  supersedesId   String?  @map("supersedes_id") @db.Uuid
+  isCurrent      Boolean  @default(true) @map("is_current")
+  pricePerDay    Decimal  @map("price_per_day") @db.Decimal(14, 4)
+  days           Int      @db.SmallInt
+  extrasTotal    Decimal  @map("extras_total") @db.Decimal(14, 4)
+  discountAmount Decimal  @map("discount_amount") @db.Decimal(14, 4)
+  totalAmount    Decimal  @map("total_amount") @db.Decimal(14, 4)
+  currency       String   @db.Char(3)
+  lockedAt       DateTime @map("locked_at") @db.Timestamptz()
+  lockedBy       String   @map("locked_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // 1:N supersession chain (NOT 1:1) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 5.
+  // Financial columns are immutable; only `is_current` is mutated (carries updatedAt, no soft delete).
+  // Raw migration required: partial unique index UNIQUE(reservation_id) WHERE is_current = true.
+
+  company      Company                      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  reservation  Reservation                  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  supersedes   ReservationPricingSnapshot?  @relation("PricingSnapshotSupersession", fields: [supersedesId], references: [id], onDelete: NoAction)
+  supersededBy ReservationPricingSnapshot[] @relation("PricingSnapshotSupersession")
+  lockedByUser User                         @relation("PricingSnapshotLockedBy", fields: [lockedBy], references: [id], onDelete: NoAction)
+
+  @@index([reservationId, createdAt])
+  @@map("reservation_pricing_snapshots")
+}
+
+model ReservationExtra {
+  id            String   @id @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  label         String
+  unitPrice     Decimal  @map("unit_price") @db.Decimal(14, 4)
+  quantity      Int      @default(1) @db.SmallInt
+  totalPrice    Decimal  @map("total_price") @db.Decimal(14, 4)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Monetary columns are Decimal(14,4) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4 (supersedes PHASE1 numeric(10,2)).
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([reservationId])
+  @@map("reservation_extras")
+}
+
+model ReservationTimelineEvent {
+  id            String   @id @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  reservationId String   @map("reservation_id") @db.Uuid
+  eventType     String   @map("event_type")
+  fromStatus    String?  @map("from_status")
+  toStatus      String?  @map("to_status")
+  description   String?
+  performedBy   String?  @map("performed_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only per DATABASE_PHASE1.md (never updated or deleted): no updatedAt, no soft delete.
+
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  performedByUser User?       @relation("TimelineEventPerformedBy", fields: [performedBy], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([reservationId, createdAt])
+  @@map("reservation_timeline_events")
+}
+
+// =====================================================================
+// Domain 7 — Contracts
+// =====================================================================
+
+model ContractTemplate {
+  id        String    @id @db.Uuid
+  companyId String    @map("company_id") @db.Uuid
+  agencyId  String?   @map("agency_id") @db.Uuid
+  name      String
+  version   Int       @default(1) @db.SmallInt
+  content   String
+  isDefault Boolean   @default(false) @map("is_default")
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy String?   @map("deleted_by") @db.Uuid
+
+  company   Company                   @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency    Agency?                   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  versions  ContractTemplateVersion[]
+  contracts Contract[]
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@map("contract_templates")
+}
+
+model ContractTemplateVersion {
+  id            String   @id @db.Uuid
+  companyId     String   @map("company_id") @db.Uuid
+  templateId    String   @map("template_id") @db.Uuid
+  versionNumber Int      @map("version_number")
+  body          Json     @db.JsonB
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  createdBy     String?  @map("created_by") @db.Uuid
+
+  // Immutable — never updated or soft-deleted (legal integrity) per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+
+  company       Company          @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  template      ContractTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  createdByUser User?            @relation(fields: [createdBy], references: [id], onDelete: NoAction)
+  contracts     Contract[]
+
+  @@unique([templateId, versionNumber])
+  @@index([templateId])
+  @@index([companyId])
+  @@map("contract_template_versions")
+}
+
+model Contract {
+  id                String         @id @db.Uuid
+  companyId         String         @map("company_id") @db.Uuid
+  agencyId          String         @map("agency_id") @db.Uuid
+  code              String
+  reservationId     String         @unique @map("reservation_id") @db.Uuid
+  customerId        String         @map("customer_id") @db.Uuid
+  vehicleId         String         @map("vehicle_id") @db.Uuid
+  templateId        String?        @map("template_id") @db.Uuid
+  templateVersionId String?        @map("template_version_id") @db.Uuid
+  status            ContractStatus @default(draft)
+  pickupMileage     Int            @map("pickup_mileage")
+  returnMileage     Int?           @map("return_mileage")
+  pickupFuelLevel   Int?           @map("pickup_fuel_level") @db.SmallInt
+  returnFuelLevel   Int?           @map("return_fuel_level") @db.SmallInt
+  pickupAt          DateTime       @map("pickup_at") @db.Timestamptz()
+  returnedAt        DateTime?      @map("returned_at") @db.Timestamptz()
+  notes             String?
+  renderedHtml      String         @map("rendered_html")
+  renderedPdfUrl    String?        @map("rendered_pdf_url")
+  contentSnapshot   Json           @map("content_snapshot") @db.JsonB
+  contentHash       String         @map("content_hash")
+  signedAt          DateTime?      @map("signed_at") @db.Timestamptz()
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz()
+  deletedBy         String?        @map("deleted_by") @db.Uuid
+
+  // Legal-integrity provenance columns per DATABASE_FINAL_REVIEW.md § 2 (rendered_html + content_snapshot + content_hash frozen at signing).
+
+  company         Company                  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency          Agency                   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation     Reservation              @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  customer        Customer                 @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  vehicle         Vehicle                  @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+  template        ContractTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateVersion ContractTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  inspectionItems ContractInspectionItem[]
+  signatures      ContractSignature[]
+
+  @@unique([companyId, code])
+  @@index([status])
+  @@index([templateVersionId])
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([customerId])
+  @@index([vehicleId])
+  @@index([createdAt])
+  @@map("contracts")
+}
+
+model ContractInspectionItem {
+  id         String              @id @db.Uuid
+  companyId  String              @map("company_id") @db.Uuid
+  contractId String              @map("contract_id") @db.Uuid
+  event      InspectionEvent
+  zone       String
+  condition  InspectionCondition
+  notes      String?
+  photoUrl   String?             @map("photo_url")
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt  DateTime?           @map("deleted_at") @db.Timestamptz()
+  deletedBy  String?             @map("deleted_by") @db.Uuid
+
+  // Soft-deletable per PRISMA_IMPLEMENTATION_PLAN.md § 7 (audit fields per § 8).
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([contractId])
+  @@map("contract_inspection_items")
+}
+
+model ContractSignature {
+  id            String         @id @db.Uuid
+  companyId     String         @map("company_id") @db.Uuid
+  contractId    String         @map("contract_id") @db.Uuid
+  signerType    SignerType     @map("signer_type")
+  signerName    String         @map("signer_name")
+  event         SignatureEvent
+  signedAt      DateTime       @map("signed_at") @db.Timestamptz()
+  signatureData String?        @map("signature_data")
+  ipAddress     String?        @map("ip_address")
+  signedBy      String?        @map("signed_by") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only — immutable, never updated or soft-deleted per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+
+  company      Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  contract     Contract @relation(fields: [contractId], references: [id], onDelete: NoAction)
+  signedByUser User?    @relation(fields: [signedBy], references: [id], onDelete: SetNull)
+
+  @@index([contractId, signerType])
+  @@index([companyId])
+  @@map("contract_signatures")
+}
+
+// =====================================================================
+// Domain 8 — Finance
+// Monetary columns are Decimal(14,4) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4.
+// Soft-delete classification per PRISMA_IMPLEMENTATION_PLAN.md § 7:
+// only Expense is soft-deletable; Invoice/InvoiceLineItem/Payment/Deposit/
+// CreditNote/ExpenseCategory/DriverPayment are immutable (no deletedAt/deletedBy).
+// =====================================================================
+
+model ExpenseCategory {
+  id        String   @id @db.Uuid
+  companyId String   @map("company_id") @db.Uuid
+  name      String
+  isSystem  Boolean  @default(false) @map("is_system")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only lookup (created_at only) per DATABASE_PHASE1.md.
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  expenses Expense[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@map("expense_categories")
+}
+
+model Invoice {
+  id                 String        @id @db.Uuid
+  companyId          String        @map("company_id") @db.Uuid
+  agencyId           String        @map("agency_id") @db.Uuid
+  code               String
+  reservationId      String        @unique @map("reservation_id") @db.Uuid
+  customerId         String        @map("customer_id") @db.Uuid
+  customerBusinessId String?       @map("customer_business_id") @db.Uuid
+  status             InvoiceStatus
+  subtotal           Decimal       @db.Decimal(14, 4)
+  taxAmount          Decimal       @default(0) @map("tax_amount") @db.Decimal(14, 4)
+  discountAmount     Decimal       @default(0) @map("discount_amount") @db.Decimal(14, 4)
+  totalAmount        Decimal       @map("total_amount") @db.Decimal(14, 4)
+  currency           String        @db.Char(3)
+  issuedAt           DateTime?     @map("issued_at") @db.Date
+  dueAt              DateTime?     @map("due_at") @db.Date
+  paidAt             DateTime?     @map("paid_at") @db.Timestamptz()
+  notes              String?
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Immutable after issuance — never soft-deleted (VAT compliance). Corrections create a CreditNote.
+
+  company                  Company           @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency                   Agency            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation              Reservation       @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  customer                 Customer          @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  customerBusiness         CustomerBusiness? @relation(fields: [customerBusinessId], references: [id], onDelete: NoAction)
+  lineItems                InvoiceLineItem[]
+  payments                 Payment[]
+  creditNotesAsOriginal    CreditNote[]      @relation("CreditNoteOriginalInvoice")
+  creditNotesAsReplacement CreditNote[]      @relation("CreditNoteReplacementInvoice")
+
+  @@unique([companyId, code])
+  @@index([agencyId, status])
+  @@index([dueAt])
+  @@index([customerId])
+  @@index([customerBusinessId])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id          String   @id @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  invoiceId   String   @map("invoice_id") @db.Uuid
+  description String
+  quantity    Decimal  @db.Decimal(14, 4)
+  unitPrice   Decimal  @map("unit_price") @db.Decimal(14, 4)
+  totalPrice  Decimal  @map("total_price") @db.Decimal(14, 4)
+  sortOrder   Int      @default(0) @map("sort_order") @db.SmallInt
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only (created_at only) per DATABASE_PHASE1.md.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+  @@index([companyId])
+  @@map("invoice_line_items")
+}
+
+model Payment {
+  id            String        @id @db.Uuid
+  companyId     String        @map("company_id") @db.Uuid
+  agencyId      String        @map("agency_id") @db.Uuid
+  reservationId String        @map("reservation_id") @db.Uuid
+  invoiceId     String?       @map("invoice_id") @db.Uuid
+  customerId    String        @map("customer_id") @db.Uuid
+  method        PaymentMethod
+  amount        Decimal       @db.Decimal(14, 4)
+  currency      String        @db.Char(3)
+  paidAt        DateTime      @map("paid_at") @db.Timestamptz()
+  reference     String?
+  notes         String?
+  recordedBy    String        @map("recorded_by") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Immutable ledger record — no soft delete per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+  // NOTE: plan documents @@index([invoiceId, status]) but payments has no `status` column
+  //       (no PaymentStatus enum exists); degraded to @@index([invoiceId]).
+
+  company        Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency      @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  invoice        Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: NoAction)
+  customer       Customer    @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  recordedByUser User        @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+
+  @@index([invoiceId])
+  @@index([agencyId, createdAt])
+  @@index([companyId])
+  @@map("payments")
+}
+
+model Deposit {
+  id               String        @id @db.Uuid
+  companyId        String        @map("company_id") @db.Uuid
+  agencyId         String        @map("agency_id") @db.Uuid
+  reservationId    String        @map("reservation_id") @db.Uuid
+  customerId       String        @map("customer_id") @db.Uuid
+  amount           Decimal       @db.Decimal(14, 4)
+  currency         String        @db.Char(3)
+  method           DepositMethod
+  collectedAt      DateTime      @map("collected_at") @db.Timestamptz()
+  collectedBy      String        @map("collected_by") @db.Uuid
+  status           DepositStatus
+  releasedAt       DateTime?     @map("released_at") @db.Timestamptz()
+  releasedBy       String?       @map("released_by") @db.Uuid
+  releasedAmount   Decimal?      @map("released_amount") @db.Decimal(14, 4)
+  forfeitureReason String?       @map("forfeiture_reason")
+  notes            String?
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Immutable ledger record — no soft delete per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+
+  company         Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency          Agency      @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation     Reservation @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  customer        Customer    @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  collectedByUser User        @relation("DepositCollectedBy", fields: [collectedBy], references: [id], onDelete: NoAction)
+  releasedByUser  User?       @relation("DepositReleasedBy", fields: [releasedBy], references: [id], onDelete: NoAction)
+
+  @@index([reservationId, status])
+  @@index([companyId])
+  @@map("deposits")
+}
+
+model CreditNote {
+  id                   String   @id @db.Uuid
+  companyId            String   @map("company_id") @db.Uuid
+  agencyId             String   @map("agency_id") @db.Uuid
+  code                 String
+  originalInvoiceId    String   @map("original_invoice_id") @db.Uuid
+  replacementInvoiceId String?  @map("replacement_invoice_id") @db.Uuid
+  amount               Decimal  @db.Decimal(14, 4)
+  currency             String   @db.Char(3)
+  reason               String?
+  issuedBy             String   @map("issued_by") @db.Uuid
+  issuedAt             DateTime @map("issued_at") @db.Timestamptz()
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only correction record — immutable, never mutated after issuance (VAT compliance).
+  // `amount` may be negative (reversal) per DATABASE_SPECIFICATION.md § 5.
+
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency             Agency   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  originalInvoice    Invoice  @relation("CreditNoteOriginalInvoice", fields: [originalInvoiceId], references: [id], onDelete: NoAction)
+  replacementInvoice Invoice? @relation("CreditNoteReplacementInvoice", fields: [replacementInvoiceId], references: [id], onDelete: NoAction)
+  issuedByUser       User     @relation(fields: [issuedBy], references: [id], onDelete: NoAction)
+
+  @@unique([companyId, code])
+  @@index([originalInvoiceId])
+  @@index([companyId])
+  @@map("credit_notes")
+}
+
+model Expense {
+  id            String         @id @db.Uuid
+  companyId     String         @map("company_id") @db.Uuid
+  agencyId      String         @map("agency_id") @db.Uuid
+  categoryId    String         @map("category_id") @db.Uuid
+  vehicleId     String?        @map("vehicle_id") @db.Uuid
+  reservationId String?        @map("reservation_id") @db.Uuid
+  description   String
+  amount        Decimal        @db.Decimal(14, 4)
+  currency      String         @db.Char(3)
+  occurredAt    DateTime       @map("occurred_at") @db.Date
+  method        PaymentMethod?
+  reference     String?
+  documentUrl   String?        @map("document_url")
+  recordedBy    String         @map("recorded_by") @db.Uuid
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt     DateTime?      @map("deleted_at") @db.Timestamptz()
+  deletedBy     String?        @map("deleted_by") @db.Uuid
+
+  // Soft-deletable per PRISMA_IMPLEMENTATION_PLAN.md § 7. `method` shares the PaymentMethod enum (nullable).
+
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency          @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+  vehicle        Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  reservation    Reservation?    @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  recordedByUser User            @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+
+  @@index([agencyId, occurredAt])
+  @@index([vehicleId, occurredAt])
+  @@index([companyId])
+  @@map("expenses")
+}
+
+model DriverPayment {
+  id                  String    @id @db.Uuid
+  companyId           String    @map("company_id") @db.Uuid
+  agencyId            String    @map("agency_id") @db.Uuid
+  driverId            String    @map("driver_id") @db.Uuid
+  driverPricingRuleId String    @map("driver_pricing_rule_id") @db.Uuid
+  reservationId       String?   @map("reservation_id") @db.Uuid
+  grossAmount         Decimal   @map("gross_amount") @db.Decimal(14, 4)
+  taxWithheldAmount   Decimal?  @map("tax_withheld_amount") @db.Decimal(14, 4)
+  netAmount           Decimal?  @map("net_amount") @db.Decimal(14, 4)
+  currency            String    @db.Char(3)
+  periodStart         DateTime? @map("period_start") @db.Date
+  periodEnd           DateTime? @map("period_end") @db.Date
+  paidAt              DateTime? @map("paid_at") @db.Timestamptz()
+  notes               String?
+  recordedBy          String    @map("recorded_by") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Append-only compensation record — immutable, corrections create a new row per DATABASE_DOMAIN_DESIGN.md.
+  // No authoritative column block exists; columns reconstructed from § 7/§ 8, monetary tax-withholding
+  // note (gross/withheld/net Decimal(14,4)), and period_start/period_end (monthly/hourly) per architecture docs.
+
+  company        Company           @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  driver         Driver            @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  pricingRule    DriverPricingRule @relation(fields: [driverPricingRuleId], references: [id], onDelete: Restrict)
+  reservation    Reservation?      @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  recordedByUser User              @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+
+  @@index([driverId, createdAt])
+  @@index([reservationId])
+  @@index([companyId])
+  @@map("driver_payments")
+}
+
+// =====================================================================
+// Domain 9 — Drivers
+// Monetary rates are Decimal(14,4) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4.
+// `drivers.home_agency_id` per DATABASE_DOMAIN_DESIGN.md canonical decision
+// (semantic name reserved for future cross-agency sharing; NOT NULL in Phase 1).
+// All 4 models are soft-deletable per DATABASE_DOMAIN_DESIGN.md § retention.
+// =====================================================================
+
+model Driver {
+  id           String       @id @db.Uuid
+  companyId    String       @map("company_id") @db.Uuid
+  homeAgencyId String       @map("home_agency_id") @db.Uuid
+  reference    String?
+  firstName    String       @map("first_name")
+  lastName     String       @map("last_name")
+  phone        String?
+  email        String?
+  status       DriverStatus @default(active)
+  notes        String?
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime     @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt    DateTime?    @map("deleted_at") @db.Timestamptz()
+  deletedBy    String?      @map("deleted_by") @db.Uuid
+
+  company                Company                       @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  homeAgency             Agency                        @relation(fields: [homeAgencyId], references: [id], onDelete: NoAction)
+  pricingRules           DriverPricingRule[]
+  documents              DriverDocument[]
+  reservationAssignments DriverReservationAssignment[]
+  payments               DriverPayment[]
+
+  @@unique([companyId, reference])
+  @@index([homeAgencyId, status])
+  @@index([companyId])
+  @@map("drivers")
+}
+
+model DriverPricingRule {
+  id          String            @id @db.Uuid
+  companyId   String            @map("company_id") @db.Uuid
+  driverId    String            @map("driver_id") @db.Uuid
+  pricingType DriverPricingType @map("pricing_type")
+  monthlyRate Decimal?          @map("monthly_rate") @db.Decimal(14, 4)
+  hourlyRate  Decimal?          @map("hourly_rate") @db.Decimal(14, 4)
+  missionRate Decimal?          @map("mission_rate") @db.Decimal(14, 4)
+  currency    String            @db.Char(3)
+  isCurrent   Boolean           @default(true) @map("is_current")
+  validFrom   DateTime          @map("valid_from") @db.Date
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime?         @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?           @map("deleted_by") @db.Uuid
+
+  // Rate columns are nullable — only the column matching `pricing_type` is populated.
+  // Raw migration required: partial unique index UNIQUE(driver_id) WHERE is_current = true.
+
+  company  Company         @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  driver   Driver          @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  payments DriverPayment[]
+
+  @@index([driverId, isCurrent])
+  @@index([driverId, validFrom])
+  @@index([companyId])
+  @@map("driver_pricing_rules")
+}
+
+model DriverDocument {
+  id             String             @id @db.Uuid
+  companyId      String             @map("company_id") @db.Uuid
+  driverId       String             @map("driver_id") @db.Uuid
+  type           DriverDocumentType
+  documentNumber String?            @map("document_number")
+  issuedAt       DateTime?          @map("issued_at") @db.Date
+  expiresAt      DateTime?          @map("expires_at") @db.Date
+  documentUrl    String?            @map("document_url")
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt      DateTime?          @map("deleted_at") @db.Timestamptz()
+  deletedBy      String?            @map("deleted_by") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([driverId, type, expiresAt])
+  @@index([companyId])
+  @@map("driver_documents")
+}
+
+model DriverReservationAssignment {
+  id            String     @id @db.Uuid
+  companyId     String     @map("company_id") @db.Uuid
+  reservationId String     @map("reservation_id") @db.Uuid
+  driverId      String     @map("driver_id") @db.Uuid
+  role          DriverRole
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt     DateTime?  @map("deleted_at") @db.Timestamptz()
+  deletedBy     String?    @map("deleted_by") @db.Uuid
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  driver      Driver      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([reservationId, role])
+  @@index([driverId, createdAt])
+  @@index([companyId])
+  @@map("driver_reservation_assignments")
+}
+
+// =====================================================================
+// Domain 12 — Settings
+// =====================================================================
+
+model Setting {
+  id          String    @id @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  agencyId    String?   @map("agency_id") @db.Uuid
+  key         String
+  value       String
+  valueType   String    @map("value_type")
+  isEncrypted Boolean   @default(false) @map("is_encrypted")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?   @map("deleted_by") @db.Uuid
+
+  // Typed key/value config with scope resolution (agency override > company default) per DATABASE_DOMAIN_DESIGN.md § 12.
+  // `agency_id IS NULL` => company-level; non-null => agency-level. `value_type` is a plain string
+  // (string|number|boolean|json|color|url) — no Prisma enum invented per PRISMA_IMPLEMENTATION_PLAN.md § 2.
+  // Soft-deletable (§ 7): a removed setting reverts to the inherited default while staying auditable.
+  // NOTE: the unique below treats NULL agency_id as distinct in Postgres, so it does not dedupe company-level
+  // rows on its own. Raw migration required: partial unique index UNIQUE(company_id, key) WHERE agency_id IS NULL.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+
+  @@unique([companyId, agencyId, key])
+  @@index([companyId])
+  @@map("settings")
+}
+
+// =====================================================================
+// Domain 13 — Utility
+// =====================================================================
+
+model NumberSequence {
+  id          String   @id @db.Uuid
+  companyId   String   @map("company_id") @db.Uuid
+  agencyId    String?  @map("agency_id") @db.Uuid
+  sequenceKey String   @map("sequence_key")
+  periodKey   String   @map("period_key")
+  lastValue   BigInt   @default(0) @map("last_value")
+  prefix      String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Row-lock counter for gapless human-readable codes (RES-/CTR-/INV-/CN-, etc.) per DATABASE_DOMAIN_DESIGN.md § 6.
+  // Mutable counter — only `last_value` is updated (via SELECT FOR UPDATE + increment); no soft delete (§ 7).
+  // NOTE: @@unique below does not fully dedupe company-level rows because Postgres treats NULL agency_id as distinct.
+  // Raw migration required: partial unique index UNIQUE(company_id, sequence_key, period_key) WHERE agency_id IS NULL.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+
+  @@unique([companyId, agencyId, sequenceKey, periodKey])
+  @@index([companyId])
+  @@map("number_sequences")
+}
+
+// =====================================================================
+// Domain 3 — Subscription (Plan catalog)
+// Global, platform-seeded lookup tables (no company_id, no soft delete).
+// Per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 1: exactly 3 models — there is NO
+// standalone `subscriptions` table in Phase 1 (earlier drafts were drift).
+// =====================================================================
+
+model Plan {
+  id          String   @id @db.Uuid
+  name        String
+  displayName String   @map("display_name")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Platform-managed catalog ("starter"/"pro"/"enterprise"). No FKs; no soft delete per PRISMA_IMPLEMENTATION_PLAN.md § 7.
+
+  limits    PlanLimit[]
+  features  PlanFeature[]
+  companies Company[]
+
+  @@map("plans")
+}
+
+model PlanLimit {
+  id         String   @id @db.Uuid
+  planId     String   @map("plan_id") @db.Uuid
+  limitKey   String   @map("limit_key")
+  limitValue Int      @map("limit_value")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // One row per limit per plan. `limit_value = -1` means unlimited. Append-only (created_at only) per DATABASE_PHASE1.md.
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, limitKey])
+  @@index([planId])
+  @@map("plan_limits")
+}
+
+model PlanFeature {
+  id         String   @id @db.Uuid
+  planId     String   @map("plan_id") @db.Uuid
+  featureKey String   @map("feature_key")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Presence of a row = feature enabled; absence = disabled. Append-only (created_at only) per DATABASE_PHASE1.md.
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@index([planId])
+  @@map("plan_features")
+}
+
+// =====================================================================
+// Domain 10 — Documents
+// =====================================================================
+
+model Document {
+  id         String    @id @db.Uuid
+  companyId  String    @map("company_id") @db.Uuid
+  agencyId   String?   @map("agency_id") @db.Uuid
+  entityType String    @map("entity_type")
+  entityId   String    @map("entity_id") @db.Uuid
+  filename   String
+  mimeType   String?   @map("mime_type")
+  sizeBytes  Int?      @map("size_bytes")
+  storageUrl String    @map("storage_url")
+  uploadedBy String    @map("uploaded_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  deletedAt  DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy  String?   @map("deleted_by") @db.Uuid
+
+  // Polymorphic attachment: (entity_type, entity_id) points at vehicle/customer/contract/expense/etc. rows.
+  // Per PRISMA_IMPLEMENTATION_PLAN.md § FK (line 639): NO database FK on entity_id — the application validates
+  // entity_type via a CHECK constraint and orphan cleanup runs as a background job. `entity_type` is plain
+  // text (no enum invented). Append-only content (created_at only, no updated_at) but soft-deletable (§ 8).
+
+  company        Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  uploadedByUser User    @relation(fields: [uploadedBy], references: [id], onDelete: NoAction)
+
+  @@index([entityType, entityId])
+  @@index([companyId, deletedAt])
+  @@map("documents")
+}
+
+// =====================================================================
+// Domain 11 — Audit
+// Both tables are immutable append-only (created_at only; never updated,
+// never soft-deleted — "Mutable: Never") per DATABASE_PHASE1.md § 5.
+// `entity_type` is plain text (no enum). `user_id` FK is SetNull so the
+// log survives user deletion per PRISMA_IMPLEMENTATION_PLAN.md § FK.
+// =====================================================================
+
+model AuditLog {
+  id         String   @id @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  agencyId   String?  @map("agency_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  changes    Json?    @db.JsonB
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Compliance trail: `changes` holds { before, after } field diffs. Permanent retention.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, entityType, entityId])
+  @@index([companyId, userId])
+  @@index([companyId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model ActivityLog {
+  id         String   @id @db.Uuid
+  companyId  String   @map("company_id") @db.Uuid
+  agencyId   String?  @map("agency_id") @db.Uuid
+  userId     String?  @map("user_id") @db.Uuid
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  verb       String
+  actorName  String   @map("actor_name")
+  metadata   Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Denormalized human-readable feed (verb + actor_name baked in) so the UI timeline renders join-free.
+  // Rolling 12-month retention.
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency? @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId, entityType, entityId])
+  @@index([companyId, createdAt])
+  @@index([agencyId, createdAt])
+  @@index([entityType, entityId])
+  @@map("activity_logs")
+}

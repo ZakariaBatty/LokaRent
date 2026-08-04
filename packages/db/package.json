@@ -1,0 +1,18 @@
+{
+  "name": "@lokarent/db",
+  "version": "0.0.1",
+  "description": "Prisma database client and schema for LokaRent",
+  "main": "./src/index.ts",
+  "scripts": {
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.0.0",
+    "tsx": "^4.0.0"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@lokarent/types",
+  "version": "0.0.1",
+  "description": "Shared TypeScript types used by all LokaRent packages",
+  "main": "./src/index.ts"
+}

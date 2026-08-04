@@ -1,0 +1,6 @@
+{
+  "name": "@lokarent/ui",
+  "version": "0.0.1",
+  "description": "Shared UI component library for LokaRent",
+  "main": "./src/index.ts"
+}

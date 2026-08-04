@@ -1,0 +1,6 @@
+{
+  "name": "@lokarent/config",
+  "version": "0.0.1",
+  "description": "Shared configuration for all LokaRent packages",
+  "main": "./src/index.ts"
+}
