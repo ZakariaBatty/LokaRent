@@ -1,3 +1,1 @@
-// TODO: Future implementation
-// Re-exports the Prisma client from packages/db with singleton pattern
-export {}
+export { getPrismaClient, prisma } from "@lokarent/db";

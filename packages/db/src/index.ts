@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for packages/db
-export {}
+export { getPrismaClient, prisma } from "./client";
+export * from "@prisma/client";
