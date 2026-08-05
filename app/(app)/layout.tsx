@@ -4,10 +4,10 @@ import { AppHeader } from "@/components/app/app-header"
 import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppShell } from "@/components/app/app-shell"
 import { AgencyProvider } from "@/contexts/agency-context"
-import { requireAuth } from "@/shared/auth"
+import { requireCurrentCompanyContext } from "@/shared/auth"
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  await requireAuth()
+  await requireCurrentCompanyContext()
 
   return (
     <AgencyProvider>

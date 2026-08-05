@@ -4,10 +4,10 @@ import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { AppShell } from "@/components/app/app-shell"
-import { requireAuth } from "@/shared/auth"
+import { requireCurrentCompanyOwnerContext } from "@/shared/auth"
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
-  await requireAuth()
+  await requireCurrentCompanyOwnerContext()
 
   return (
     <AgencyProvider>
