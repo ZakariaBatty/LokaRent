@@ -1,6 +1,9 @@
 import { ForgotPasswordForm } from "@/components/forgot-password/forgot-password-form"
+import { redirectAuthenticatedUser } from "@/shared/auth"
 
-export default function ForgotPasswordPage() {
+export default async function ForgotPasswordPage() {
+  await redirectAuthenticatedUser()
+
   return (
     <main className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-background px-4 py-12">
       {/* Background mesh + grid */}

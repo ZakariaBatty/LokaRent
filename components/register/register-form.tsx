@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { registerAction } from "@/modules/auth/actions"
 
 const CITIES = [
   "Casablanca",
@@ -190,6 +191,7 @@ export function RegisterForm({ plan }: { plan: string }) {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const errors = useMemo(() => {
     const e: Partial<Record<keyof FormData, string>> = {}
@@ -231,8 +233,19 @@ export function RegisterForm({ plan }: { plan: string }) {
     if (!isValid) return
 
     setSubmitting(true)
-    await new Promise((r) => setTimeout(r, 1400))
-    router.push(`/onboarding?plan=${plan}`)
+    setSubmitError(null)
+    const result = await registerAction({
+      ...data,
+      vehicleCount: data.vehicleCount,
+      planName: plan,
+    })
+    setSubmitting(false)
+    if (!result.success) {
+      setSubmitError(result.message ?? "Impossible de créer ce compte.")
+      return
+    }
+    router.push(result.redirectTo ?? `/onboarding?plan=${plan}`)
+    router.refresh()
   }
 
   return (
@@ -457,6 +470,12 @@ export function RegisterForm({ plan }: { plan: string }) {
           de LakaRent.
         </span>
       </label>
+
+      {submitError && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {submitError}
+        </p>
+      )}
 
       <motion.div whileTap={{ scale: isValid && !submitting ? 0.985 : 1 }}>
         <Button

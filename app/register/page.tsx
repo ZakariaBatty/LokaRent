@@ -4,6 +4,7 @@ import { PlanBanner } from "@/components/register/plan-banner"
 import { StepIndicator } from "@/components/register/step-indicator"
 import { RegisterForm } from "@/components/register/register-form"
 import { FeatureShowcase } from "@/components/register/feature-showcase"
+import { redirectAuthenticatedUser } from "@/shared/auth"
 
 type SearchParams = Promise<{ plan?: string }>
 
@@ -12,6 +13,8 @@ export default async function RegisterPage({
 }: {
   searchParams: SearchParams
 }) {
+  await redirectAuthenticatedUser()
+
   const params = await searchParams
   const planId = (params.plan ?? "pro").toLowerCase()
   const plan = PLANS.find((p) => p.id === planId) ?? PLANS[1]

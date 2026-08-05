@@ -1,3 +1,4 @@
-// TODO: Future implementation
-// DTO — sign-in input shape
-export {}
+import type { z } from "zod";
+import type { signInSchema } from "../validators/sign-in.schema";
+
+export type SignInDto = z.infer<typeof signInSchema>;

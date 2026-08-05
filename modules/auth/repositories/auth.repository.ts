@@ -31,6 +31,37 @@ export async function createUser(data: Prisma.UserUncheckedCreateInput, db: Data
   return db.user.create({ data });
 }
 
+export async function findAuthUserByEmail(email: string, db: DatabaseClient = prisma) {
+  return db.authUser.findUnique({ where: { email: email.toLowerCase() } });
+}
+
+export async function findAuthUserById(authUserId: string, db: DatabaseClient = prisma) {
+  return db.authUser.findUnique({
+    where: { id: authUserId },
+    include: { lokaRentUser: true },
+  });
+}
+
+export async function createAuthUser(
+  data: Prisma.AuthUserUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.authUser.create({ data });
+}
+
+export async function createAuthAccount(
+  data: Prisma.AuthAccountUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.authAccount.create({ data });
+}
+
+export async function findCredentialAccountByUserId(userId: string, db: DatabaseClient = prisma) {
+  return db.authAccount.findFirst({
+    where: { userId, providerId: "credential" },
+  });
+}
+
 export async function updateUser(
   input: { companyId: string; userId: string; data: Prisma.UserUncheckedUpdateInput },
   db: DatabaseClient = prisma,
@@ -64,7 +95,12 @@ export async function restoreUser(
 export const authRepository = {
   findUserById,
   findUserByEmail,
+  findAuthUserByEmail,
+  findAuthUserById,
   createUser,
+  createAuthUser,
+  createAuthAccount,
+  findCredentialAccountByUserId,
   updateUser,
   softDeleteUser,
   restoreUser,

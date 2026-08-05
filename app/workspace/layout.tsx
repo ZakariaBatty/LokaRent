@@ -4,8 +4,11 @@ import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { AppShell } from "@/components/app/app-shell"
+import { requireAuth } from "@/shared/auth"
 
-export default function WorkspaceLayout({ children }: { children: ReactNode }) {
+export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
+  await requireAuth()
+
   return (
     <AgencyProvider>
       <SidebarProvider>

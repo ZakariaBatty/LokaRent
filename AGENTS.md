@@ -31,13 +31,14 @@ The following phases are COMPLETE and MUST NOT be recreated unless explicitly re
 
 ✅ Services
 
+✅ Authentication
+
 Current implementation phase:
 
-➡ Authentication
+➡ Current Company Context
 
 Upcoming phases:
 
-- Current Company Context
 - Current Agency Context
 - Permissions
 - Onboarding
@@ -479,13 +480,14 @@ Completed
 
 ✅ Services
 
+✅ Authentication
+
 Current
 
-➡ Authentication
+➡ Current Company Context
 
 Next
 
-- Company Context
 - Agency Context
 - Permissions
 - Onboarding

@@ -77,6 +77,13 @@ export async function createRolePermission(
   return db.rolePermission.create({ data });
 }
 
+export async function createManyRolePermissions(
+  data: Prisma.RolePermissionCreateManyInput[],
+  db: DatabaseClient = prisma,
+) {
+  return db.rolePermission.createMany({ data, skipDuplicates: true });
+}
+
 export async function deleteRolePermission(
   input: { companyId: string; roleId: string; permissionKey: string },
   db: DatabaseClient = prisma,
@@ -141,6 +148,7 @@ export const permissionsRepository = {
   softDeleteRole,
   listRolePermissions,
   createRolePermission,
+  createManyRolePermissions,
   deleteRolePermission,
   listUserPermissionOverrides,
   createUserPermissionOverride,

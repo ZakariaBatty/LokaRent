@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { LoginForm } from "@/components/login/login-form"
 import { DashboardShowcase } from "@/components/login/dashboard-showcase"
+import { redirectAuthenticatedUser } from "@/shared/auth"
 
 export const metadata: Metadata = {
   title: "Connexion — LokaRent",
@@ -8,7 +9,9 @@ export const metadata: Metadata = {
     "Connectez-vous à votre espace LokaRent et gérez votre flotte, vos réservations et vos clients depuis une seule plateforme.",
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  await redirectAuthenticatedUser()
+
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-background">
       {/* Global ambient background */}
