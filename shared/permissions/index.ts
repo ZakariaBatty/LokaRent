@@ -1,3 +1,3 @@
-// TODO: Future implementation
-// Public exports for shared/permissions
-export {}
+export * from "./can";
+export * from "./permission.types";
+export * from "./rbac";

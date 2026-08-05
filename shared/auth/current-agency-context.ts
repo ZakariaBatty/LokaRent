@@ -10,6 +10,7 @@ export type CurrentAgencyContext = {
   companyId: string;
   agencyId: string;
   agencyMembershipId: string;
+  agencyRoleId: string;
   companyRoleId: string;
   isOwner: boolean;
   isPrimaryAgency: boolean;
@@ -45,6 +46,7 @@ export async function getCurrentAgencyContext(): Promise<CurrentAgencyContext | 
     companyId: companyContext.companyId,
     agencyId: agencyMembership.agencyId,
     agencyMembershipId: agencyMembership.id,
+    agencyRoleId: agencyMembership.roleId,
     companyRoleId: companyContext.companyRoleId,
     isOwner: companyContext.isOwner,
     isPrimaryAgency: agencyMembership.isPrimary,
