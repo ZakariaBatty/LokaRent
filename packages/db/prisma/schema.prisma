@@ -37,6 +37,11 @@ enum RoleScope {
   agency
 }
 
+enum PermissionEffect {
+  grant
+  deny
+}
+
 enum InvitationStatus {
   pending
   accepted
@@ -583,21 +588,23 @@ model AgencyMembership {
 }
 
 model UserPermissionOverride {
-  id                 String    @id @db.Uuid
-  userId             String    @map("user_id") @db.Uuid
-  agencyMembershipId String    @map("agency_membership_id") @db.Uuid
-  permissionKey      String    @map("permission_key")
-  roleId             String    @map("role_id") @db.Uuid
+  id                 String           @id @db.Uuid
+  userId             String           @map("user_id") @db.Uuid
+  agencyMembershipId String           @map("agency_membership_id") @db.Uuid
+  permissionKey      String           @map("permission_key")
+  roleId             String           @map("role_id") @db.Uuid
+  effect             PermissionEffect @default(grant)
   reason             String
-  expiresAt          DateTime? @map("expires_at") @db.Timestamptz()
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  expiresAt          DateTime?        @map("expires_at") @db.Timestamptz()
+  createdAt          DateTime         @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime         @updatedAt @map("updated_at") @db.Timestamptz()
 
   user             User             @relation(fields: [userId], references: [id], onDelete: NoAction)
   agencyMembership AgencyMembership @relation(fields: [agencyMembershipId], references: [id], onDelete: NoAction)
   permission       Permission       @relation(fields: [permissionKey], references: [key], onDelete: NoAction)
   role             Role             @relation(fields: [roleId], references: [id], onDelete: NoAction)
 
+  @@unique([agencyMembershipId, permissionKey])
   @@index([userId])
   @@index([agencyMembershipId])
   @@index([createdAt])

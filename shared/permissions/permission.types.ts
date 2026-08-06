@@ -48,7 +48,7 @@ export const PERMISSIONS = {
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 export type PermissionScope = "company" | "agency";
 
-export type PermissionDecisionSource = "owner" | "role" | "override" | "none";
+export type PermissionDecisionSource = "owner" | "role" | "override_grant" | "override_deny" | "none";
 
 export type PermissionDecision = {
   allowed: boolean;

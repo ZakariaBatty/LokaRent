@@ -252,6 +252,15 @@ export default {
     error: 'Une erreur s\'est produite',
     confirmDelete: 'Êtes-vous sûr ? Cette action ne peut pas être annulée.',
     noPermission: 'Vous n\'avez pas la permission d\'effectuer cette action',
+    permissionOverrideNotFound: 'Dérogation de permission introuvable',
+    permissionOverrideScopeInvalid: 'Le périmètre de la dérogation de permission est invalide',
+    permissionDeniedByOverride: 'Permission refusée par une dérogation',
+  },
+
+  errors: {
+    PERMISSION_OVERRIDE_NOT_FOUND: 'Dérogation de permission introuvable',
+    PERMISSION_OVERRIDE_SCOPE_INVALID: 'Le périmètre de la dérogation de permission est invalide',
+    PERMISSION_DENIED_BY_OVERRIDE: 'Permission refusée par une dérogation',
   },
 
   currency: 'MAD',

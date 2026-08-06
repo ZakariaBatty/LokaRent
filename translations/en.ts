@@ -252,6 +252,15 @@ export default {
     error: 'An error occurred',
     confirmDelete: 'Are you sure? This action cannot be undone.',
     noPermission: 'You do not have permission to perform this action',
+    permissionOverrideNotFound: 'Permission override not found',
+    permissionOverrideScopeInvalid: 'Permission override scope is invalid',
+    permissionDeniedByOverride: 'Permission denied by override',
+  },
+
+  errors: {
+    PERMISSION_OVERRIDE_NOT_FOUND: 'Permission override not found',
+    PERMISSION_OVERRIDE_SCOPE_INVALID: 'Permission override scope is invalid',
+    PERMISSION_DENIED_BY_OVERRIDE: 'Permission denied by override',
   },
 
   currency: 'MAD',

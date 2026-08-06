@@ -1,8 +1,22 @@
-import { createId, createNotFoundError, publishDomainEvent } from "@/shared";
+import { PermissionEffect, type Prisma } from "@lokarent/db";
+import type { CurrentAgencyContext } from "@/shared/auth/current-agency-context";
+import {
+  createId,
+  createNotFoundError,
+  createPermissionOverrideNotFoundError,
+  createPermissionOverrideScopeInvalidError,
+  publishDomainEvent,
+  runInTransaction,
+  writeActivityLog,
+  writeAuditLog,
+} from "@/shared";
+import { getAgencyMembershipService } from "@/modules/workspace/members/services/members.service";
 import {
   createRole,
   createRolePermission,
   createUserPermissionOverride,
+  deleteUserPermissionOverride,
+  findActiveUserPermissionOverride,
   deleteRolePermission,
   findPermissionByKey,
   findRoleById,
@@ -13,6 +27,8 @@ import {
   softDeleteRole,
   updateRole,
   updateUserPermissionOverride,
+  updateUserPermissionOverrideExpiry as updateUserPermissionOverrideExpiryRepository,
+  upsertUserPermissionOverride,
 } from "../repositories/permissions.repository";
 
 export type PermissionActor = {
@@ -24,6 +40,176 @@ type RoleScopeValue = Parameters<typeof listRoles>[0]["scope"];
 type RoleCreateData = Omit<Parameters<typeof createRole>[0], "id" | "companyId">;
 type RolePermissionCreateData = Omit<Parameters<typeof createRolePermission>[0], "id">;
 type UserPermissionOverrideCreateData = Omit<Parameters<typeof createUserPermissionOverride>[0], "id">;
+type PermissionOverrideContext = CurrentAgencyContext & PermissionActor;
+
+type PermissionOverrideInput = {
+  context: PermissionOverrideContext;
+  targetUserId: string;
+  permissionKey: string;
+  reason: string;
+  expiresAt?: Date | null;
+};
+
+type PermissionOverrideExpiryInput = {
+  context: PermissionOverrideContext;
+  targetUserId: string;
+  permissionKey: string;
+  expiresAt?: Date | null;
+};
+
+const PERMISSION_OVERRIDE_ENTITY = "user_permission_override";
+
+async function getScopedAgencyMembership(input: {
+  context: CurrentAgencyContext;
+  targetUserId: string;
+  permissionKey: string;
+}) {
+  try {
+    const membership = await getAgencyMembershipService({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      userId: input.targetUserId,
+    });
+
+    if (
+      membership.id !== input.context.agencyMembershipId &&
+      membership.agencyId !== input.context.agencyId
+    ) {
+      throw createPermissionOverrideScopeInvalidError(input);
+    }
+
+    if (membership.status !== "active" || membership.agency.status !== "active") {
+      throw createPermissionOverrideScopeInvalidError({
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.targetUserId,
+        permissionKey: input.permissionKey,
+      });
+    }
+
+    return membership;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      error.code === "PERMISSION_OVERRIDE_SCOPE_INVALID"
+    ) {
+      throw error;
+    }
+    throw createPermissionOverrideScopeInvalidError({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      userId: input.targetUserId,
+      permissionKey: input.permissionKey,
+    });
+  }
+}
+
+function serializePermissionOverride(
+  override:
+    | Awaited<ReturnType<typeof upsertUserPermissionOverride>>
+    | Awaited<ReturnType<typeof findActiveUserPermissionOverride>>
+    | null,
+) {
+  if (!override) return null;
+  return {
+    id: override.id,
+    userId: override.userId,
+    agencyMembershipId: override.agencyMembershipId,
+    permissionKey: override.permissionKey,
+    roleId: override.roleId,
+    effect: override.effect,
+    reason: override.reason,
+    expiresAt: override.expiresAt?.toISOString() ?? null,
+  };
+}
+
+async function findOverrideForMembership(input: {
+  companyId: string;
+  agencyMembershipId: string;
+  permissionKey: string;
+  userId: string;
+}) {
+  const overrides = await listUserPermissionOverrides({
+    companyId: input.companyId,
+    agencyMembershipId: input.agencyMembershipId,
+    userId: input.userId,
+  });
+  return overrides.find((override) => override.permissionKey === input.permissionKey) ?? null;
+}
+
+async function setPermissionOverrideEffect(
+  input: PermissionOverrideInput,
+  effect: PermissionEffect,
+) {
+  await getPermissionService(input.permissionKey);
+  const membership = await getScopedAgencyMembership({
+    context: input.context,
+    targetUserId: input.targetUserId,
+    permissionKey: input.permissionKey,
+  });
+  const before = await findOverrideForMembership({
+    companyId: input.context.companyId,
+    agencyMembershipId: membership.id,
+    permissionKey: input.permissionKey,
+    userId: input.targetUserId,
+  });
+
+  return runInTransaction(async (db) => {
+    const override = await upsertUserPermissionOverride(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        userId: input.targetUserId,
+        agencyMembershipId: membership.id,
+        permissionKey: input.permissionKey,
+        roleId: membership.roleId,
+        effect,
+        reason: input.reason,
+        expiresAt: input.expiresAt ?? null,
+      },
+      db,
+    );
+    const action =
+      effect === PermissionEffect.grant
+        ? "PermissionOverrideGranted"
+        : "PermissionOverrideDenied";
+    const changes = {
+      before: serializePermissionOverride(before),
+      after: serializePermissionOverride(override),
+    } satisfies Prisma.InputJsonObject;
+
+    await writeAuditLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        action,
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: override.id,
+        changes,
+      },
+      db,
+    );
+    await writeActivityLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        actorName: input.context.actorName,
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: override.id,
+        verb: action,
+        metadata: changes,
+      },
+      db,
+    );
+
+    return override;
+  });
+}
 
 export async function listPermissionsService() {
   return listPermissions();
@@ -157,6 +343,172 @@ export async function updateUserPermissionOverrideService(input: {
   return updateUserPermissionOverride(input);
 }
 
+export async function getActiveUserPermissionOverrideService(input: {
+  companyId: string;
+  agencyId: string;
+  agencyMembershipId: string;
+  userId: string;
+  permissionKey: string;
+  now?: Date;
+}) {
+  return findActiveUserPermissionOverride(input);
+}
+
+export async function grantPermissionOverride(input: PermissionOverrideInput) {
+  return setPermissionOverrideEffect(input, PermissionEffect.grant);
+}
+
+export async function denyPermissionOverride(input: PermissionOverrideInput) {
+  return setPermissionOverrideEffect(input, PermissionEffect.deny);
+}
+
+export async function revokePermissionOverride(input: {
+  context: PermissionOverrideContext;
+  targetUserId: string;
+  permissionKey: string;
+}) {
+  await getPermissionService(input.permissionKey);
+  const membership = await getScopedAgencyMembership({
+    context: input.context,
+    targetUserId: input.targetUserId,
+    permissionKey: input.permissionKey,
+  });
+  const before = await findOverrideForMembership({
+    companyId: input.context.companyId,
+    agencyMembershipId: membership.id,
+    permissionKey: input.permissionKey,
+    userId: input.targetUserId,
+  });
+
+  if (!before) {
+    throw createPermissionOverrideNotFoundError({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      userId: input.targetUserId,
+      permissionKey: input.permissionKey,
+    });
+  }
+
+  return runInTransaction(async (db) => {
+    const result = await deleteUserPermissionOverride(
+      {
+        companyId: input.context.companyId,
+        agencyMembershipId: membership.id,
+        permissionKey: input.permissionKey,
+      },
+      db,
+    );
+    const changes = {
+      before: serializePermissionOverride(before),
+      after: null,
+    } satisfies Prisma.InputJsonObject;
+
+    await writeAuditLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        action: "PermissionOverrideRevoked",
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: before.id,
+        changes,
+      },
+      db,
+    );
+    await writeActivityLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        actorName: input.context.actorName,
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: before.id,
+        verb: "PermissionOverrideRevoked",
+        metadata: changes,
+      },
+      db,
+    );
+
+    return result;
+  });
+}
+
+export async function updatePermissionOverrideExpiry(input: PermissionOverrideExpiryInput) {
+  await getPermissionService(input.permissionKey);
+  const membership = await getScopedAgencyMembership({
+    context: input.context,
+    targetUserId: input.targetUserId,
+    permissionKey: input.permissionKey,
+  });
+  const before = await findOverrideForMembership({
+    companyId: input.context.companyId,
+    agencyMembershipId: membership.id,
+    permissionKey: input.permissionKey,
+    userId: input.targetUserId,
+  });
+
+  if (!before) {
+    throw createPermissionOverrideNotFoundError({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      userId: input.targetUserId,
+      permissionKey: input.permissionKey,
+    });
+  }
+
+  return runInTransaction(async (db) => {
+    const result = await updateUserPermissionOverrideExpiryRepository(
+      {
+        companyId: input.context.companyId,
+        agencyMembershipId: membership.id,
+        permissionKey: input.permissionKey,
+        expiresAt: input.expiresAt ?? null,
+      },
+      db,
+    );
+    const after = {
+      ...serializePermissionOverride(before),
+      expiresAt: input.expiresAt?.toISOString() ?? null,
+    } satisfies Prisma.InputJsonObject;
+    const changes = {
+      before: serializePermissionOverride(before),
+      after,
+    } satisfies Prisma.InputJsonObject;
+
+    await writeAuditLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        action: "PermissionOverrideExpiryUpdated",
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: before.id,
+        changes,
+      },
+      db,
+    );
+    await writeActivityLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        actorName: input.context.actorName,
+        entityType: PERMISSION_OVERRIDE_ENTITY,
+        entityId: before.id,
+        verb: "PermissionOverrideExpiryUpdated",
+        metadata: changes,
+      },
+      db,
+    );
+
+    return result;
+  });
+}
+
 export const permissionsService = {
   listPermissionsService,
   getPermissionService,
@@ -171,4 +523,9 @@ export const permissionsService = {
   listUserPermissionOverridesService,
   createUserPermissionOverrideService,
   updateUserPermissionOverrideService,
+  getActiveUserPermissionOverrideService,
+  grantPermissionOverride,
+  denyPermissionOverride,
+  revokePermissionOverride,
+  updatePermissionOverrideExpiry,
 };

@@ -1,4 +1,4 @@
-import { Prisma, RoleScope, prisma } from "@lokarent/db";
+import { PermissionEffect, Prisma, RoleScope, prisma } from "@lokarent/db";
 import type { DatabaseClient } from "@/shared/database";
 
 export async function listPermissions(db: DatabaseClient = prisma) {
@@ -112,11 +112,99 @@ export async function listUserPermissionOverrides(
   });
 }
 
+type UserPermissionOverrideScope = {
+  companyId: string;
+  agencyMembershipId: string;
+  permissionKey: string;
+};
+
+type UserPermissionOverrideUpsertData = UserPermissionOverrideScope & {
+  id: string;
+  userId: string;
+  roleId: string;
+  effect: PermissionEffect;
+  reason: string;
+  expiresAt?: Date | null;
+};
+
 export async function createUserPermissionOverride(
   data: Prisma.UserPermissionOverrideUncheckedCreateInput,
   db: DatabaseClient = prisma,
 ) {
   return db.userPermissionOverride.create({ data });
+}
+
+export async function createGrantPermissionOverride(
+  data: Omit<Prisma.UserPermissionOverrideUncheckedCreateInput, "effect">,
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.create({ data: { ...data, effect: PermissionEffect.grant } });
+}
+
+export async function createDenyPermissionOverride(
+  data: Omit<Prisma.UserPermissionOverrideUncheckedCreateInput, "effect">,
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.create({ data: { ...data, effect: PermissionEffect.deny } });
+}
+
+export async function upsertUserPermissionOverride(
+  data: UserPermissionOverrideUpsertData,
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.upsert({
+    where: {
+      agencyMembershipId_permissionKey: {
+        agencyMembershipId: data.agencyMembershipId,
+        permissionKey: data.permissionKey,
+      },
+    },
+    create: {
+      id: data.id,
+      userId: data.userId,
+      agencyMembershipId: data.agencyMembershipId,
+      permissionKey: data.permissionKey,
+      roleId: data.roleId,
+      effect: data.effect,
+      reason: data.reason,
+      expiresAt: data.expiresAt ?? null,
+    },
+    update: {
+      userId: data.userId,
+      roleId: data.roleId,
+      effect: data.effect,
+      reason: data.reason,
+      expiresAt: data.expiresAt ?? null,
+    },
+  });
+}
+
+export async function updateUserPermissionOverrideEffect(
+  input: UserPermissionOverrideScope & { effect: PermissionEffect },
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.updateMany({
+    where: {
+      agencyMembershipId: input.agencyMembershipId,
+      permissionKey: input.permissionKey,
+      agencyMembership: { companyId: input.companyId, deletedAt: null },
+    },
+    data: { effect: input.effect },
+  });
+}
+
+export async function updateUserPermissionOverrideExpiry(
+  input: UserPermissionOverrideScope & { expiresAt?: Date | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.updateMany({
+    where: {
+      agencyMembershipId: input.agencyMembershipId,
+      permissionKey: input.permissionKey,
+      agencyMembership: { companyId: input.companyId, deletedAt: null },
+    },
+    data: { expiresAt: input.expiresAt ?? null },
+  });
 }
 
 export async function updateUserPermissionOverride(
@@ -138,6 +226,41 @@ export async function updateUserPermissionOverride(
   });
 }
 
+export async function deleteUserPermissionOverride(
+  input: UserPermissionOverrideScope,
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.deleteMany({
+    where: {
+      agencyMembershipId: input.agencyMembershipId,
+      permissionKey: input.permissionKey,
+      agencyMembership: { companyId: input.companyId, deletedAt: null },
+    },
+  });
+}
+
+export async function findActiveUserPermissionOverride(
+  input: UserPermissionOverrideScope & { userId?: string; agencyId?: string; now?: Date },
+  db: DatabaseClient = prisma,
+) {
+  const now = input.now ?? new Date();
+  return db.userPermissionOverride.findFirst({
+    where: {
+      agencyMembershipId: input.agencyMembershipId,
+      permissionKey: input.permissionKey,
+      userId: input.userId,
+      agencyMembership: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        status: "active",
+        deletedAt: null,
+      },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    include: { permission: true, role: true },
+  });
+}
+
 export const permissionsRepository = {
   listPermissions,
   findPermissionByKey,
@@ -152,5 +275,12 @@ export const permissionsRepository = {
   deleteRolePermission,
   listUserPermissionOverrides,
   createUserPermissionOverride,
+  createGrantPermissionOverride,
+  createDenyPermissionOverride,
+  upsertUserPermissionOverride,
+  updateUserPermissionOverrideEffect,
+  updateUserPermissionOverrideExpiry,
   updateUserPermissionOverride,
+  deleteUserPermissionOverride,
+  findActiveUserPermissionOverride,
 };

@@ -1,8 +1,9 @@
 import {
+  getActiveUserPermissionOverrideService,
   getPermissionService,
   getRoleService,
-  listUserPermissionOverridesService,
 } from "@/modules/workspace/permissions/services/permissions.service";
+import { getAgencyMembershipService } from "@/modules/workspace/members/services/members.service";
 import type { CurrentAgencyContext, CurrentCompanyContext } from "@/shared/auth";
 import type { PermissionDecision, PermissionKey, PermissionScope } from "./permission.types";
 
@@ -20,19 +21,32 @@ function hasPermission(role: Awaited<ReturnType<typeof getRoleService>>, permiss
   return role.rolePermissions.some((rolePermission) => rolePermission.permissionKey === permissionKey);
 }
 
-async function hasActiveOverrideGrant(context: CurrentAgencyContext, permissionKey: PermissionKey) {
-  const now = new Date();
-  const overrides = await listUserPermissionOverridesService({
+async function findActiveOverride(context: CurrentAgencyContext, permissionKey: PermissionKey) {
+  return getActiveUserPermissionOverrideService({
     companyId: context.companyId,
+    agencyId: context.agencyId,
     agencyMembershipId: context.agencyMembershipId,
     userId: context.userId,
+    permissionKey,
   });
+}
 
-  return overrides.some(
-    (override) =>
-      override.permissionKey === permissionKey &&
-      (!override.expiresAt || override.expiresAt > now),
-  );
+async function hasActiveAgencyMembership(context: CurrentAgencyContext) {
+  try {
+    const membership = await getAgencyMembershipService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      userId: context.userId,
+    });
+
+    return (
+      membership.id === context.agencyMembershipId &&
+      membership.status === "active" &&
+      membership.agency.status === "active"
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function resolvePermission(
@@ -52,8 +66,17 @@ export async function resolvePermission(
       : context.companyRoleId;
 
   if (scope === "agency" && hasAgencyContext(context)) {
-    if (await hasActiveOverrideGrant(context, permissionKey)) {
-      return { allowed: true, permissionKey, scope, source: "override" };
+    const activeMembership = await hasActiveAgencyMembership(context);
+    if (!activeMembership) {
+      return { allowed: false, permissionKey, scope, source: "none" };
+    }
+
+    const override = await findActiveOverride(context, permissionKey);
+    if (override?.effect === "deny") {
+      return { allowed: false, permissionKey, scope, source: "override_deny" };
+    }
+    if (override?.effect === "grant") {
+      return { allowed: true, permissionKey, scope, source: "override_grant" };
     }
   }
 

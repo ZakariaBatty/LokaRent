@@ -4,7 +4,7 @@ import {
   type CurrentAgencyContext,
   type CurrentCompanyContext,
 } from "@/shared/auth";
-import { createForbiddenError } from "@/shared/errors";
+import { createForbiddenError, createPermissionDeniedByOverrideError } from "@/shared/errors";
 import type { PermissionKey } from "./permission.types";
 import { getPermissionScope, resolvePermission } from "./rbac";
 
@@ -38,6 +38,9 @@ export async function requirePermission(permissionKey: PermissionKey, context?: 
 
   const decision = await resolvePermission(currentContext, permissionKey);
   if (!decision.allowed) {
+    if (decision.source === "override_deny") {
+      throw createPermissionDeniedByOverrideError(decision);
+    }
     throw createForbiddenError("Permission denied", decision);
   }
 
