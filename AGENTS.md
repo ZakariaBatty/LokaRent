@@ -513,6 +513,49 @@ Never jump ahead unless explicitly instructed.
 
 ---
 
+# Localization (Mandatory)
+
+Every new user-visible text introduced by this task MUST be localized.
+
+This includes ALL:
+
+- validation messages
+- error messages
+- success messages
+- toast messages
+- confirmation dialogs
+- modal titles
+- modal descriptions
+- button labels
+- table labels
+- form labels
+- placeholders
+- empty states
+- loading texts
+- badges
+- status labels
+- tooltips
+- dropdown labels
+- filter labels
+- search placeholders
+- skeleton/loading captions
+- permission errors
+- plan limit errors
+- lifecycle/status errors
+- notifications
+
+Rules:
+
+- Never hardcode user-visible text inside React components, Services, Actions, or Controllers.
+- Every new string must use the existing translation system.
+- Every new translation key must be added to BOTH:
+  - translations/en.ts
+  - translations/fr.ts
+- Reuse existing translation keys whenever possible.
+- Report every newly added translation key in the final report.
+
+The implementation is NOT considered complete if any new visible string remains hardcoded.
+
 # Final Rule
 
 When unsure:
