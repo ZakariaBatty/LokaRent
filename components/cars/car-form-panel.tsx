@@ -8,12 +8,13 @@ import {
   Check,
   ChevronDown,
   Gauge,
-  ImagePlus,
   Palette,
   ShieldCheck,
   Sticker,
+  Upload,
   X,
 } from "lucide-react"
+import { toast } from "sonner"
 import {
   type Car,
   type CarCategory,
@@ -21,7 +22,9 @@ import {
   type FuelType,
   statusConfig,
 } from "@/lib/cars-data"
+import { uploadCarDocumentAction } from "@/modules/cars/actions/upload-car-file.action"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 const categories: CarCategory[] = ["Citadine", "Berline", "SUV", "Utilitaire"]
 const fuels: FuelType[] = ["Essence", "Diesel", "Hybride"]
@@ -36,16 +39,15 @@ export type CarFormDraft = {
   category: CarCategory
   fuel: FuelType
   seats: number | ""
-  priceDay: number | ""
-  priceWeek: number | ""
-  priceMonth: number | ""
   km: number | ""
   status: CarStatus
   insuranceCompany: string
   insuranceEnd: string
+  insuranceDocumentUrl: string
   vignetteEnd: string
+  vignetteDocumentUrl: string
   visiteNext: string
-  photos: string[]
+  inspectionDocumentUrl: string
 }
 
 type Errors = Partial<Record<keyof CarFormDraft, string>>
@@ -62,16 +64,15 @@ function buildDraft(car?: Car | null): CarFormDraft {
     category: car?.category ?? "Citadine",
     fuel: car?.fuel ?? "Essence",
     seats: car?.seats ?? "",
-    priceDay: car?.priceDay ?? "",
-    priceWeek: car?.priceWeek ?? "",
-    priceMonth: car?.priceMonth ?? "",
     km: car?.km ?? "",
     status: car?.status ?? "disponible",
     insuranceCompany: car?.insurance.company ?? "",
     insuranceEnd: car?.insurance.endDate ?? "",
+    insuranceDocumentUrl: "",
     vignetteEnd: car?.vignette.endDate ?? "",
+    vignetteDocumentUrl: "",
     visiteNext: car?.visiteTechnique.nextDate ?? "",
-    photos: [],
+    inspectionDocumentUrl: "",
   }
 }
 
@@ -89,23 +90,12 @@ export function CarFormPanel({
   const [draft, setDraft] = useState<CarFormDraft>(() => buildDraft(car))
   const [errors, setErrors] = useState<Errors>({})
   const [saving, setSaving] = useState(false)
+  const [uploadingField, setUploadingField] = useState<keyof CarFormDraft | null>(null)
 
   useEffect(() => {
     setDraft(buildDraft(car))
     setErrors({})
   }, [car])
-
-  // Auto-suggest weekly / monthly price from daily
-  useEffect(() => {
-    if (draft.priceDay !== "" && draft.priceWeek === "" && draft.priceMonth === "") {
-      setDraft((d) => ({
-        ...d,
-        priceWeek: Math.round(Number(draft.priceDay) * 6),
-        priceMonth: Math.round(Number(draft.priceDay) * 24),
-      }))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.priceDay])
 
   function set<K extends keyof CarFormDraft>(key: K, value: CarFormDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }))
@@ -120,7 +110,6 @@ export function CarFormPanel({
       e.year = "Année invalide"
     if (!draft.plate.trim()) e.plate = "Immatriculation requise"
     if (draft.seats === "" || Number(draft.seats) < 1) e.seats = "Requis"
-    if (draft.priceDay === "" || Number(draft.priceDay) <= 0) e.priceDay = "Requis"
     if (draft.km === "" || Number(draft.km) < 0) e.km = "Requis"
     setErrors(e)
     return Object.keys(e).length === 0
@@ -137,11 +126,31 @@ export function CarFormPanel({
     }
   }
 
-  function handlePhotos(ev: React.ChangeEvent<HTMLInputElement>) {
-    const files = ev.target.files
-    if (!files) return
-    const names = Array.from(files).map((f) => f.name)
-    setDraft((d) => ({ ...d, photos: [...d.photos, ...names].slice(0, 6) }))
+  async function uploadDocument(
+    ev: React.ChangeEvent<HTMLInputElement>,
+    key: "insuranceDocumentUrl" | "vignetteDocumentUrl" | "inspectionDocumentUrl",
+    folder: string,
+  ) {
+    const file = ev.target.files?.[0]
+    ev.target.value = ""
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("folder", folder)
+    setUploadingField(key)
+    try {
+      const result = await uploadCarDocumentAction(formData)
+      if (!result.success) {
+        const keyName = result.messageKey.split(".").at(-1) as keyof typeof fr.fleet.upload.errors
+        toast.error(fr.fleet.upload.errors[keyName] ?? fr.fleet.upload.errors.generic)
+        return
+      }
+      set(key, result.upload.url)
+      toast.success(fr.fleet.upload.uploaded)
+    } finally {
+      setUploadingField(null)
+    }
   }
 
   return (
@@ -280,41 +289,11 @@ export function CarFormPanel({
         </Section>
 
         {/* Tarification */}
-        <Section title="Tarification" icon={Gauge}>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label="Prix / jour" required error={errors.priceDay}>
-              <Input
-                type="number"
-                value={draft.priceDay}
-                onChange={(v) => set("priceDay", v === "" ? "" : Number(v))}
-                placeholder="250"
-                suffix="DH"
-                invalid={!!errors.priceDay}
-              />
-            </Field>
-            <Field label="Prix / semaine">
-              <Input
-                type="number"
-                value={draft.priceWeek}
-                onChange={(v) => set("priceWeek", v === "" ? "" : Number(v))}
-                placeholder="1400"
-                suffix="DH"
-              />
-            </Field>
-            <Field label="Prix / mois">
-              <Input
-                type="number"
-                value={draft.priceMonth}
-                onChange={(v) => set("priceMonth", v === "" ? "" : Number(v))}
-                placeholder="5500"
-                suffix="DH"
-              />
-            </Field>
+        <Section title={fr.fleet.pricing.title} icon={Gauge}>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+            <p className="text-xs font-semibold text-amber-800">{fr.fleet.pricing.unsupportedTitle}</p>
+            <p className="mt-0.5 text-[11px] text-amber-700">{fr.fleet.pricing.unsupportedDescription}</p>
           </div>
-          <p className="mt-2 text-[11px] text-slate-400">
-            Les tarifs hebdomadaire et mensuel sont suggérés automatiquement à partir du prix
-            journalier.
-          </p>
         </Section>
 
         {/* Documents */}
@@ -335,12 +314,30 @@ export function CarFormPanel({
               <Field label="Assurance — fin de validité">
                 <DateInput value={draft.insuranceEnd} onChange={(v) => set("insuranceEnd", v)} />
               </Field>
+              <DocumentUploadField
+                label={fr.fleet.upload.insuranceDocument}
+                value={draft.insuranceDocumentUrl}
+                uploading={uploadingField === "insuranceDocumentUrl"}
+                onChange={(ev) => uploadDocument(ev, "insuranceDocumentUrl", "fleet/insurance")}
+              />
               <Field label="Vignette — fin de validité">
                 <DateInput value={draft.vignetteEnd} onChange={(v) => set("vignetteEnd", v)} />
               </Field>
+              <DocumentUploadField
+                label={fr.fleet.upload.vignetteDocument}
+                value={draft.vignetteDocumentUrl}
+                uploading={uploadingField === "vignetteDocumentUrl"}
+                onChange={(ev) => uploadDocument(ev, "vignetteDocumentUrl", "fleet/vignettes")}
+              />
               <Field label="Visite technique — prochaine">
                 <DateInput value={draft.visiteNext} onChange={(v) => set("visiteNext", v)} />
               </Field>
+              <DocumentUploadField
+                label={fr.fleet.upload.inspectionDocument}
+                value={draft.inspectionDocumentUrl}
+                uploading={uploadingField === "inspectionDocumentUrl"}
+                onChange={(ev) => uploadDocument(ev, "inspectionDocumentUrl", "fleet/inspections")}
+              />
             </div>
             <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
               <Sticker className="h-4 w-4 text-amber-500" />
@@ -352,49 +349,6 @@ export function CarFormPanel({
           </div>
         </Section>
 
-        {/* Photos */}
-        <Section title="Photos du véhicule" icon={ImagePlus}>
-          <div className="grid grid-cols-3 gap-3">
-            {draft.photos.map((name, i) => (
-              <motion.div
-                key={`${name}-${i}`}
-                initial={{ opacity: 0, scale: 0.92 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-50"
-              >
-                <div className="flex h-full flex-col items-center justify-center gap-1 text-slate-400">
-                  <ImagePlus className="h-5 w-5" />
-                  <span className="max-w-[90%] truncate px-1 text-[10px]">{name}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setDraft((d) => ({ ...d, photos: d.photos.filter((_, idx) => idx !== i) }))
-                  }
-                  className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-lg bg-white/90 text-slate-500 opacity-0 shadow-sm transition group-hover:opacity-100 hover:text-rose-600"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </motion.div>
-            ))}
-            {draft.photos.length < 6 && (
-              <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/40 text-slate-400 transition hover:border-indigo-300 hover:bg-indigo-50/30 hover:text-indigo-600">
-                <ImagePlus className="h-5 w-5" />
-                <span className="text-[11px] font-medium">Ajouter</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handlePhotos}
-                  className="hidden"
-                />
-              </label>
-            )}
-          </div>
-          <p className="mt-2 text-[11px] text-slate-400">
-            Jusqu&apos;à 6 photos · JPG ou PNG. La première sera utilisée comme photo principale.
-          </p>
-        </Section>
       </div>
 
       {/* Sticky footer */}
@@ -552,6 +506,52 @@ function DateInput({ value, onChange }: { value: string; onChange: (v: string) =
       onChange={(e) => onChange(e.target.value)}
       className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-900 shadow-sm transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
     />
+  )
+}
+
+function DocumentUploadField({
+  label,
+  value,
+  uploading,
+  onChange,
+}: {
+  label: string
+  value: string
+  uploading: boolean
+  onChange: (ev: React.ChangeEvent<HTMLInputElement>) => void
+}) {
+  return (
+    <Field label={label}>
+      <label className="flex h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/40 hover:text-indigo-700">
+        <span className="flex min-w-0 items-center gap-2">
+          {uploading ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+          ) : (
+            <Upload className="h-4 w-4" />
+          )}
+          <span className="truncate">
+            {uploading
+              ? fr.fleet.upload.uploading
+              : value
+                ? fr.fleet.upload.replaceFile
+                : fr.fleet.upload.chooseFile}
+          </span>
+        </span>
+        {value && !uploading && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            {fr.fleet.upload.uploaded}
+          </span>
+        )}
+        <input
+          type="file"
+          accept="application/pdf,image/jpeg,image/png,image/webp"
+          onChange={onChange}
+          disabled={uploading}
+          className="hidden"
+        />
+      </label>
+      <p className="text-[10px] text-slate-400">{fr.fleet.upload.hint}</p>
+    </Field>
   )
 }
 

@@ -145,6 +145,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
           expiresAt: data.insuranceExpiresAt,
           premiumAmount: decimal(data.insurancePremiumAmount),
           currency: data.insuranceCurrency ?? "MAD",
+          documentUrl: data.insuranceDocumentUrl,
         },
       });
     }
@@ -157,6 +158,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
           issuedAt: data.registrationIssuedAt,
           expiresAt: data.registrationExpiresAt,
           issuingAuthority: data.registrationIssuingAuthority,
+          documentUrl: data.registrationDocumentUrl,
         },
       });
     }
@@ -170,6 +172,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
           expiresAt: data.vignetteExpiresAt,
           amount: decimal(data.vignetteAmount),
           currency: data.vignetteCurrency ?? "MAD",
+          documentUrl: data.vignetteDocumentUrl,
         },
       });
     }
@@ -184,6 +187,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
           center: data.inspectionCenter,
           cost: decimal(data.inspectionCost),
           currency: data.inspectionCurrency ?? "MAD",
+          documentUrl: data.inspectionDocumentUrl,
         },
       });
     }
@@ -200,7 +204,25 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
 
   try {
     const context = await getActionContext(PERMISSIONS.FLEET_EDIT);
-    const { vehicleId, mileage, categoryName, ...data } = parsed.data;
+    const {
+      vehicleId,
+      mileage,
+      categoryName,
+      vignetteTaxYear,
+      vignettePaidAt,
+      vignetteExpiresAt,
+      vignetteAmount,
+      vignetteCurrency,
+      vignetteDocumentUrl,
+      inspectionInspectedAt,
+      inspectionExpiresAt,
+      inspectionResult,
+      inspectionCenter,
+      inspectionCost,
+      inspectionCurrency,
+      inspectionDocumentUrl,
+      ...data
+    } = parsed.data;
     const category = await resolveCategoryId({
       companyId: context.companyId,
       categoryId: data.categoryId,
@@ -217,6 +239,35 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       await createVehicleMileageLogService({
         context,
         data: { vehicleId, mileage, recordedAt: new Date(), source: "manual" },
+      });
+    }
+    if (vignetteTaxYear && vignettePaidAt && vignetteExpiresAt) {
+      await createVehicleVignetteService({
+        context,
+        data: {
+          vehicleId,
+          taxYear: vignetteTaxYear,
+          paidAt: vignettePaidAt,
+          expiresAt: vignetteExpiresAt,
+          amount: decimal(vignetteAmount),
+          currency: vignetteCurrency ?? "MAD",
+          documentUrl: vignetteDocumentUrl,
+        },
+      });
+    }
+    if (inspectionInspectedAt && inspectionExpiresAt) {
+      await createVehicleInspectionService({
+        context,
+        data: {
+          vehicleId,
+          inspectedAt: inspectionInspectedAt,
+          expiresAt: inspectionExpiresAt,
+          result: inspectionResult ?? "pass",
+          center: inspectionCenter,
+          cost: decimal(inspectionCost),
+          currency: inspectionCurrency ?? "MAD",
+          documentUrl: inspectionDocumentUrl,
+        },
       });
     }
     revalidatePath("/cars");

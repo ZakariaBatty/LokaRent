@@ -1,6 +1,6 @@
 import { FuelType, Transmission, VehicleStatus } from "@lokarent/db"
 import { requireCurrentAgencyContext } from "@/shared/auth"
-import { PERMISSIONS, requirePermission } from "@/shared/permissions"
+import { PERMISSIONS, can, requirePermission } from "@/shared/permissions"
 import { listVehicleCategoriesService, listVehiclesService } from "@/modules/cars/services/cars.service"
 import { mapVehicleToCar } from "@/modules/cars/mappers/car.mapper"
 import { CarsPageClient } from "@/components/cars/cars-page-client"
@@ -71,7 +71,10 @@ export default async function CarsPage({ searchParams }: { searchParams: SearchP
   const status = parseUiStatus(first(params.status))
   const category = parseCategory(first(params.category))
   const page = parsePage(first(params.page))
-  const [categories] = await Promise.all([listVehicleCategoriesService(context.companyId)])
+  const [categories, canDelete] = await Promise.all([
+    listVehicleCategoriesService(context.companyId),
+    can(PERMISSIONS.FLEET_DELETE, context),
+  ])
 
   const result = await listVehiclesService({
     companyId: context.companyId,
@@ -95,6 +98,7 @@ export default async function CarsPage({ searchParams }: { searchParams: SearchP
       }}
       initialFilters={{ search, status, category }}
       categories={categories.map((item) => ({ id: item.id, name: item.name }))}
+      canDelete={canDelete}
     />
   )
 }

@@ -21,6 +21,7 @@ const optionalText = z
 
 const requiredText = z.string().trim().min(1);
 const optionalAmount = z.coerce.number().nonnegative().optional();
+const optionalDate = z.coerce.date().optional();
 
 export const vehicleIdSchema = z.object({
   vehicleId: z.string().uuid(),
@@ -42,6 +43,19 @@ export const updateVehicleSchema = z.object({
   status: vehicleStatusSchema,
   notes: optionalText,
   mileage: z.coerce.number().int().nonnegative().optional(),
+  vignetteTaxYear: z.coerce.number().int().min(2000).max(2100).optional(),
+  vignettePaidAt: optionalDate,
+  vignetteExpiresAt: optionalDate,
+  vignetteAmount: optionalAmount,
+  vignetteCurrency: optionalText,
+  vignetteDocumentUrl: optionalText,
+  inspectionInspectedAt: optionalDate,
+  inspectionExpiresAt: optionalDate,
+  inspectionResult: inspectionResultSchema.optional(),
+  inspectionCenter: optionalText,
+  inspectionCost: optionalAmount,
+  inspectionCurrency: optionalText,
+  inspectionDocumentUrl: optionalText,
 });
 
 export const updateVehicleCategorySchema = z.object({

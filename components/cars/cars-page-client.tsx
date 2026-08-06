@@ -3,17 +3,18 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
-import { Plus, Sparkles, Car as CarIcon } from "lucide-react"
+import { Plus, Car as CarIcon } from "lucide-react"
 import { toast } from "sonner"
 import { type Car, type CarStatus, type CarCategory } from "@/lib/cars-data"
 import type { CarListDto } from "@/modules/cars/dto/car-response.dto"
-import { createCarAction, updateCarAction } from "@/modules/cars/actions/create-car.action"
+import { createCarAction, deleteCarAction, updateCarAction } from "@/modules/cars/actions/create-car.action"
 import { mapUiFuel, mapUiStatus } from "@/modules/cars/mappers/car.mapper"
 import { CarsFilters } from "@/components/cars/cars-filters"
 import { CarCard } from "@/components/cars/car-card"
 import { CarListRow } from "@/components/cars/car-list-row"
 import { CarCompactRow } from "@/components/cars/car-compact-row"
 import { CarDetailPanel } from "@/components/cars/car-detail-panel"
+import { CarDeleteDialog } from "@/components/cars/car-delete-dialog"
 import { CarFormPanel, type CarFormDraft } from "@/components/cars/car-form-panel"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
@@ -27,6 +28,7 @@ type Props = {
     category: CarCategory | "all"
   }
   categories: { id: string; name: string }[]
+  canDelete: boolean
 }
 
 const MESSAGES: Record<string, string> = {
@@ -98,16 +100,19 @@ function toActionInput(draft: CarFormDraft, categories: Props["categories"], veh
     insurancePolicyNumber: draft.insuranceCompany ? draft.plate : undefined,
     insuranceStartsAt: draft.insuranceEnd ? new Date().toISOString() : undefined,
     insuranceExpiresAt: draft.insuranceEnd || undefined,
+    insuranceDocumentUrl: draft.insuranceDocumentUrl || undefined,
     vignetteTaxYear: draft.vignetteEnd ? new Date(draft.vignetteEnd).getFullYear() : undefined,
     vignettePaidAt: draft.vignetteEnd ? new Date().toISOString() : undefined,
     vignetteExpiresAt: draft.vignetteEnd || undefined,
+    vignetteDocumentUrl: draft.vignetteDocumentUrl || undefined,
     inspectionInspectedAt: draft.visiteNext ? new Date().toISOString() : undefined,
     inspectionExpiresAt: draft.visiteNext || undefined,
     inspectionResult: draft.visiteNext ? "pass" : undefined,
+    inspectionDocumentUrl: draft.inspectionDocumentUrl || undefined,
   }
 }
 
-export function CarsPageClient({ initialResult, initialFilters, categories: categoryRows }: Props) {
+export function CarsPageClient({ initialResult, initialFilters, categories: categoryRows, canDelete }: Props) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -127,6 +132,8 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
   const [view, setView] = useState<"grid" | "list">("grid")
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null)
   const [editingCar, setEditingCar] = useState<Car | null>(null)
+  const [deletingCar, setDeletingCar] = useState<Car | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [loadingRows, setLoadingRows] = useState(false)
 
   useEffect(() => {
@@ -170,15 +177,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
     () => cars.find((car) => car.id === selectedId) ?? null,
     [cars, selectedId],
   )
-  const visibleCars = smartFilters
-    ? [...cars].sort((a, b) => {
-        const profitA = (a.revenue - a.expenses) / Math.max(1, a.expenses)
-        const profitB = (b.revenue - b.expenses) / Math.max(1, b.expenses)
-        const availA = a.status === "disponible" ? 1 : 0
-        const availB = b.status === "disponible" ? 1 : 0
-        return profitB + availB * 0.5 - (profitA + availA * 0.5)
-      })
-    : cars
+  const visibleCars = cars
   const hasSelection = !!selectedCar
   const isLoading = loadingRows || isPending
 
@@ -206,6 +205,10 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
     setFormMode(null)
     setEditingCar(null)
   }
+  const openDelete = (car: Car) => {
+    setDeletingCar(car)
+    setDeleteOpen(true)
+  }
   const handleFormSubmit = async (draft: CarFormDraft) => {
     const result =
       formMode === "add"
@@ -218,6 +221,20 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
     }
     toast.success(formMode === "add" ? fr.fleet.vehicleAdded : fr.fleet.vehicleUpdated)
     closeForm()
+    router.refresh()
+    return true
+  }
+  const confirmDelete = async () => {
+    if (!deletingCar) return false
+    const result = await deleteCarAction({ vehicleId: deletingCar.id })
+    if (!result.success) {
+      toast.error(actionMessage(result.messageKey))
+      return false
+    }
+
+    toast.success(fr.fleet.vehicleDeleted)
+    setDeleteOpen(false)
+    setSelectedId((current) => (current === deletingCar.id ? null : current))
     router.refresh()
     return true
   }
@@ -377,12 +394,6 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
             </motion.div>
           )}
 
-          {smartFilters && !hasSelection && visibleCars.length > 0 && (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-violet-200 bg-gradient-to-r from-violet-50 to-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-violet-700">
-              <Sparkles className="h-3 w-3" />
-              Tri intelligent activé · les véhicules les plus rentables sont en haut
-            </div>
-          )}
         </motion.div>
 
         <AnimatePresence>
@@ -400,6 +411,8 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
                 car={selectedCar}
                 onClose={() => setSelectedId(null)}
                 onEdit={() => openEditForm(selectedCar)}
+                onDelete={() => openDelete(selectedCar)}
+                canDelete={canDelete}
               />
             </motion.div>
           )}
@@ -435,6 +448,12 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
           </>
         )}
       </AnimatePresence>
+      <CarDeleteDialog
+        open={deleteOpen}
+        car={deletingCar}
+        onClose={() => setDeleteOpen(false)}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

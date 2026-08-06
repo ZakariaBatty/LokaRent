@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { motion } from "motion/react"
 import {
   ShieldCheck,
@@ -11,7 +10,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
-  Upload,
   CalendarDays,
 } from "lucide-react"
 import { type Car, type DocumentStatus, formatDate, formatMAD } from "@/lib/cars-data"
@@ -124,8 +122,7 @@ function DataRow({ label, value }: { label: string; value: string }) {
 }
 
 export function DocumentsTab({ car }: { car: Car }) {
-  const [dragOver, setDragOver] = useState(false)
-  const [uploaded, setUploaded] = useState(car.carteGriseUploaded)
+  const uploaded = car.carteGriseUploaded
 
   const docs = [
     { status: car.insurance.status, label: "Assurance" },
@@ -241,31 +238,6 @@ export function DocumentsTab({ car }: { car: Car }) {
               </div>
             </div>
           </div>
-          <button
-            onDragOver={(e) => {
-              e.preventDefault()
-              setDragOver(true)
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault()
-              setDragOver(false)
-              setUploaded(true)
-            }}
-            onClick={() => setUploaded(true)}
-            className={cn(
-              "mt-4 flex w-full flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed py-5 text-xs font-medium transition",
-              dragOver
-                ? "border-indigo-400 bg-indigo-50 text-indigo-700"
-                : uploaded
-                  ? "border-emerald-200 bg-emerald-50/60 text-emerald-700"
-                  : "border-slate-300 bg-slate-50/60 text-slate-500 hover:border-slate-400 hover:bg-slate-100",
-            )}
-          >
-            <Upload className="h-4 w-4" />
-            {uploaded ? "Remplacer le document" : "Glisser ou cliquer pour ajouter"}
-            <span className="text-[10px] font-normal text-slate-400">PDF, JPG, PNG jusqu&apos;à 10 MB</span>
-          </button>
         </div>
 
         {/* Credit auto */}

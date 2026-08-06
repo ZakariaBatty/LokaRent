@@ -25,20 +25,20 @@ const vehicleListInclude = {
   category: true,
   vehicleInsurances: {
     where: { deletedAt: null },
-    orderBy: { expiresAt: "desc" },
+    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
     take: 1,
   },
   vehicleRegistrations: {
-    orderBy: { expiresAt: "desc" },
+    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
     take: 1,
   },
   vehicleVignettes: {
-    orderBy: { expiresAt: "desc" },
+    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
     take: 1,
   },
   vehicleInspections: {
     where: { deletedAt: null },
-    orderBy: { expiresAt: "desc" },
+    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
     take: 1,
   },
   vehicleMileageLogs: {

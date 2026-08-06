@@ -3,8 +3,9 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import { Check, Pencil, Gauge, Fuel, Users, Calendar, Palette, Tag } from "lucide-react"
-import { type Car, type CarStatus, statusConfig, formatMAD } from "@/lib/cars-data"
+import { type Car, type CarStatus, statusConfig } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 const allStatuses: CarStatus[] = ["disponible", "louee", "maintenance", "hors_service"]
 
@@ -116,18 +117,12 @@ function EditableField({
 export function InfosTab({ car }: { car: Car }) {
   const [status, setStatus] = useState<CarStatus>(car.status)
   const [km, setKm] = useState(car.km)
-  const [priceDay, setPriceDay] = useState(car.priceDay)
-  const [priceWeek, setPriceWeek] = useState(car.priceWeek)
-  const [priceMonth, setPriceMonth] = useState(car.priceMonth)
   const [statusSaved, setStatusSaved] = useState(false)
 
   useEffect(() => {
     setStatus(car.status)
     setKm(car.km)
-    setPriceDay(car.priceDay)
-    setPriceWeek(car.priceWeek)
-    setPriceMonth(car.priceMonth)
-  }, [car.id, car.status, car.km, car.priceDay, car.priceWeek, car.priceMonth])
+  }, [car.id, car.status, car.km])
 
   const handleStatusChange = (s: CarStatus) => {
     setStatus(s)
@@ -219,34 +214,9 @@ export function InfosTab({ car }: { car: Car }) {
 
       {/* Pricing */}
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900">Grille tarifaire</h3>
-          <p className="text-[11px] text-slate-500">Cliquez sur un montant pour modifier.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-          <EditableField label="Prix jour" value={priceDay} suffix="DH/jour" onChange={setPriceDay} />
-          <EditableField label="Prix semaine" value={priceWeek} suffix="DH/sem" onChange={setPriceWeek} />
-          <EditableField label="Prix mois" value={priceMonth} suffix="DH/mois" onChange={setPriceMonth} />
-        </div>
-        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remise semaine</p>
-            <p className="text-sm font-semibold text-slate-900">
-              {Math.round((1 - priceWeek / 7 / priceDay) * 100)}%{" "}
-              <span className="text-[11px] font-normal text-slate-500">
-                vs {formatMAD(priceDay * 7)}/7j
-              </span>
-            </p>
-          </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remise mois</p>
-            <p className="text-sm font-semibold text-slate-900">
-              {Math.round((1 - priceMonth / 30 / priceDay) * 100)}%{" "}
-              <span className="text-[11px] font-normal text-slate-500">
-                vs {formatMAD(priceDay * 30)}/30j
-              </span>
-            </p>
-          </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
+          <p className="text-xs font-semibold text-amber-800">{fr.fleet.pricing.unsupportedTitle}</p>
+          <p className="mt-0.5 text-[11px] text-amber-700">{fr.fleet.pricing.unsupportedDescription}</p>
         </div>
       </section>
     </div>
