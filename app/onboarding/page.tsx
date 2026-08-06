@@ -2,7 +2,8 @@ import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard"
 import { getAgencyService, getCompanyService } from "@/modules/workspace/agencies/services/agencies.service"
-import { getCurrentAgencyContext, getCurrentCompanyContext } from "@/shared/auth"
+import { listUserAgencyMembershipsService } from "@/modules/workspace/members/services/members.service"
+import { getCurrentCompanyContext } from "@/shared/auth"
 import { isAppError } from "@/shared/errors"
 
 export const metadata = {
@@ -25,12 +26,18 @@ export default async function OnboardingPage() {
     redirect("/blocked-account")
   }
 
-  const agencyContext = await getCurrentAgencyContext()
-  if (!agencyContext) redirect("/login")
+  const agencyMemberships = await listUserAgencyMembershipsService({
+    companyId: context.companyId,
+    userId: context.userId,
+  })
+  const agencyMembership = agencyMemberships.find(
+    (membership) => membership.status === "active" && membership.agency.status === "active",
+  )
+  if (!agencyMembership) return <ProvisioningRetryState />
 
   const [company, agency] = await Promise.all([
     getCompanyService({ companyId: context.companyId }),
-    getAgencyService({ companyId: context.companyId, agencyId: agencyContext.agencyId }),
+    getAgencyService({ companyId: context.companyId, agencyId: agencyMembership.agencyId }),
   ])
 
   return (
@@ -64,7 +71,7 @@ export default async function OnboardingPage() {
               typeof agency.address.city === "string"
                 ? agency.address.city
                 : "",
-            isPrimaryConfirmed: agencyContext.isPrimaryAgency,
+            isPrimaryConfirmed: agencyMembership.isPrimary,
           },
         }}
       />

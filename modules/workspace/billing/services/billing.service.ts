@@ -1,4 +1,9 @@
-import { createNotFoundError, createValidationError, publishDomainEvent } from "@/shared";
+import {
+  createNotFoundError,
+  createPlanLimitExceededError,
+  createValidationError,
+  publishDomainEvent,
+} from "@/shared";
 import {
   findActivePlans,
   findAgencySettings,
@@ -25,6 +30,40 @@ export async function getPlanService(planId: string) {
 
 export async function getPlanLimitService(input: { planId: string; limitKey: string }) {
   return findPlanLimit(input);
+}
+
+export function assertPlanLimit(input: {
+  planId: string;
+  limitKey: string;
+  limitValue?: number | bigint | null;
+  currentUsage: number;
+  requestedIncrement?: number;
+}) {
+  if (input.limitValue === undefined || input.limitValue === null) return;
+
+  const limitValue = Number(input.limitValue);
+  if (limitValue === -1) return;
+
+  const requestedIncrement = input.requestedIncrement ?? 1;
+  if (input.currentUsage + requestedIncrement > limitValue) {
+    throw createPlanLimitExceededError({
+      planId: input.planId,
+      limitKey: input.limitKey,
+      limitValue,
+      currentUsage: input.currentUsage,
+      requestedIncrement,
+    });
+  }
+}
+
+export async function enforcePlanLimitService(input: {
+  planId: string;
+  limitKey: string;
+  currentUsage: number;
+  requestedIncrement?: number;
+}) {
+  const limit = await findPlanLimit({ planId: input.planId, limitKey: input.limitKey });
+  assertPlanLimit({ ...input, limitValue: limit?.limitValue });
 }
 
 export async function hasPlanFeatureService(input: { planId: string; featureKey: string }) {
@@ -105,6 +144,8 @@ export const billingService = {
   listPlansService,
   getPlanService,
   getPlanLimitService,
+  assertPlanLimit,
+  enforcePlanLimitService,
   hasPlanFeatureService,
   listCompanySettingsService,
   listAgencySettingsService,

@@ -258,6 +258,7 @@ export default {
   },
 
   errors: {
+    PLAN_LIMIT_EXCEEDED: 'Limite du plan dépassée',
     PERMISSION_OVERRIDE_NOT_FOUND: 'Dérogation de permission introuvable',
     PERMISSION_OVERRIDE_SCOPE_INVALID: 'Le périmètre de la dérogation de permission est invalide',
     PERMISSION_DENIED_BY_OVERRIDE: 'Permission refusée par une dérogation',
@@ -320,13 +321,32 @@ export default {
       title: 'Données initiales optionnelles',
       description: 'Ajoutez des données de départ maintenant ou laissez vide pour continuer.',
       customerTitle: 'Premier client',
+      customerType: 'Type de client',
       customerName: 'Nom complet',
       customerPhone: 'Téléphone',
       customerEmail: 'E-mail',
+      vehicleFuelType: 'Carburant',
+      vehicleTransmission: 'Transmission',
+    },
+    customerType: {
+      individual: 'Particulier',
+      company: 'Entreprise',
+    },
+    vehicleFuel: {
+      petrol: 'Essence',
+      diesel: 'Diesel',
+      electric: 'Électrique',
+      hybrid: 'Hybride',
+      lpg: 'GPL',
+    },
+    vehicleTransmission: {
+      manual: 'Manuelle',
+      automatic: 'Automatique',
     },
     errors: {
       validation: 'Veuillez vérifier les champs d’onboarding.',
       forbidden: 'Vous n’êtes pas autorisé à terminer l’onboarding.',
+      planLimitExceeded: 'La limite de ce plan serait dépassée. Réduisez les données initiales ou changez de plan.',
       alreadyComplete: 'L’onboarding est déjà terminé.',
       generic: 'Impossible de terminer l’onboarding pour le moment.',
     },

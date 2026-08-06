@@ -7,6 +7,7 @@ import {
   writeAuditLog,
 } from "@/shared";
 import {
+  countVehicles,
   createAvailabilityBlock,
   createVehicle,
   createVehicleCategory,
@@ -28,6 +29,8 @@ import {
   updateVehicleMaintenance,
   type VehicleListInput,
 } from "../repositories/cars.repository";
+import { getCompanyService } from "@/modules/workspace/agencies/services/agencies.service";
+import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 
 export type FleetServiceContext = {
   companyId: string;
@@ -85,6 +88,17 @@ export async function createVehicleService(input: {
   data: VehicleCreateData;
   activityLogId?: string;
 }) {
+  const [company, currentVehicleCount] = await Promise.all([
+    getCompanyService({ companyId: input.context.companyId }),
+    countVehicles({ companyId: input.context.companyId }),
+  ]);
+  await enforcePlanLimitService({
+    planId: company.planId,
+    limitKey: "max_vehicles",
+    currentUsage: currentVehicleCount,
+    requestedIncrement: 1,
+  });
+
   const vehicle = await createVehicle({
     ...input.data,
     id: createId(),

@@ -1,8 +1,11 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 
 export type VehicleCategory = "Citadine" | "Berline" | "SUV" | "4x4" | "Utilitaire"
+export type OnboardingFuelType = "petrol" | "diesel" | "electric" | "hybrid" | "lpg"
+export type OnboardingTransmission = "manual" | "automatic"
+export type OnboardingCustomerType = "individual" | "company"
 
 export interface CompanyProfile {
   legalName: string
@@ -40,6 +43,8 @@ export interface OnboardingVehicle {
   annee: string
   immatriculation: string
   categorie: VehicleCategory | ""
+  fuelType: OnboardingFuelType | ""
+  transmission: OnboardingTransmission | ""
   prixJour: string
 }
 
@@ -60,6 +65,7 @@ export interface OnboardingSettings {
 }
 
 export interface OnboardingCustomer {
+  type: OnboardingCustomerType
   fullName: string
   phone: string
   email: string
@@ -95,6 +101,8 @@ const createEmptyVehicle = (): OnboardingVehicle => ({
   annee: new Date().getFullYear().toString(),
   immatriculation: "",
   categorie: "",
+  fuelType: "",
+  transmission: "",
   prixJour: "",
 })
 
@@ -134,6 +142,7 @@ export function OnboardingProvider({
     },
     vehicles: [createEmptyVehicle()],
     customer: {
+      type: "individual",
       fullName: "",
       phone: "",
       email: "",
@@ -146,20 +155,52 @@ export function OnboardingProvider({
       logo: null,
     },
   })
+  const setCompany = useCallback((company: CompanyProfile) => {
+    setState((current) => ({ ...current, company }))
+  }, [])
+  const setAgency = useCallback((agency: AgencyProfile) => {
+    setState((current) => ({ ...current, agency }))
+  }, [])
+  const setPreferences = useCallback((preferences: BusinessPreferences) => {
+    setState((current) => ({ ...current, preferences }))
+  }, [])
+  const setVehicles = useCallback((vehicles: OnboardingVehicle[]) => {
+    setState((current) => ({ ...current, vehicles }))
+  }, [])
+  const setCustomer = useCallback((customer: OnboardingCustomer) => {
+    setState((current) => ({ ...current, customer }))
+  }, [])
+  const setPricing = useCallback((pricing: CategoryPricing[]) => {
+    setState((current) => ({ ...current, pricing }))
+  }, [])
+  const setSettings = useCallback((settings: OnboardingSettings) => {
+    setState((current) => ({ ...current, settings }))
+  }, [])
+  const value = useMemo(
+    () => ({
+      state,
+      setCompany,
+      setAgency,
+      setPreferences,
+      setVehicles,
+      setCustomer,
+      setPricing,
+      setSettings,
+    }),
+    [
+      state,
+      setCompany,
+      setAgency,
+      setPreferences,
+      setVehicles,
+      setCustomer,
+      setPricing,
+      setSettings,
+    ],
+  )
 
   return (
-    <OnboardingContext.Provider
-      value={{
-        state,
-        setCompany: (company) => setState((s) => ({ ...s, company })),
-        setAgency: (agency) => setState((s) => ({ ...s, agency })),
-        setPreferences: (preferences) => setState((s) => ({ ...s, preferences })),
-        setVehicles: (vehicles) => setState((s) => ({ ...s, vehicles })),
-        setCustomer: (customer) => setState((s) => ({ ...s, customer })),
-        setPricing: (pricing) => setState((s) => ({ ...s, pricing })),
-        setSettings: (settings) => setState((s) => ({ ...s, settings })),
-      }}
-    >
+    <OnboardingContext.Provider value={value}>
       {children}
     </OnboardingContext.Provider>
   )

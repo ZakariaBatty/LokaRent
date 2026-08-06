@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
 import { ArrowLeft, ArrowRight, Building2, Check, Loader2, Settings2, Store, Users } from "lucide-react"
@@ -24,9 +25,11 @@ import {
   type VehicleCategory,
 } from "./onboarding-context"
 import { ProgressHeader } from "./progress-header"
-import { StepFleet } from "./step-fleet"
 
 const TOTAL_STEPS = 4
+const StepFleet = dynamic(() => import("./step-fleet").then((module) => module.StepFleet), {
+  ssr: false,
+})
 
 type InitialData = Partial<Pick<OnboardingState, "company" | "agency">>
 
@@ -70,6 +73,8 @@ function WizardInner() {
             year: vehicle.annee,
             plate: vehicle.immatriculation,
             category: vehicle.categorie,
+            fuelType: vehicle.fuelType,
+            transmission: vehicle.transmission,
             dailyPrice: vehicle.prixJour,
           })),
           customer: state.customer,
@@ -371,7 +376,16 @@ function OptionalDataStep() {
       <StepFleet />
       <div className="rounded-2xl border border-white/10 bg-card/40 p-5">
         <h3 className="text-base font-medium text-foreground">{t("onboarding.optional.customerTitle")}</h3>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+        <div className="mt-4 grid gap-4 sm:grid-cols-4">
+          <Field label={t("onboarding.optional.customerType")}>
+            <Select value={customer.type} onValueChange={(value: "individual" | "company") => setCustomer({ ...customer, type: value })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="individual">{t("onboarding.customerType.individual")}</SelectItem>
+                <SelectItem value="company">{t("onboarding.customerType.company")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
           <Field label={t("onboarding.optional.customerName")}>
             <Input value={customer.fullName} onChange={(event) => setCustomer({ ...customer, fullName: event.target.value })} />
           </Field>

@@ -43,11 +43,14 @@ export const completeOnboardingSchema = z.object({
           year: z.coerce.number().int().min(1980).max(2100).optional(),
           plate: z.string().trim().max(40),
           category: z.string().trim().max(80),
+          fuelType: z.enum(["petrol", "diesel", "electric", "hybrid", "lpg"]).optional().or(z.literal("")),
+          transmission: z.enum(["manual", "automatic"]).optional().or(z.literal("")),
           dailyPrice: z.coerce.number().min(0).optional(),
         }),
       )
-      .max(3),
+      .max(1000),
     customer: z.object({
+      type: z.enum(["individual", "company"]),
       fullName: z.string().trim().max(160),
       phone: z.string().trim().max(30),
       email: z.string().trim().email().optional().or(z.literal("")).transform((value) => value || undefined),

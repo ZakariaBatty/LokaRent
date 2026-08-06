@@ -258,6 +258,7 @@ export default {
   },
 
   errors: {
+    PLAN_LIMIT_EXCEEDED: 'Plan limit exceeded',
     PERMISSION_OVERRIDE_NOT_FOUND: 'Permission override not found',
     PERMISSION_OVERRIDE_SCOPE_INVALID: 'Permission override scope is invalid',
     PERMISSION_DENIED_BY_OVERRIDE: 'Permission denied by override',
@@ -320,13 +321,32 @@ export default {
       title: 'Optional initial data',
       description: 'Add starter data now or leave it blank and continue.',
       customerTitle: 'First customer',
+      customerType: 'Customer type',
       customerName: 'Full name',
       customerPhone: 'Phone',
       customerEmail: 'Email',
+      vehicleFuelType: 'Fuel type',
+      vehicleTransmission: 'Transmission',
+    },
+    customerType: {
+      individual: 'Individual',
+      company: 'Company',
+    },
+    vehicleFuel: {
+      petrol: 'Petrol',
+      diesel: 'Diesel',
+      electric: 'Electric',
+      hybrid: 'Hybrid',
+      lpg: 'LPG',
+    },
+    vehicleTransmission: {
+      manual: 'Manual',
+      automatic: 'Automatic',
     },
     errors: {
       validation: 'Please review the onboarding fields.',
       forbidden: 'You are not allowed to complete onboarding.',
+      planLimitExceeded: 'This plan limit would be exceeded. Reduce the starter data or upgrade the plan.',
       alreadyComplete: 'Onboarding is already complete.',
       generic: 'Unable to complete onboarding right now.',
     },

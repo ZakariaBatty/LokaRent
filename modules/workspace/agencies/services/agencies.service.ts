@@ -1,4 +1,5 @@
-import { createId, createNotFoundError, createValidationError, publishDomainEvent } from "@/shared";
+import { createId, createNotFoundError, publishDomainEvent } from "@/shared";
+import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 import {
   createAgency,
   createCompany,
@@ -98,12 +99,17 @@ export async function createAgencyService(
     maxAgencies?: number;
   },
 ) {
-  if (input.maxAgencies !== undefined && input.maxAgencies >= 0) {
-    const usage = await getCompanyUsageCounts(input.companyId);
-    if (usage.agencies >= input.maxAgencies) {
-      throw createValidationError("Company agency limit reached", usage);
-    }
-  }
+  const [company, usage] = await Promise.all([
+    getCompanyService({ companyId: input.companyId }),
+    getCompanyUsageCounts(input.companyId),
+  ]);
+  await enforcePlanLimitService({
+    planId: company.planId,
+    limitKey: "max_agencies",
+    currentUsage: usage.agencies,
+    requestedIncrement: 1,
+  });
+
   const agency = await createAgency({
     ...input.data,
     id: createId(),

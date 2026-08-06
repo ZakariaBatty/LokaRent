@@ -7,6 +7,7 @@ import {
   writeAuditLog,
 } from "@/shared";
 import {
+  countCustomers,
   createCustomer,
   createCustomerBlacklistEntry,
   createCustomerBusiness,
@@ -23,6 +24,8 @@ import {
   updateCustomer,
   type CustomerListInput,
 } from "../repositories/clients.repository";
+import { getCompanyService } from "@/modules/workspace/agencies/services/agencies.service";
+import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 
 export type CustomerServiceContext = {
   companyId: string;
@@ -60,6 +63,17 @@ export async function createCustomerService(input: {
   business?: CustomerBusinessCreateData;
   activityLogId?: string;
 }) {
+  const [company, currentCustomerCount] = await Promise.all([
+    getCompanyService({ companyId: input.context.companyId }),
+    countCustomers({ companyId: input.context.companyId }),
+  ]);
+  await enforcePlanLimitService({
+    planId: company.planId,
+    limitKey: "max_customers",
+    currentUsage: currentCustomerCount,
+    requestedIncrement: 1,
+  });
+
   const customer = await runInTransaction(async (tx) => {
     const customerId = createId();
     const created = await createCustomer(

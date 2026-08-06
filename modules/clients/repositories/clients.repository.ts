@@ -73,6 +73,38 @@ export async function paginateCustomers(input: CustomerListInput, db: DatabaseCl
   return { data, pagination: createPaginationMeta(pagination, total) };
 }
 
+export async function countCustomers(
+  input: { companyId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.customer.count({
+    where: {
+      companyId: input.companyId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
+export async function findCustomerByContact(
+  input: { companyId: string; agencyId: string; email?: string | null; phone?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  if (!input.email && !input.phone) return null;
+
+  return db.customer.findFirst({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      OR: [
+        ...(input.email ? [{ email: input.email }] : []),
+        ...(input.phone ? [{ phone: input.phone }] : []),
+      ],
+    },
+    include: { individual: true, business: true },
+  });
+}
+
 export async function createCustomer(
   data: Prisma.CustomerUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -256,6 +288,8 @@ export async function findCustomerReservationSummary(
 export const clientsRepository = {
   findCustomerById,
   paginateCustomers,
+  countCustomers,
+  findCustomerByContact,
   createCustomer,
   updateCustomer,
   softDeleteCustomer,

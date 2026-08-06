@@ -1,7 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { requireCurrentAgencyContext, requireCurrentCompanyContext } from "@/shared/auth";
+import { listUserAgencyMembershipsService } from "@/modules/workspace/members/services/members.service";
+import { requireCurrentCompanyContext } from "@/shared/auth";
 import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
 import { completeOnboardingService } from "../services/onboarding.service";
@@ -15,7 +16,6 @@ export async function completeOnboardingAction(
   input: unknown,
 ): Promise<CompleteOnboardingActionResult> {
   const companyContext = await requireCurrentCompanyContext();
-  const agencyContext = await requireCurrentAgencyContext();
 
   if (companyContext.companyStatus === "active") {
     redirect("/dashboard");
@@ -25,6 +25,17 @@ export async function completeOnboardingAction(
     companyContext.companyStatus === "cancelled"
   ) {
     redirect("/blocked-account");
+  }
+
+  const agencyMemberships = await listUserAgencyMembershipsService({
+    companyId: companyContext.companyId,
+    userId: companyContext.userId,
+  });
+  const agencyMembership = agencyMemberships.find(
+    (membership) => membership.status === "active" && membership.agency.status === "active",
+  );
+  if (!agencyMembership) {
+    return { success: false, messageKey: "onboarding.errors.validation" };
   }
 
   await requirePermission(PERMISSIONS.WORKSPACE_VIEW, companyContext);
@@ -38,7 +49,10 @@ export async function completeOnboardingAction(
     await completeOnboardingService({
       context: {
         ...companyContext,
-        ...agencyContext,
+        agencyId: agencyMembership.agencyId,
+        agencyMembershipId: agencyMembership.id,
+        agencyRoleId: agencyMembership.roleId,
+        isPrimaryAgency: agencyMembership.isPrimary,
       },
       data: parsed.data,
     });
@@ -48,8 +62,17 @@ export async function completeOnboardingAction(
     if (isAppError(error) && error.code === "FORBIDDEN") {
       return { success: false, messageKey: "onboarding.errors.forbidden" };
     }
+    if (isAppError(error) && error.code === "PLAN_LIMIT_EXCEEDED") {
+      return { success: false, messageKey: "onboarding.errors.planLimitExceeded" };
+    }
     if (isAppError(error) && error.code === "VALIDATION_ERROR") {
-      return { success: false, messageKey: "onboarding.errors.alreadyComplete" };
+      return {
+        success: false,
+        messageKey:
+          error.message === "Onboarding is already complete"
+            ? "onboarding.errors.alreadyComplete"
+            : "onboarding.errors.validation",
+      };
     }
     return { success: false, messageKey: "onboarding.errors.generic" };
   }

@@ -1,4 +1,6 @@
 import { createId, createNotFoundError, createValidationError, publishDomainEvent } from "@/shared";
+import { getCompanyService } from "@/modules/workspace/agencies/services/agencies.service";
+import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 import {
   createAgencyMembership,
   createCompanyMembership,
@@ -40,6 +42,17 @@ export async function listCompanyMembershipsService(input: {
 export async function createCompanyMembershipService(
   input: MemberActor & { companyId: string; data: CompanyMembershipCreateData },
 ) {
+  const [company, activeMembers] = await Promise.all([
+    getCompanyService({ companyId: input.companyId }),
+    listCompanyMemberships({ companyId: input.companyId }),
+  ]);
+  await enforcePlanLimitService({
+    planId: company.planId,
+    limitKey: "max_users",
+    currentUsage: activeMembers.length,
+    requestedIncrement: 1,
+  });
+
   const membership = await createCompanyMembership({
     ...input.data,
     id: createId(),

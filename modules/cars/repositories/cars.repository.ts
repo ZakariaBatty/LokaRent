@@ -67,6 +67,44 @@ export async function paginateVehicles(input: VehicleListInput, db: DatabaseClie
   return { data, pagination: createPaginationMeta(pagination, total) };
 }
 
+export async function countVehicles(
+  input: { companyId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicle.count({
+    where: {
+      companyId: input.companyId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
+export async function findVehicleByPlate(
+  input: { companyId: string; plate: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicle.findFirst({
+    where: {
+      companyId: input.companyId,
+      plate: input.plate,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
+export async function findVehicleCategoryByName(
+  input: { companyId: string; name: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleCategory.findFirst({
+    where: {
+      companyId: input.companyId,
+      name: input.name,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
 export async function listAvailableVehicles(
   input: { companyId: string; agencyId: string; startsAt?: Date; endsAt?: Date },
   db: DatabaseClient = prisma,
@@ -375,6 +413,9 @@ export async function updateAvailabilityBlock(
 export const carsRepository = {
   findVehicleById,
   paginateVehicles,
+  countVehicles,
+  findVehicleByPlate,
+  findVehicleCategoryByName,
   listAvailableVehicles,
   createVehicle,
   updateVehicle,
