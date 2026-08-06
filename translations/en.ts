@@ -159,6 +159,22 @@ export default {
     addVehicle: 'Add Vehicle',
     editVehicle: 'Edit Vehicle',
     deleteVehicle: 'Delete Vehicle',
+    vehicleAdded: 'Vehicle added',
+    vehicleUpdated: 'Vehicle updated',
+    errors: {
+      validation: 'Please review the vehicle fields.',
+      forbidden: 'You do not have permission to perform this fleet action.',
+      planLimitExceeded: 'This plan vehicle limit would be exceeded.',
+      duplicatePlate: 'A vehicle already uses this plate.',
+      duplicateCode: 'A vehicle already uses this internal code.',
+      invalidStatusTransition: 'This vehicle status change is not allowed.',
+      mileageCannotDecrease: 'Mileage cannot decrease.',
+      deleteBlocked: 'This vehicle has active reservations or contracts.',
+      categoryInUse: 'This category is used by active vehicles.',
+      invalidAvailabilityDates: 'The availability block date range is invalid.',
+      notFound: 'Vehicle not found.',
+      generic: 'Unable to save this fleet action right now.',
+    },
   },
 
   contracts: {

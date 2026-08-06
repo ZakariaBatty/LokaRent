@@ -43,9 +43,11 @@ The following phases are COMPLETE and MUST NOT be recreated unless explicitly re
 
 ✅ Clients CRUD
 
+✅ Cars CRUD
+
 Current implementation phase:
 
-➡ Cars CRUD
+➡ Drivers CRUD
 
 Upcoming phases:
 
@@ -498,9 +500,11 @@ Completed
 
 ✅ Clients CRUD
 
+✅ Cars CRUD
+
 Current
 
-➡ Cars CRUD
+➡ Drivers CRUD
 
 Next
 

@@ -159,6 +159,22 @@ export default {
     addVehicle: 'Ajouter un véhicule',
     editVehicle: 'Modifier le véhicule',
     deleteVehicle: 'Supprimer le véhicule',
+    vehicleAdded: 'Véhicule ajouté',
+    vehicleUpdated: 'Véhicule mis à jour',
+    errors: {
+      validation: 'Veuillez vérifier les informations du véhicule.',
+      forbidden: 'Vous n’avez pas la permission d’effectuer cette action flotte.',
+      planLimitExceeded: 'La limite de véhicules de ce plan serait dépassée.',
+      duplicatePlate: 'Un véhicule utilise déjà cette immatriculation.',
+      duplicateCode: 'Un véhicule utilise déjà cette référence interne.',
+      invalidStatusTransition: 'Ce changement de statut véhicule n’est pas autorisé.',
+      mileageCannotDecrease: 'Le kilométrage ne peut pas diminuer.',
+      deleteBlocked: 'Ce véhicule a des réservations ou contrats actifs.',
+      categoryInUse: 'Cette catégorie est utilisée par des véhicules actifs.',
+      invalidAvailabilityDates: 'La période d’indisponibilité est invalide.',
+      notFound: 'Véhicule introuvable.',
+      generic: 'Impossible d’enregistrer cette action flotte pour le moment.',
+    },
   },
 
   contracts: {

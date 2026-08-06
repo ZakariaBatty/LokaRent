@@ -1,4 +1,4 @@
-import { Prisma, VehicleStatus, prisma } from "@lokarent/db";
+import { FuelType, Prisma, Transmission, VehicleStatus, prisma } from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -11,9 +11,59 @@ export type VehicleListInput = PaginationInput & {
   agencyId: string;
   status?: VehicleStatus;
   categoryId?: string;
+  fuelType?: FuelType;
+  transmission?: Transmission;
+  availableFrom?: Date;
+  availableTo?: Date;
   search?: string;
   includeDeleted?: boolean;
+  orderBy?: "createdAt" | "code" | "plate" | "brand" | "updatedAt";
+  direction?: "asc" | "desc";
 };
+
+const vehicleListInclude = {
+  category: true,
+  vehicleInsurances: {
+    where: { deletedAt: null },
+    orderBy: { expiresAt: "desc" },
+    take: 1,
+  },
+  vehicleRegistrations: {
+    orderBy: { expiresAt: "desc" },
+    take: 1,
+  },
+  vehicleVignettes: {
+    orderBy: { expiresAt: "desc" },
+    take: 1,
+  },
+  vehicleInspections: {
+    where: { deletedAt: null },
+    orderBy: { expiresAt: "desc" },
+    take: 1,
+  },
+  vehicleMileageLogs: {
+    orderBy: { recordedAt: "desc" },
+    take: 1,
+  },
+  vehicleMaintenances: {
+    where: { deletedAt: null },
+    orderBy: { performedAt: "desc" },
+    take: 5,
+  },
+  vehicleAvailabilityBlocks: {
+    where: { deletedAt: null },
+    orderBy: { startsAt: "desc" },
+    take: 5,
+  },
+  reservations: {
+    where: { deletedAt: null },
+    orderBy: { startsAt: "desc" },
+    take: 5,
+    include: { customer: { include: { individual: true, business: true } } },
+  },
+} satisfies Prisma.VehicleInclude;
+
+export type VehicleWithFleetDetails = Prisma.VehicleGetPayload<{ include: typeof vehicleListInclude }>;
 
 function vehicleWhere(input: VehicleListInput): Prisma.VehicleWhereInput {
   return {
@@ -21,7 +71,29 @@ function vehicleWhere(input: VehicleListInput): Prisma.VehicleWhereInput {
     agencyId: input.agencyId,
     status: input.status,
     categoryId: input.categoryId,
+    fuelType: input.fuelType,
+    transmission: input.transmission,
     ...(input.includeDeleted ? {} : { deletedAt: null }),
+    ...(input.availableFrom && input.availableTo
+      ? {
+          status: VehicleStatus.available,
+          reservations: {
+            none: {
+              deletedAt: null,
+              status: { in: ["confirmed", "active"] },
+              startsAt: { lt: input.availableTo },
+              endsAt: { gt: input.availableFrom },
+            },
+          },
+          vehicleAvailabilityBlocks: {
+            none: {
+              deletedAt: null,
+              startsAt: { lt: input.availableTo },
+              endsAt: { gt: input.availableFrom },
+            },
+          },
+        }
+      : {}),
     ...(input.search
       ? {
           OR: [
@@ -46,18 +118,20 @@ export async function findVehicleById(
       agencyId: input.agencyId,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
-    include: { category: true },
+    include: vehicleListInclude,
   });
 }
 
 export async function paginateVehicles(input: VehicleListInput, db: DatabaseClient = prisma) {
   const pagination = getPagination(input);
   const where = vehicleWhere(input);
+  const orderField = input.orderBy ?? "createdAt";
+  const direction = input.direction ?? "desc";
   const [data, total] = await Promise.all([
     db.vehicle.findMany({
       where,
-      include: { category: true },
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      include: vehicleListInclude,
+      orderBy: [{ [orderField]: direction }, { id: "asc" }],
       skip: pagination.skip,
       take: pagination.take,
     }),
@@ -87,6 +161,19 @@ export async function findVehicleByPlate(
     where: {
       companyId: input.companyId,
       plate: input.plate,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
+export async function findVehicleByCode(
+  input: { companyId: string; code: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicle.findFirst({
+    where: {
+      companyId: input.companyId,
+      code: input.code,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
   });
@@ -135,7 +222,7 @@ export async function listAvailableVehicles(
           }
         : {}),
     },
-    include: { category: true },
+    include: vehicleListInclude,
     orderBy: { code: "asc" },
   });
 }
@@ -196,6 +283,35 @@ export async function listVehicleCategories(companyId: string, db: DatabaseClien
   });
 }
 
+export async function updateVehicleCategory(
+  input: { companyId: string; categoryId: string; data: Prisma.VehicleCategoryUncheckedUpdateInput },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleCategory.updateMany({
+    where: { id: input.categoryId, companyId: input.companyId, deletedAt: null },
+    data: input.data,
+  });
+}
+
+export async function softDeleteVehicleCategory(
+  input: { companyId: string; categoryId: string; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleCategory.updateMany({
+    where: { id: input.categoryId, companyId: input.companyId, deletedAt: null },
+    data: { deletedAt: new Date(), deletedBy: input.deletedBy ?? null },
+  });
+}
+
+export async function countActiveVehiclesByCategory(
+  input: { companyId: string; categoryId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicle.count({
+    where: { companyId: input.companyId, categoryId: input.categoryId, deletedAt: null },
+  });
+}
+
 export async function createVehicleCategory(
   data: Prisma.VehicleCategoryUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -242,6 +358,21 @@ export async function createVehicleInsurance(
   return db.vehicleInsurance.create({ data });
 }
 
+export async function updateVehicleInsurance(
+  input: {
+    companyId: string;
+    agencyId: string;
+    insuranceId: string;
+    data: Prisma.VehicleInsuranceUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleInsurance.updateMany({
+    where: { id: input.insuranceId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    data: input.data,
+  });
+}
+
 export async function listVehicleInspections(
   input: { companyId: string; agencyId: string; vehicleId: string; includeDeleted?: boolean },
   db: DatabaseClient = prisma,
@@ -262,6 +393,21 @@ export async function createVehicleInspection(
   db: DatabaseClient = prisma,
 ) {
   return db.vehicleInspection.create({ data });
+}
+
+export async function updateVehicleInspection(
+  input: {
+    companyId: string;
+    agencyId: string;
+    inspectionId: string;
+    data: Prisma.VehicleInspectionUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleInspection.updateMany({
+    where: { id: input.inspectionId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    data: input.data,
+  });
 }
 
 export async function listVehicleVignettes(
@@ -320,6 +466,36 @@ export async function updateVehicleMaintenance(
       deletedAt: null,
     },
     data: input.data,
+  });
+}
+
+export async function countBlockingVehicleReservations(
+  input: { companyId: string; agencyId: string; vehicleId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.count({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId,
+      deletedAt: null,
+      status: { in: ["enquiry", "confirmed", "active"] },
+    },
+  });
+}
+
+export async function countBlockingVehicleContracts(
+  input: { companyId: string; agencyId: string; vehicleId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.contract.count({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId,
+      deletedAt: null,
+      status: { in: ["draft", "active", "disputed"] },
+    },
   });
 }
 
@@ -415,6 +591,7 @@ export const carsRepository = {
   paginateVehicles,
   countVehicles,
   findVehicleByPlate,
+  findVehicleByCode,
   findVehicleCategoryByName,
   listAvailableVehicles,
   createVehicle,
@@ -423,17 +600,24 @@ export const carsRepository = {
   restoreVehicle,
   listVehicleCategories,
   createVehicleCategory,
+  updateVehicleCategory,
+  softDeleteVehicleCategory,
+  countActiveVehiclesByCategory,
   listVehicleRegistrations,
   createVehicleRegistration,
   listVehicleInsurances,
   createVehicleInsurance,
+  updateVehicleInsurance,
   listVehicleInspections,
   createVehicleInspection,
+  updateVehicleInspection,
   listVehicleVignettes,
   createVehicleVignette,
   listVehicleMaintenances,
   createVehicleMaintenance,
   updateVehicleMaintenance,
+  countBlockingVehicleReservations,
+  countBlockingVehicleContracts,
   createVehicleMileageLog,
   findCurrentVehicleMileage,
   listAvailabilityBlocks,

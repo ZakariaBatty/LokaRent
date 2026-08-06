@@ -84,7 +84,7 @@ export function CarFormPanel({
   mode: "add" | "edit"
   car?: Car | null
   onClose: () => void
-  onSubmit: (draft: CarFormDraft) => void
+  onSubmit: (draft: CarFormDraft) => Promise<boolean>
 }) {
   const [draft, setDraft] = useState<CarFormDraft>(() => buildDraft(car))
   const [errors, setErrors] = useState<Errors>({})
@@ -126,14 +126,15 @@ export function CarFormPanel({
     return Object.keys(e).length === 0
   }
 
-  function handleSubmit(ev: React.FormEvent) {
+  async function handleSubmit(ev: React.FormEvent) {
     ev.preventDefault()
     if (!validate()) return
     setSaving(true)
-    setTimeout(() => {
+    try {
+      await onSubmit(draft)
+    } finally {
       setSaving(false)
-      onSubmit(draft)
-    }, 700)
+    }
   }
 
   function handlePhotos(ev: React.ChangeEvent<HTMLInputElement>) {
