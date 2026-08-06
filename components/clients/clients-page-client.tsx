@@ -21,6 +21,7 @@ import {
   type ClientFormValues,
 } from "@/components/clients/client-form-dialog"
 import { ClientDeleteDialog } from "@/components/clients/client-delete-dialog"
+import { Skeleton } from "@/components/ui/skeleton"
 
 type Props = {
   initialResult: ClientListDto
@@ -91,15 +92,18 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
   const [editingClient, setEditingClient] = useState<Client | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deletingClient, setDeletingClient] = useState<Client | null>(null)
+  const [isTableLoading, setIsTableLoading] = useState(false)
 
   useEffect(() => {
     if (lastRequestedQueryRef.current === currentQueryString) {
       lastRequestedQueryRef.current = null
+      setIsTableLoading(false)
     }
   }, [currentQueryString])
 
   useEffect(() => {
     setClients(initialResult.data)
+    setIsTableLoading(false)
     setSelectedId((current) =>
       current && initialResult.data.some((client) => client.id === current) ? current : null,
     )
@@ -122,6 +126,7 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
       }
 
       lastRequestedQueryRef.current = nextQueryString
+      setIsTableLoading(true)
       startTransition(() => {
         router.replace(`${pathname}${nextQueryString ? `?${nextQueryString}` : ""}`, {
           scroll: false,
@@ -194,6 +199,7 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
 
   const hasSelection = !!selectedClient
   const total = initialResult.pagination.total
+  const tableLoading = isTableLoading || isPending
 
   return (
     <div className="mx-auto max-w-[1600px]">
@@ -276,7 +282,7 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
             )}
           </AnimatePresence>
 
-          {clients.length === 0 ? (
+          {clients.length === 0 && !tableLoading ? (
             <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/40 p-10 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <Users className="h-6 w-6" />
@@ -333,23 +339,26 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  <AnimatePresence initial={false}>
-                    {clients.map((client) => (
-                      <ClientRow
-                        key={client.id}
-                        client={client}
-                        selected={client.id === selectedId}
-                        onSelect={() => setSelectedId(client.id)}
-                        onEdit={() => openEdit(client)}
-                        onDelete={() => openDelete(client)}
-                      />
-                    ))}
-                  </AnimatePresence>
+                  {tableLoading ? (
+                    <ClientTableSkeletonRows />
+                  ) : (
+                    <AnimatePresence initial={false}>
+                      {clients.map((client) => (
+                        <ClientRow
+                          key={client.id}
+                          client={client}
+                          selected={client.id === selectedId}
+                          onSelect={() => setSelectedId(client.id)}
+                          onEdit={() => openEdit(client)}
+                          onDelete={() => openDelete(client)}
+                        />
+                      ))}
+                    </AnimatePresence>
+                  )}
                 </tbody>
               </table>
             </div>
           )}
-          {isPending && <p className="mt-3 text-xs font-medium text-slate-400">Chargement…</p>}
         </motion.div>
 
         <AnimatePresence>
@@ -388,5 +397,46 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
         onConfirm={confirmDelete}
       />
     </div>
+  )
+}
+
+function ClientTableSkeletonRows() {
+  return (
+    <>
+      {Array.from({ length: 8 }, (_, index) => (
+        <tr key={index} className="border-b border-slate-100 last:border-0">
+          <td className="py-3 pl-5 pr-3">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-9 w-9 rounded-xl" />
+              <div className="space-y-2">
+                <Skeleton className="h-3.5 w-32" />
+                <Skeleton className="h-3 w-20" />
+              </div>
+            </div>
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="h-3.5 w-28" />
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="h-3.5 w-24" />
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="mx-auto h-3.5 w-10" />
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="ml-auto h-3.5 w-20" />
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="h-3.5 w-20" />
+          </td>
+          <td className="py-3 px-3">
+            <Skeleton className="h-6 w-20 rounded-full" />
+          </td>
+          <td className="py-3 pl-3 pr-5">
+            <Skeleton className="ml-auto h-8 w-8 rounded-lg" />
+          </td>
+        </tr>
+      ))}
+    </>
   )
 }

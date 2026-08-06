@@ -11,11 +11,40 @@ export type CustomerListInput = PaginationInput & {
   agencyId: string;
   status?: CustomerStatus;
   type?: CustomerType;
+  nationality?: string;
+  nationalityMode?: "exact" | "foreign";
   search?: string;
   includeDeleted?: boolean;
   orderBy?: "createdAt" | "code" | "email" | "updatedAt";
   direction?: "asc" | "desc";
 };
+
+const customerListSelect = {
+  id: true,
+  companyId: true,
+  agencyId: true,
+  code: true,
+  type: true,
+  email: true,
+  phone: true,
+  status: true,
+  notes: true,
+  createdAt: true,
+  updatedAt: true,
+  deletedAt: true,
+  deletedBy: true,
+  individual: true,
+  business: true,
+  documents: { select: { type: true } },
+  blacklist: {
+    select: { reason: true, liftedAt: true, createdAt: true },
+    where: { liftedAt: null },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+  },
+} satisfies Prisma.CustomerSelect;
+
+export type CustomerListItem = Prisma.CustomerGetPayload<{ select: typeof customerListSelect }>;
 
 function buildCustomerWhere(input: CustomerListInput): Prisma.CustomerWhereInput {
   return {
@@ -23,6 +52,15 @@ function buildCustomerWhere(input: CustomerListInput): Prisma.CustomerWhereInput
     agencyId: input.agencyId,
     status: input.status,
     type: input.type,
+    ...(input.nationalityMode === "exact" && input.nationality
+      ? { type: "individual", individual: { is: { nationality: input.nationality } } }
+      : {}),
+    ...(input.nationalityMode === "foreign"
+      ? {
+          type: "individual",
+          individual: { is: { nationality: { not: null, notIn: ["MA"] } } },
+        }
+      : {}),
     ...(input.includeDeleted ? {} : { deletedAt: null }),
     ...(input.search
       ? {
@@ -30,9 +68,9 @@ function buildCustomerWhere(input: CustomerListInput): Prisma.CustomerWhereInput
             { code: { contains: input.search, mode: "insensitive" } },
             { email: { contains: input.search, mode: "insensitive" } },
             { phone: { contains: input.search, mode: "insensitive" } },
-            { individual: { firstName: { contains: input.search, mode: "insensitive" } } },
-            { individual: { lastName: { contains: input.search, mode: "insensitive" } } },
-            { business: { companyName: { contains: input.search, mode: "insensitive" } } },
+            { individual: { is: { firstName: { contains: input.search, mode: "insensitive" } } } },
+            { individual: { is: { lastName: { contains: input.search, mode: "insensitive" } } } },
+            { business: { is: { companyName: { contains: input.search, mode: "insensitive" } } } },
           ],
         }
       : {}),
@@ -76,7 +114,7 @@ export async function paginateCustomers(input: CustomerListInput, db: DatabaseCl
   const [data, total] = await Promise.all([
     db.customer.findMany({
       where,
-      include: { individual: true, business: true, contacts: true, documents: true, blacklist: true },
+      select: customerListSelect,
       orderBy: { [orderField]: direction },
       skip: pagination.skip,
       take: pagination.take,

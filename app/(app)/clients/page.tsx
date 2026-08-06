@@ -43,6 +43,21 @@ function parseSort(value: string | undefined): SortKey {
   return "lastRental"
 }
 
+function parseNationalityFilter(value: Nationality | "all" | "etranger") {
+  if (value === "all") return {}
+  if (value === "etranger") return { nationalityMode: "foreign" as const }
+
+  const labels: Record<Nationality, string> = {
+    Marocain: "MA",
+    Français: "FR",
+    Espagnol: "ES",
+    Anglais: "GB",
+    Allemand: "DE",
+  }
+
+  return { nationality: labels[value], nationalityMode: "exact" as const }
+}
+
 function parsePage(value: string | undefined) {
   const page = Number(value)
   return Number.isInteger(page) && page > 0 ? page : 1
@@ -66,27 +81,19 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
     pageSize: 25,
     search,
     status: parseStatus(status),
+    ...parseNationalityFilter(nationality),
     orderBy: sort === "lastRental" ? "createdAt" : "updatedAt",
     direction: "desc",
   })
 
-  const filteredData =
-    nationality === "all"
-      ? result.data
-      : result.data.filter((customer) => {
-          const customerNationality = customer.individual?.nationality
-          if (nationality === "etranger") return customerNationality && customerNationality !== "Marocain"
-          return customerNationality === nationality
-        })
-
   return (
     <ClientsPageClient
       initialResult={{
-        data: filteredData.map(mapCustomerToClient),
+        data: result.data.map(mapCustomerToClient),
         pagination: {
           page: result.pagination.page,
           pageSize: result.pagination.pageSize,
-          total: nationality === "all" ? result.pagination.total : filteredData.length,
+          total: result.pagination.total,
           totalPages: result.pagination.totalPages,
         },
       }}

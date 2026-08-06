@@ -1,6 +1,7 @@
 import type { CustomerStatus, CustomerType, Prisma } from "@lokarent/db";
 import type { Client, ClientStatus, ClientTier, Nationality, Reservation } from "@/lib/clients-data";
 import type { ClientBlacklistDto, ClientDetailDto, ClientDocumentDto } from "../dto/client-response.dto";
+import type { CustomerListItem } from "../repositories/clients.repository";
 
 type CustomerWithProfile = Prisma.CustomerGetPayload<{
   include: {
@@ -11,6 +12,8 @@ type CustomerWithProfile = Prisma.CustomerGetPayload<{
     blacklist: true;
   };
 }>;
+
+type CustomerForClient = CustomerWithProfile | CustomerListItem;
 
 const NATIONALITIES = new Set<Nationality>([
   "Marocain",
@@ -35,7 +38,7 @@ function mapStatus(status: CustomerStatus): ClientStatus {
   return "actif";
 }
 
-function mapTier(customer: CustomerWithProfile): ClientTier {
+function mapTier(customer: CustomerForClient): ClientTier {
   if (customer.status === "inactive") return "regular";
   return "new";
 }
@@ -50,30 +53,30 @@ function displayNationality(value?: string | null): Nationality {
   return "Marocain";
 }
 
-function fullName(customer: CustomerWithProfile) {
+function fullName(customer: CustomerForClient) {
   if (customer.type === "company") {
     return customer.business?.companyName ?? customer.email ?? customer.phone ?? customer.code;
   }
   return [customer.individual?.firstName, customer.individual?.lastName].filter(Boolean).join(" ") || customer.code;
 }
 
-function idType(customer: CustomerWithProfile): "CIN" | "Passeport" | undefined {
+function idType(customer: CustomerForClient): "CIN" | "Passeport" | undefined {
   if (!customer.individual) return undefined;
   if (customer.individual.cinNumber) return "CIN";
   return undefined;
 }
 
-function idNumber(customer: CustomerWithProfile) {
+function idNumber(customer: CustomerForClient) {
   return customer.individual?.cinNumber ?? "";
 }
 
-function activeBlacklist(customer: CustomerWithProfile) {
+function activeBlacklist(customer: CustomerForClient) {
   return customer.blacklist
     .filter((entry) => entry.liftedAt === null)
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
 }
 
-export function mapCustomerToClient(customer: CustomerWithProfile): Client {
+export function mapCustomerToClient(customer: CustomerForClient): Client {
   const activeBlacklistEntry = activeBlacklist(customer);
   const createdAt = toIso(customer.createdAt) ?? new Date(0).toISOString();
   const displayName = fullName(customer);

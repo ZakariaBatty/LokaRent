@@ -1,7 +1,7 @@
 import { requireCurrentAgencyContext } from "@/shared/auth";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
 import { listCustomersService, getCustomerService } from "../services/clients.service";
-import { mapCustomerToDetail } from "../mappers/client.mapper";
+import { mapCustomerToClient, mapCustomerToDetail } from "../mappers/client.mapper";
 
 export async function listClientsController(input: {
   page?: number;
@@ -29,7 +29,7 @@ export async function listClientsController(input: {
 
   return {
     ...result,
-    data: result.data.map(mapCustomerToDetail),
+    data: result.data.map(mapCustomerToClient),
   };
 }
 
