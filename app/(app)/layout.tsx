@@ -4,9 +4,21 @@ import { AppHeader } from "@/components/app/app-header"
 import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppShell } from "@/components/app/app-shell"
 import { AgencyProvider } from "@/contexts/agency-context"
-import { requireCurrentAgencyContext } from "@/shared/auth"
+import { requireCurrentAgencyContext, requireCurrentCompanyContext } from "@/shared/auth"
+import { redirect } from "next/navigation"
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
+  const companyContext = await requireCurrentCompanyContext()
+  if (companyContext.companyStatus === "trial" || String(companyContext.companyStatus) === "onboarding") {
+    redirect("/onboarding")
+  }
+  if (
+    companyContext.companyStatus === "suspended" ||
+    companyContext.companyStatus === "cancelled"
+  ) {
+    redirect("/blocked-account")
+  }
+
   await requireCurrentAgencyContext()
 
   return (

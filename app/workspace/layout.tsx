@@ -5,9 +5,19 @@ import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { AppShell } from "@/components/app/app-shell"
 import { requireCurrentCompanyOwnerContext } from "@/shared/auth"
+import { redirect } from "next/navigation"
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
-  await requireCurrentCompanyOwnerContext()
+  const companyContext = await requireCurrentCompanyOwnerContext()
+  if (companyContext.companyStatus === "trial" || String(companyContext.companyStatus) === "onboarding") {
+    redirect("/onboarding")
+  }
+  if (
+    companyContext.companyStatus === "suspended" ||
+    companyContext.companyStatus === "cancelled"
+  ) {
+    redirect("/blocked-account")
+  }
 
   return (
     <AgencyProvider>

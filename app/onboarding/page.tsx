@@ -1,7 +1,8 @@
 import { Suspense } from "react"
 import { redirect } from "next/navigation"
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard"
-import { getCurrentCompanyContext } from "@/shared/auth"
+import { getAgencyService, getCompanyService } from "@/modules/workspace/agencies/services/agencies.service"
+import { getCurrentAgencyContext, getCurrentCompanyContext } from "@/shared/auth"
 import { isAppError } from "@/shared/errors"
 
 export const metadata = {
@@ -24,9 +25,49 @@ export default async function OnboardingPage() {
     redirect("/blocked-account")
   }
 
+  const agencyContext = await getCurrentAgencyContext()
+  if (!agencyContext) redirect("/login")
+
+  const [company, agency] = await Promise.all([
+    getCompanyService({ companyId: context.companyId }),
+    getAgencyService({ companyId: context.companyId, agencyId: agencyContext.agencyId }),
+  ])
+
   return (
     <Suspense fallback={null}>
-      <OnboardingWizard />
+      <OnboardingWizard
+        initialData={{
+          company: {
+            legalName: company.name,
+            phone: agency.phone ?? "",
+            address:
+              typeof agency.address === "object" &&
+              agency.address &&
+              "city" in agency.address &&
+              typeof agency.address.city === "string"
+                ? agency.address.city
+                : "",
+            countryCode: company.countryCode,
+            timezone: company.timezone,
+            currency: company.currency,
+            logoUrl: "",
+          },
+          agency: {
+            name: agency.name,
+            code: agency.code,
+            phone: agency.phone ?? "",
+            email: agency.email ?? "",
+            address:
+              typeof agency.address === "object" &&
+              agency.address &&
+              "city" in agency.address &&
+              typeof agency.address.city === "string"
+                ? agency.address.city
+                : "",
+            isPrimaryConfirmed: agencyContext.isPrimaryAgency,
+          },
+        }}
+      />
     </Suspense>
   )
 }

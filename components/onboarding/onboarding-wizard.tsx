@@ -1,111 +1,125 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
-import { ArrowLeft, ArrowRight, Check, Loader2, SkipForward, Sparkles } from "lucide-react"
+import { ArrowLeft, ArrowRight, Building2, Check, Loader2, Settings2, Store, Users } from "lucide-react"
+import { completeOnboardingAction } from "@/modules/onboarding/actions/complete-onboarding.action"
+import { useI18n } from "@/contexts/i18n-context"
 import { Button } from "@/components/ui/button"
-import { OnboardingProvider } from "./onboarding-context"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
+  OnboardingProvider,
+  useOnboarding,
+  type OnboardingState,
+  type VehicleCategory,
+} from "./onboarding-context"
 import { ProgressHeader } from "./progress-header"
 import { StepFleet } from "./step-fleet"
-import { StepPricing } from "./step-pricing"
-import { StepSettings } from "./step-settings"
 
-const TOTAL_STEPS = 3
+const TOTAL_STEPS = 4
+
+type InitialData = Partial<Pick<OnboardingState, "company" | "agency">>
 
 function WizardInner() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const plan = searchParams.get("plan") || "pro"
+  const { t } = useI18n()
+  const { state } = useOnboarding()
   const [step, setStep] = useState(1)
   const [direction, setDirection] = useState(1)
-  const [submitting, setSubmitting] = useState(false)
+  const [messageKey, setMessageKey] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [pending, startTransition] = useTransition()
 
   const next = () => {
     if (step < TOTAL_STEPS) {
       setDirection(1)
-      setStep((s) => s + 1)
+      setStep((current) => current + 1)
+      setMessageKey(null)
     }
   }
+
   const back = () => {
     if (step > 1) {
       setDirection(-1)
-      setStep((s) => s - 1)
+      setStep((current) => current - 1)
+      setMessageKey(null)
     }
   }
 
-  const finish = async () => {
-    setSubmitting(true)
-    await new Promise((r) => setTimeout(r, 1400))
-    setSubmitting(false)
-    setSuccess(true)
-    await new Promise((r) => setTimeout(r, 900))
-    router.push("/dashboard")
-  }
+  const finish = () => {
+    setMessageKey(null)
+    startTransition(async () => {
+      const result = await completeOnboardingAction({
+        company: state.company,
+        agency: state.agency,
+        preferences: state.preferences,
+        optionalData: {
+          vehicles: state.vehicles.map((vehicle) => ({
+            brand: vehicle.marque,
+            model: vehicle.modele,
+            year: vehicle.annee,
+            plate: vehicle.immatriculation,
+            category: vehicle.categorie,
+            dailyPrice: vehicle.prixJour,
+          })),
+          customer: state.customer,
+        },
+      })
 
-  // Architecture rule: the user must ALWAYS be able to skip onboarding and enter
-  // the dashboard immediately. Sensible defaults are applied later on the backend;
-  // the "onboarding=skipped" marker lets the dashboard surface a resume prompt and
-  // show onboarding progress as incomplete.
-  const skip = () => {
-    router.push("/dashboard?onboarding=skipped")
+      if (!result.success) {
+        setMessageKey(result.messageKey)
+        return
+      }
+
+      setSuccess(true)
+      router.push(result.redirectTo)
+    })
   }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background">
-      {/* Background atmosphere */}
-      <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-        <div className="absolute left-1/2 top-0 h-[520px] w-[920px] -translate-x-1/2 rounded-full bg-primary/15 blur-[140px]" />
-        <div className="absolute -left-32 top-1/3 h-[420px] w-[420px] rounded-full bg-accent/10 blur-[120px]" />
-        <div className="absolute -right-24 top-1/2 h-[460px] w-[460px] rounded-full bg-primary/10 blur-[140px]" />
-        <div
-          className="absolute inset-0 opacity-[0.025]"
-          style={{
-            backgroundImage:
-              "linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)",
-            backgroundSize: "56px 56px",
-            maskImage:
-              "radial-gradient(ellipse 70% 50% at 50% 0%, black 30%, transparent 75%)",
-          }}
-        />
-      </div>
-
-      {/* Header */}
       <header className="relative border-b border-white/5">
         <div className="mx-auto flex max-w-[1100px] items-center justify-between px-6 py-5 sm:px-8">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-lg shadow-primary/30">
-              <Sparkles className="h-4.5 w-4.5" />
+              <Check className="h-4 w-4" />
             </div>
             <div className="flex flex-col leading-tight">
               <span className="font-serif text-base font-medium tracking-tight text-foreground">
                 LokaRent
               </span>
-              <span className="text-[11px] text-muted-foreground">Configuration initiale</span>
+              <span className="text-[11px] text-muted-foreground">
+                {t("onboarding.header.subtitle")}
+              </span>
             </div>
           </div>
 
           <div className="flex items-center gap-2 rounded-full border border-white/10 bg-card/60 px-3 py-1.5 backdrop-blur">
-            <div className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(99,124,255,0.8)]" />
+            <div className="h-1.5 w-1.5 rounded-full bg-primary" />
             <span className="text-xs text-muted-foreground">
-              Étape <span className="font-medium text-foreground">{step}</span> sur {TOTAL_STEPS}
+              {t("onboarding.header.step")}{" "}
+              <span className="font-medium text-foreground">{step}</span> / {TOTAL_STEPS}
             </span>
           </div>
         </div>
       </header>
 
-      {/* Main */}
       <main className="relative mx-auto max-w-[1100px] px-6 pb-32 pt-10 sm:px-8 sm:pt-14">
-        {/* Progress */}
         <div className="mx-auto max-w-3xl">
           <ProgressHeader currentStep={step} />
         </div>
 
-        {/* Step card */}
         <div className="relative mt-10 sm:mt-14">
-          <div className="absolute -inset-4 rounded-[28px] bg-gradient-to-b from-primary/10 via-transparent to-transparent opacity-50 blur-2xl" aria-hidden="true" />
-
           <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-card/40 shadow-[0_30px_120px_-30px_rgba(0,0,0,0.6)] backdrop-blur-xl">
             <div className="relative px-6 py-8 sm:px-10 sm:py-10">
               <AnimatePresence mode="wait" custom={direction}>
@@ -115,132 +129,293 @@ function WizardInner() {
                   initial={{ opacity: 0, x: direction * 24 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: direction * -24 }}
-                  transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                  transition={{ duration: 0.25 }}
                 >
-                  {step === 1 && <StepFleet />}
-                  {step === 2 && <StepPricing />}
-                  {step === 3 && <StepSettings plan={plan} />}
+                  {step === 1 && <CompanyProfileStep />}
+                  {step === 2 && <AgencyProfileStep />}
+                  {step === 3 && <BusinessPreferencesStep />}
+                  {step === 4 && <OptionalDataStep />}
                 </motion.div>
               </AnimatePresence>
             </div>
           </div>
         </div>
 
-        {/* Navigation */}
+        {messageKey && (
+          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {t(messageKey)}
+          </p>
+        )}
+
         <div className="sticky bottom-4 mt-8 sm:static sm:mt-10">
           <div className="flex flex-col-reverse items-stretch justify-between gap-3 rounded-2xl border border-white/10 bg-background/80 p-3 backdrop-blur-xl sm:flex-row sm:items-center sm:border-transparent sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
             <Button
               type="button"
               variant="ghost"
               onClick={back}
-              disabled={step === 1 || submitting}
+              disabled={step === 1 || pending}
               className="gap-2 text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
-              Retour
+              {t("onboarding.actions.back")}
             </Button>
 
-            <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={skip}
-                disabled={submitting || success}
-                className="gap-2 text-muted-foreground hover:text-foreground"
-              >
-                <SkipForward className="h-4 w-4" />
-                Passer pour l&apos;instant
+            {step < TOTAL_STEPS ? (
+              <Button type="button" onClick={next} disabled={pending} className="gap-2">
+                {t("onboarding.actions.continue")}
+                <ArrowRight className="h-4 w-4" />
               </Button>
-
-              {step < TOTAL_STEPS ? (
-                <Button
-                  type="button"
-                  onClick={next}
-                  className="group relative h-11 gap-2 overflow-hidden bg-gradient-to-r from-primary to-accent px-6 text-primary-foreground shadow-lg shadow-primary/30 transition-shadow hover:shadow-primary/50"
-                >
-                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-                  Continuer
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  onClick={finish}
-                  disabled={submitting || success}
-                  className="group relative h-11 gap-2 overflow-hidden bg-gradient-to-r from-primary to-accent px-6 text-primary-foreground shadow-lg shadow-primary/30 transition-shadow hover:shadow-primary/50"
-                >
-                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-                  {submitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Configuration en cours...
-                    </>
-                  ) : success ? (
-                    <>
-                      <Check className="h-4 w-4" />
-                      Terminé
-                    </>
-                  ) : (
-                    <>
-                      Terminer et accéder à mon tableau de bord
-                      <ArrowRight className="h-4 w-4" />
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
+            ) : (
+              <Button type="button" onClick={finish} disabled={pending || success} className="gap-2">
+                {pending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
+                {pending
+                  ? t("onboarding.actions.finishing")
+                  : t("onboarding.actions.finish")}
+              </Button>
+            )}
           </div>
         </div>
       </main>
-
-      {/* Success overlay */}
-      <AnimatePresence>
-        {success && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-xl"
-          >
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: "spring", stiffness: 280, damping: 22 }}
-              className="flex flex-col items-center gap-5 text-center"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.1, type: "spring", stiffness: 300, damping: 18 }}
-                className="relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-primary to-accent shadow-[0_0_60px_rgba(99,124,255,0.45)]"
-              >
-                <motion.div
-                  initial={{ scale: 0, rotate: -45 }}
-                  animate={{ scale: 1, rotate: 0 }}
-                  transition={{ delay: 0.3, type: "spring", stiffness: 400, damping: 18 }}
-                >
-                  <Check className="h-9 w-9 text-primary-foreground" strokeWidth={3} />
-                </motion.div>
-              </motion.div>
-              <div>
-                <p className="font-serif text-2xl font-medium tracking-tight text-foreground">
-                  Configuration terminée
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Bienvenue sur LokaRent. Redirection en cours...
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }
 
-export function OnboardingWizard() {
+function SectionTitle({
+  icon,
+  title,
+  description,
+}: {
+  icon: React.ReactNode
+  title: string
+  description: string
+}) {
   return (
-    <OnboardingProvider>
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-primary">{icon}</div>
+      <h2 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
+        {title}
+      </h2>
+      <p className="text-sm text-muted-foreground sm:text-base">{description}</p>
+    </div>
+  )
+}
+
+function CompanyProfileStep() {
+  const { t } = useI18n()
+  const { state, setCompany } = useOnboarding()
+  const company = state.company
+
+  return (
+    <div className="space-y-6">
+      <SectionTitle
+        icon={<Building2 className="h-5 w-5" />}
+        title={t("onboarding.company.title")}
+        description={t("onboarding.company.description")}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("onboarding.company.legalName")}>
+          <Input value={company.legalName} onChange={(event) => setCompany({ ...company, legalName: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.company.phone")}>
+          <Input value={company.phone} onChange={(event) => setCompany({ ...company, phone: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.company.country")}>
+          <Select value={company.countryCode} onValueChange={(value) => setCompany({ ...company, countryCode: value })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="MA">{t("onboarding.company.morocco")}</SelectItem>
+              <SelectItem value="FR">{t("onboarding.company.france")}</SelectItem>
+              <SelectItem value="ES">{t("onboarding.company.spain")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t("onboarding.company.timezone")}>
+          <Select value={company.timezone} onValueChange={(value) => setCompany({ ...company, timezone: value })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="Africa/Casablanca">Africa/Casablanca</SelectItem>
+              <SelectItem value="Europe/Paris">Europe/Paris</SelectItem>
+              <SelectItem value="Europe/Madrid">Europe/Madrid</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t("onboarding.company.currency")}>
+          <Select value={company.currency} onValueChange={(value) => setCompany({ ...company, currency: value })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="MAD">MAD</SelectItem>
+              <SelectItem value="EUR">EUR</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label={t("onboarding.company.logoUrl")}>
+          <Input value={company.logoUrl} onChange={(event) => setCompany({ ...company, logoUrl: event.target.value })} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label={t("onboarding.company.address")}>
+            <Input value={company.address} onChange={(event) => setCompany({ ...company, address: event.target.value })} />
+          </Field>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgencyProfileStep() {
+  const { t } = useI18n()
+  const { state, setAgency } = useOnboarding()
+  const agency = state.agency
+
+  return (
+    <div className="space-y-6">
+      <SectionTitle
+        icon={<Store className="h-5 w-5" />}
+        title={t("onboarding.agency.title")}
+        description={t("onboarding.agency.description")}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("onboarding.agency.name")}>
+          <Input value={agency.name} onChange={(event) => setAgency({ ...agency, name: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.agency.code")}>
+          <Input value={agency.code} onChange={(event) => setAgency({ ...agency, code: event.target.value.toUpperCase() })} />
+        </Field>
+        <Field label={t("onboarding.agency.phone")}>
+          <Input value={agency.phone} onChange={(event) => setAgency({ ...agency, phone: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.agency.email")}>
+          <Input value={agency.email} onChange={(event) => setAgency({ ...agency, email: event.target.value })} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label={t("onboarding.agency.address")}>
+            <Input value={agency.address} onChange={(event) => setAgency({ ...agency, address: event.target.value })} />
+          </Field>
+        </div>
+      </div>
+      <label className="flex items-center justify-between rounded-xl border border-white/10 bg-background/50 p-4">
+        <span className="text-sm font-medium text-foreground">
+          {t("onboarding.agency.primary")}
+        </span>
+        <Switch
+          checked={agency.isPrimaryConfirmed}
+          onCheckedChange={(value) => setAgency({ ...agency, isPrimaryConfirmed: value })}
+        />
+      </label>
+    </div>
+  )
+}
+
+function BusinessPreferencesStep() {
+  const { t } = useI18n()
+  const { state, setPreferences } = useOnboarding()
+  const preferences = state.preferences
+
+  return (
+    <div className="space-y-6">
+      <SectionTitle
+        icon={<Settings2 className="h-5 w-5" />}
+        title={t("onboarding.preferences.title")}
+        description={t("onboarding.preferences.description")}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("onboarding.preferences.invoicePrefix")}>
+          <Input value={preferences.invoicePrefix} onChange={(event) => setPreferences({ ...preferences, invoicePrefix: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.preferences.reservationPrefix")}>
+          <Input value={preferences.reservationPrefix} onChange={(event) => setPreferences({ ...preferences, reservationPrefix: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.preferences.contractPrefix")}>
+          <Input value={preferences.contractPrefix} onChange={(event) => setPreferences({ ...preferences, contractPrefix: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.preferences.taxRate")}>
+          <Input type="number" value={preferences.taxRate} onChange={(event) => setPreferences({ ...preferences, taxRate: event.target.value })} />
+        </Field>
+        <Field label={t("onboarding.preferences.language")}>
+          <Select value={preferences.defaultLanguage} onValueChange={(value: "fr" | "en") => setPreferences({ ...preferences, defaultLanguage: value })}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fr">{t("common.french")}</SelectItem>
+              <SelectItem value="en">{t("common.english")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ToggleRow
+          label={t("onboarding.preferences.emailNotifications")}
+          checked={preferences.emailNotifications}
+          onCheckedChange={(value) => setPreferences({ ...preferences, emailNotifications: value })}
+        />
+        <ToggleRow
+          label={t("onboarding.preferences.whatsappNotifications")}
+          checked={preferences.whatsappNotifications}
+          onCheckedChange={(value) => setPreferences({ ...preferences, whatsappNotifications: value })}
+        />
+      </div>
+    </div>
+  )
+}
+
+function OptionalDataStep() {
+  const { t } = useI18n()
+  const { state, setCustomer } = useOnboarding()
+  const customer = state.customer
+
+  return (
+    <div className="space-y-8">
+      <SectionTitle
+        icon={<Users className="h-5 w-5" />}
+        title={t("onboarding.optional.title")}
+        description={t("onboarding.optional.description")}
+      />
+      <StepFleet />
+      <div className="rounded-2xl border border-white/10 bg-card/40 p-5">
+        <h3 className="text-base font-medium text-foreground">{t("onboarding.optional.customerTitle")}</h3>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          <Field label={t("onboarding.optional.customerName")}>
+            <Input value={customer.fullName} onChange={(event) => setCustomer({ ...customer, fullName: event.target.value })} />
+          </Field>
+          <Field label={t("onboarding.optional.customerPhone")}>
+            <Input value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value })} />
+          </Field>
+          <Field label={t("onboarding.optional.customerEmail")}>
+            <Input value={customer.email} onChange={(event) => setCustomer({ ...customer, email: event.target.value })} />
+          </Field>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function ToggleRow({
+  label,
+  checked,
+  onCheckedChange,
+}: {
+  label: string
+  checked: boolean
+  onCheckedChange: (value: boolean) => void
+}) {
+  return (
+    <label className="flex items-center justify-between rounded-xl border border-white/10 bg-background/50 p-4">
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+    </label>
+  )
+}
+
+export function OnboardingWizard({ initialData }: { initialData?: InitialData }) {
+  return (
+    <OnboardingProvider initialData={initialData}>
       <WizardInner />
     </OnboardingProvider>
   )
