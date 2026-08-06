@@ -16,7 +16,7 @@ export function ClientDeleteDialog({
   open: boolean
   client: Client | null
   onClose: () => void
-  onConfirm: () => void
+  onConfirm: () => Promise<boolean>
 }) {
   const [deleting, setDeleting] = useState(false)
 
@@ -24,13 +24,17 @@ export function ClientDeleteDialog({
 
   const confirm = async () => {
     setDeleting(true)
-    await new Promise((r) => setTimeout(r, 350))
-    onConfirm()
-    setDeleting(false)
-    toast.success("Client supprimé", {
-      description: `Le dossier de ${client.fullName} a été supprimé.`,
-    })
-    onClose()
+    try {
+      const ok = await onConfirm()
+      if (ok) {
+        toast.success("Client supprimé", {
+          description: `Le dossier de ${client.fullName} a été supprimé.`,
+        })
+        onClose()
+      }
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (

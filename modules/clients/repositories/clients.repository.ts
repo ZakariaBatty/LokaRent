@@ -1,4 +1,4 @@
-import { CustomerStatus, CustomerType, Prisma, prisma } from "@lokarent/db";
+import { ContactType, CustomerStatus, CustomerType, Prisma, prisma } from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -13,7 +13,7 @@ export type CustomerListInput = PaginationInput & {
   type?: CustomerType;
   search?: string;
   includeDeleted?: boolean;
-  orderBy?: "createdAt" | "code" | "email";
+  orderBy?: "createdAt" | "code" | "email" | "updatedAt";
   direction?: "asc" | "desc";
 };
 
@@ -50,7 +50,21 @@ export async function findCustomerById(
       agencyId: input.agencyId,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
-    include: { individual: true, business: true, contacts: true, documents: true },
+    include: { individual: true, business: true, contacts: true, documents: true, blacklist: true },
+  });
+}
+
+export async function findCustomerByIdForCompany(
+  input: { companyId: string; customerId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.customer.findFirst({
+    where: {
+      id: input.customerId,
+      companyId: input.companyId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    include: { individual: true, business: true, contacts: true, documents: true, blacklist: true },
   });
 }
 
@@ -62,7 +76,7 @@ export async function paginateCustomers(input: CustomerListInput, db: DatabaseCl
   const [data, total] = await Promise.all([
     db.customer.findMany({
       where,
-      include: { individual: true, business: true },
+      include: { individual: true, business: true, contacts: true, documents: true, blacklist: true },
       orderBy: { [orderField]: direction },
       skip: pagination.skip,
       take: pagination.take,
@@ -86,7 +100,13 @@ export async function countCustomers(
 }
 
 export async function findCustomerByContact(
-  input: { companyId: string; agencyId: string; email?: string | null; phone?: string | null },
+  input: {
+    companyId: string;
+    agencyId: string;
+    email?: string | null;
+    phone?: string | null;
+    excludeCustomerId?: string;
+  },
   db: DatabaseClient = prisma,
 ) {
   if (!input.email && !input.phone) return null;
@@ -96,12 +116,13 @@ export async function findCustomerByContact(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
+      ...(input.excludeCustomerId ? { id: { not: input.excludeCustomerId } } : {}),
       OR: [
         ...(input.email ? [{ email: input.email }] : []),
         ...(input.phone ? [{ phone: input.phone }] : []),
       ],
     },
-    include: { individual: true, business: true },
+    include: { individual: true, business: true, contacts: true, documents: true, blacklist: true },
   });
 }
 
@@ -127,6 +148,40 @@ export async function updateCustomer(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
+    },
+    data: input.data,
+  });
+}
+
+export async function updateCustomerIndividual(
+  input: {
+    companyId: string;
+    customerId: string;
+    data: Prisma.CustomerIndividualUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerIndividual.updateMany({
+    where: {
+      companyId: input.companyId,
+      customerId: input.customerId,
+    },
+    data: input.data,
+  });
+}
+
+export async function updateCustomerBusiness(
+  input: {
+    companyId: string;
+    customerId: string;
+    data: Prisma.CustomerBusinessUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerBusiness.updateMany({
+    where: {
+      companyId: input.companyId,
+      customerId: input.customerId,
     },
     data: input.data,
   });
@@ -189,12 +244,36 @@ export async function createCustomerContact(
 }
 
 export async function updateCustomerContact(
-  input: { companyId: string; contactId: string; data: Prisma.CustomerContactUncheckedUpdateInput },
+  input: {
+    companyId: string;
+    customerId: string;
+    contactId: string;
+    data: Prisma.CustomerContactUncheckedUpdateInput;
+  },
   db: DatabaseClient = prisma,
 ) {
   return db.customerContact.updateMany({
-    where: { id: input.contactId, companyId: input.companyId },
+    where: { id: input.contactId, companyId: input.companyId, customerId: input.customerId },
     data: input.data,
+  });
+}
+
+export async function clearPrimaryCustomerContacts(
+  input: { companyId: string; customerId: string; type: ContactType },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerContact.updateMany({
+    where: { companyId: input.companyId, customerId: input.customerId, type: input.type },
+    data: { isPrimary: false },
+  });
+}
+
+export async function deleteCustomerContact(
+  input: { companyId: string; customerId: string; contactId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerContact.deleteMany({
+    where: { id: input.contactId, companyId: input.companyId, customerId: input.customerId },
   });
 }
 
@@ -213,6 +292,30 @@ export async function createCustomerDocument(
   db: DatabaseClient = prisma,
 ) {
   return db.customerDocument.create({ data });
+}
+
+export async function updateCustomerDocument(
+  input: {
+    companyId: string;
+    customerId: string;
+    documentId: string;
+    data: Prisma.CustomerDocumentUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerDocument.updateMany({
+    where: { id: input.documentId, companyId: input.companyId, customerId: input.customerId },
+    data: input.data,
+  });
+}
+
+export async function deleteCustomerDocument(
+  input: { companyId: string; customerId: string; documentId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.customerDocument.deleteMany({
+    where: { id: input.documentId, companyId: input.companyId, customerId: input.customerId },
+  });
 }
 
 export async function findActiveCustomerBlacklist(
@@ -285,13 +388,46 @@ export async function findCustomerReservationSummary(
   return { reservations, invoices };
 }
 
+export async function countBlockingCustomerReservations(
+  input: { companyId: string; agencyId: string; customerId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.count({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      customerId: input.customerId,
+      deletedAt: null,
+      status: { in: ["enquiry", "confirmed", "active"] },
+    },
+  });
+}
+
+export async function countBlockingCustomerContracts(
+  input: { companyId: string; agencyId: string; customerId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.contract.count({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      customerId: input.customerId,
+      deletedAt: null,
+      status: { in: ["draft", "active", "disputed"] },
+    },
+  });
+}
+
 export const clientsRepository = {
   findCustomerById,
+  findCustomerByIdForCompany,
   paginateCustomers,
   countCustomers,
   findCustomerByContact,
   createCustomer,
   updateCustomer,
+  updateCustomerIndividual,
+  updateCustomerBusiness,
   softDeleteCustomer,
   restoreCustomer,
   createCustomerIndividual,
@@ -299,10 +435,16 @@ export const clientsRepository = {
   listCustomerContacts,
   createCustomerContact,
   updateCustomerContact,
+  clearPrimaryCustomerContacts,
+  deleteCustomerContact,
   listCustomerDocuments,
   createCustomerDocument,
+  updateCustomerDocument,
+  deleteCustomerDocument,
   findActiveCustomerBlacklist,
   createCustomerBlacklistEntry,
   liftCustomerBlacklistEntry,
   findCustomerReservationSummary,
+  countBlockingCustomerReservations,
+  countBlockingCustomerContracts,
 };

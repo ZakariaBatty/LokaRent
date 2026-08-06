@@ -83,7 +83,7 @@ export function ClientRow({
           <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-600">
             {client.idType}
           </span>
-          <span className="font-mono text-xs text-slate-700">{maskId(client.idNumber)}</span>
+          <span className="font-mono text-xs text-slate-700">{maskId(client.idNumber ?? "")}</span>
         </div>
       </td>
 

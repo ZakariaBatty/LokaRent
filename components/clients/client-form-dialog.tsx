@@ -16,7 +16,6 @@ import {
   Building,
 } from "lucide-react"
 import { type Client, type Nationality } from "@/lib/clients-data"
-import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 const nationalities: Nationality[] = ["Marocain", "Français", "Espagnol", "Anglais", "Allemand"]
@@ -102,7 +101,7 @@ export function ClientFormDialog({
   mode: Mode
   client?: Client | null
   onClose: () => void
-  onSubmit: (values: ClientFormValues) => void
+  onSubmit: (values: ClientFormValues) => Promise<boolean>
 }) {
   const [values, setValues] = useState<ClientFormValues>(defaultValues)
   const [saving, setSaving] = useState(false)
@@ -148,16 +147,12 @@ export function ClientFormDialog({
   const submit = async () => {
     if (!valid) return
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 500))
-    onSubmit(values)
-    setSaving(false)
-    toast.success(mode === "create" ? "Client ajouté" : "Client mis à jour", {
-      description:
-        mode === "create"
-          ? `${values.fullName} a été ajouté à votre CRM.`
-          : "Les informations du client ont été enregistrées.",
-    })
-    onClose()
+    try {
+      const ok = await onSubmit(values)
+      if (ok) onClose()
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -233,6 +228,7 @@ export function ClientFormDialog({
                       <button
                         key={t}
                         type="button"
+                        disabled={mode === "edit"}
                         onClick={() =>
                           setValues({
                             ...defaultValues,
@@ -247,6 +243,7 @@ export function ClientFormDialog({
                           values.type === t
                             ? "bg-indigo-600 text-white shadow-sm"
                             : "text-slate-500 hover:text-slate-900",
+                          mode === "edit" && "cursor-not-allowed opacity-70",
                         )}
                       >
                         {t === "individual" ? (

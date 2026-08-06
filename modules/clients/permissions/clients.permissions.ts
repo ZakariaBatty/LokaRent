@@ -1,3 +1,10 @@
-// TODO: Future implementation
-// RBAC permission definitions for clients — which roles can do what
-export {}
+import { PERMISSIONS } from "@/shared/permissions";
+
+export const CLIENT_PERMISSIONS = {
+  READ: PERMISSIONS.CLIENTS_VIEW,
+  CREATE: PERMISSIONS.CLIENTS_CREATE,
+  UPDATE: PERMISSIONS.CLIENTS_EDIT,
+  DELETE: PERMISSIONS.CLIENTS_DELETE,
+  RESTORE: PERMISSIONS.CLIENTS_DELETE,
+  BLACKLIST: PERMISSIONS.CLIENTS_BLACKLIST,
+} as const;

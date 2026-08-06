@@ -118,6 +118,18 @@ export default {
     addClient: 'Ajouter un client',
     editClient: 'Modifier le client',
     deleteClient: 'Supprimer le client',
+    errors: {
+      validation: 'Veuillez vérifier les champs du client.',
+      forbidden: 'Vous n’avez pas la permission d’effectuer cette action client.',
+      planLimitExceeded: 'La limite de clients de ce plan serait dépassée.',
+      duplicateContact: 'Un client actif utilise déjà cet e-mail ou ce téléphone.',
+      typeChangeNotAllowed: 'Le type de client ne peut pas être modifié.',
+      deleteBlockedByActiveRecords: 'Ce client a des réservations ou contrats actifs.',
+      alreadyBlacklisted: 'Ce client a déjà une entrée de blacklist active.',
+      individualNameRequired: 'Un client particulier nécessite un prénom et un nom.',
+      notFound: 'Client introuvable.',
+      generic: 'Impossible d’enregistrer cette action client pour le moment.',
+    },
   },
 
   drivers: {

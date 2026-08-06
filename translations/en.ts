@@ -118,6 +118,18 @@ export default {
     addClient: 'Add Client',
     editClient: 'Edit Client',
     deleteClient: 'Delete Client',
+    errors: {
+      validation: 'Please review the client fields.',
+      forbidden: 'You do not have permission to perform this client action.',
+      planLimitExceeded: 'This plan customer limit would be exceeded.',
+      duplicateContact: 'An active client already uses this email or phone.',
+      typeChangeNotAllowed: 'Client type cannot be changed.',
+      deleteBlockedByActiveRecords: 'This client has active reservations or contracts.',
+      alreadyBlacklisted: 'This client already has an active blacklist entry.',
+      individualNameRequired: 'Individual clients require a first and last name.',
+      notFound: 'Client not found.',
+      generic: 'Unable to save this client action right now.',
+    },
   },
 
   drivers: {
