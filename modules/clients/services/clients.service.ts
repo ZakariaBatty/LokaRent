@@ -219,6 +219,7 @@ export async function createIndividualCustomerService(input: {
   fullName: string;
   phone: string;
   email?: string | null;
+  city?: string | null;
   notes?: string | null;
   status?: "active" | "inactive" | "blacklisted";
   nationality?: string | null;
@@ -235,6 +236,7 @@ export async function createIndividualCustomerService(input: {
       type: "individual",
       email: input.email ?? null,
       phone: input.phone,
+      city: input.city ?? null,
       status: input.status ?? "active",
       notes: input.notes ?? null,
     },
@@ -254,6 +256,7 @@ export async function createBusinessCustomerService(input: {
   companyName: string;
   phone: string;
   email?: string | null;
+  city?: string | null;
   notes?: string | null;
   status?: "active" | "inactive" | "blacklisted";
   registrationNumber?: string | null;
@@ -268,6 +271,7 @@ export async function createBusinessCustomerService(input: {
       type: "company",
       email: input.email ?? null,
       phone: input.phone,
+      city: input.city ?? null,
       status: input.status ?? "active",
       notes: input.notes ?? null,
     },
@@ -287,6 +291,7 @@ export async function updateIndividualCustomerService(input: {
   fullName: string;
   phone: string;
   email?: string | null;
+  city?: string | null;
   notes?: string | null;
   status?: "active" | "inactive" | "blacklisted";
   nationality?: string | null;
@@ -317,6 +322,7 @@ export async function updateIndividualCustomerService(input: {
         data: {
           email: input.email ?? null,
           phone: input.phone,
+          city: input.city ?? null,
           status: input.status ?? existing.status,
           notes: input.notes ?? null,
         },
@@ -376,6 +382,7 @@ export async function updateBusinessCustomerService(input: {
   companyName: string;
   phone: string;
   email?: string | null;
+  city?: string | null;
   notes?: string | null;
   status?: "active" | "inactive" | "blacklisted";
   registrationNumber?: string | null;
@@ -404,6 +411,7 @@ export async function updateBusinessCustomerService(input: {
         data: {
           email: input.email ?? null,
           phone: input.phone,
+          city: input.city ?? null,
           status: input.status ?? existing.status,
           notes: input.notes ?? null,
         },

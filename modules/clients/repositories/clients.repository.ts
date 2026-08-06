@@ -27,6 +27,7 @@ const customerListSelect = {
   type: true,
   email: true,
   phone: true,
+  city: true,
   status: true,
   notes: true,
   createdAt: true,

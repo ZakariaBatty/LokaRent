@@ -116,7 +116,7 @@
 - `individual` — A natural person renting for personal use. Sub-record in `customer_individuals`.
 - `company` — A legal entity (business, corporation). Sub-record in `customer_businesses`. Invoices are issued to the company name and registration number.
 
-**Key design decision:** `customers` is the neutral parent row. Type-specific fields go into `customer_individuals` or `customer_businesses`. This avoids nullable columns for the wrong type (e.g., `company_registration_number` being nullable for individuals). The type sub-table is created at the same time as the parent row in a single transaction.
+**Key design decision:** `customers` is the neutral parent row. Shared fields such as contact details and city live on `customers`. Type-specific fields go into `customer_individuals` or `customer_businesses`. This avoids nullable columns for the wrong type (e.g., `company_registration_number` being nullable for individuals). The type sub-table is created at the same time as the parent row in a single transaction.
 
 **Ownership rules:**
 - `customers` is owned by the agency that first onboarded the customer (`primary_agency_id`).

@@ -921,6 +921,7 @@ model Customer {
   type      CustomerType
   email     String?
   phone     String?
+  city      String?
   status    CustomerStatus
   notes     String?
   createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz()

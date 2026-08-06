@@ -87,7 +87,7 @@ export function mapCustomerToClient(customer: CustomerForClient): Client {
     fullName: displayName,
     phone: customer.phone ?? customer.business?.contactPersonPhone ?? "",
     email: customer.email ?? "",
-    city: "—",
+    city: customer.city ?? "",
     nationality: displayNationality(customer.individual?.nationality),
     status: mapStatus(customer.status),
     tier: mapTier(customer),
