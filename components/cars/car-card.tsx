@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react"
 import { Eye, AlertTriangle, Wrench, ShieldAlert } from "lucide-react"
-import { type Car, statusConfig, categoryGradients } from "@/lib/cars-data"
+import { type Car, statusConfig, categoryGradients, formatMAD } from "@/lib/cars-data"
 import { CarIllustration } from "./car-illustration"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
@@ -130,12 +130,12 @@ export function CarCard({
         <div className="flex items-end justify-between gap-3 border-t border-slate-200/70 pt-4">
           <div>
             <div className="flex items-baseline gap-1">
-              <span className="text-lg font-bold text-slate-900 tabular-nums">
-                {car.seats}
-              </span>
-              <span className="text-xs font-medium text-slate-500">{fr.fleet.seats}</span>
+              <span className="text-2xl font-bold text-slate-900 tabular-nums">{car.priceDay}</span>
+              <span className="text-xs font-medium text-slate-500">{fr.fleet.pricing.dailySuffix}</span>
             </div>
-            <div className="mt-0.5 text-[10px] text-slate-400">{car.category}</div>
+            <div className="mt-0.5 text-[10px] text-slate-400 tabular-nums">
+              {formatMAD(car.priceWeek)}/{fr.fleet.pricing.weeklyShort} · {formatMAD(car.priceMonth)}/{fr.fleet.pricing.monthlyShort}
+            </div>
           </div>
 
           <div className="flex flex-col items-end gap-1.5">

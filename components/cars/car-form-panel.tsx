@@ -39,6 +39,12 @@ export type CarFormDraft = {
   category: CarCategory
   fuel: FuelType
   seats: number | ""
+  priceDay: number | ""
+  priceWeek: number | ""
+  priceMonth: number | ""
+  depositAmount: number | ""
+  mileageLimit: number | ""
+  extraMileageRate: number | ""
   km: number | ""
   status: CarStatus
   insuranceCompany: string
@@ -64,6 +70,12 @@ function buildDraft(car?: Car | null): CarFormDraft {
     category: car?.category ?? "Citadine",
     fuel: car?.fuel ?? "Essence",
     seats: car?.seats ?? "",
+    priceDay: car?.priceDay ?? "",
+    priceWeek: car?.priceWeek ?? "",
+    priceMonth: car?.priceMonth ?? "",
+    depositAmount: car?.depositAmount ?? "",
+    mileageLimit: car?.mileageLimit ?? "",
+    extraMileageRate: car?.extraMileageRate ?? "",
     km: car?.km ?? "",
     status: car?.status ?? "disponible",
     insuranceCompany: car?.insurance.company ?? "",
@@ -97,6 +109,16 @@ export function CarFormPanel({
     setErrors({})
   }, [car])
 
+  useEffect(() => {
+    if (draft.priceDay !== "" && draft.priceWeek === "" && draft.priceMonth === "") {
+      setDraft((current) => ({
+        ...current,
+        priceWeek: Math.round(Number(draft.priceDay) * 6),
+        priceMonth: Math.round(Number(draft.priceDay) * 24),
+      }))
+    }
+  }, [draft.priceDay, draft.priceMonth, draft.priceWeek])
+
   function set<K extends keyof CarFormDraft>(key: K, value: CarFormDraft[K]) {
     setDraft((d) => ({ ...d, [key]: value }))
     if (errors[key]) setErrors((e) => ({ ...e, [key]: undefined }))
@@ -110,6 +132,7 @@ export function CarFormPanel({
       e.year = "Année invalide"
     if (!draft.plate.trim()) e.plate = "Immatriculation requise"
     if (draft.seats === "" || Number(draft.seats) < 1) e.seats = "Requis"
+    if (draft.priceDay === "" || Number(draft.priceDay) <= 0) e.priceDay = "Requis"
     if (draft.km === "" || Number(draft.km) < 0) e.km = "Requis"
     setErrors(e)
     return Object.keys(e).length === 0
@@ -290,9 +313,62 @@ export function CarFormPanel({
 
         {/* Tarification */}
         <Section title={fr.fleet.pricing.title} icon={Gauge}>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-            <p className="text-xs font-semibold text-amber-800">{fr.fleet.pricing.unsupportedTitle}</p>
-            <p className="mt-0.5 text-[11px] text-amber-700">{fr.fleet.pricing.unsupportedDescription}</p>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label={fr.fleet.pricing.dailyRate} required error={errors.priceDay}>
+              <Input
+                type="number"
+                value={draft.priceDay}
+                onChange={(v) => set("priceDay", v === "" ? "" : Number(v))}
+                placeholder="250"
+                suffix="DH"
+                invalid={!!errors.priceDay}
+              />
+            </Field>
+            <Field label={fr.fleet.pricing.weeklyRate}>
+              <Input
+                type="number"
+                value={draft.priceWeek}
+                onChange={(v) => set("priceWeek", v === "" ? "" : Number(v))}
+                placeholder="1400"
+                suffix="DH"
+              />
+            </Field>
+            <Field label={fr.fleet.pricing.monthlyRate}>
+              <Input
+                type="number"
+                value={draft.priceMonth}
+                onChange={(v) => set("priceMonth", v === "" ? "" : Number(v))}
+                placeholder="5500"
+                suffix="DH"
+              />
+            </Field>
+            <Field label={fr.fleet.pricing.depositAmount}>
+              <Input
+                type="number"
+                value={draft.depositAmount}
+                onChange={(v) => set("depositAmount", v === "" ? "" : Number(v))}
+                placeholder="2000"
+                suffix="DH"
+              />
+            </Field>
+            <Field label={fr.fleet.pricing.mileageLimit}>
+              <Input
+                type="number"
+                value={draft.mileageLimit}
+                onChange={(v) => set("mileageLimit", v === "" ? "" : Number(v))}
+                placeholder="300"
+                suffix="km"
+              />
+            </Field>
+            <Field label={fr.fleet.pricing.extraMileageRate}>
+              <Input
+                type="number"
+                value={draft.extraMileageRate}
+                onChange={(v) => set("extraMileageRate", v === "" ? "" : Number(v))}
+                placeholder="2"
+                suffix="DH"
+              />
+            </Field>
           </div>
         </Section>
 

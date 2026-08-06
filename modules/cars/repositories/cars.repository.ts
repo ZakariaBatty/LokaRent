@@ -21,49 +21,63 @@ export type VehicleListInput = PaginationInput & {
   direction?: "asc" | "desc";
 };
 
-const vehicleListInclude = {
-  category: true,
-  vehicleInsurances: {
-    where: { deletedAt: null },
-    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
-    take: 1,
-  },
-  vehicleRegistrations: {
-    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
-    take: 1,
-  },
-  vehicleVignettes: {
-    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
-    take: 1,
-  },
-  vehicleInspections: {
-    where: { deletedAt: null },
-    orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
-    take: 1,
-  },
-  vehicleMileageLogs: {
-    orderBy: { recordedAt: "desc" },
-    take: 1,
-  },
-  vehicleMaintenances: {
-    where: { deletedAt: null },
-    orderBy: { performedAt: "desc" },
-    take: 5,
-  },
-  vehicleAvailabilityBlocks: {
-    where: { deletedAt: null },
-    orderBy: { startsAt: "desc" },
-    take: 5,
-  },
-  reservations: {
-    where: { deletedAt: null },
-    orderBy: { startsAt: "desc" },
-    take: 5,
-    include: { customer: { include: { individual: true, business: true } } },
-  },
-} satisfies Prisma.VehicleInclude;
+function vehicleListInclude(agencyId: string) {
+  return {
+    category: {
+      include: {
+        pricingRules: {
+          where: { agencyId, deletedAt: null, isCurrent: true },
+          orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+        },
+      },
+    },
+    vehiclePricingRules: {
+      where: { deletedAt: null, isCurrent: true },
+      orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+      take: 1,
+    },
+    vehicleInsurances: {
+      where: { deletedAt: null },
+      orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
+      take: 1,
+    },
+    vehicleRegistrations: {
+      orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
+      take: 1,
+    },
+    vehicleVignettes: {
+      orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
+      take: 1,
+    },
+    vehicleInspections: {
+      where: { deletedAt: null },
+      orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
+      take: 1,
+    },
+    vehicleMileageLogs: {
+      orderBy: { recordedAt: "desc" },
+      take: 1,
+    },
+    vehicleMaintenances: {
+      where: { deletedAt: null },
+      orderBy: { performedAt: "desc" },
+      take: 5,
+    },
+    vehicleAvailabilityBlocks: {
+      where: { deletedAt: null },
+      orderBy: { startsAt: "desc" },
+      take: 5,
+    },
+    reservations: {
+      where: { deletedAt: null },
+      orderBy: { startsAt: "desc" },
+      take: 5,
+      include: { customer: { include: { individual: true, business: true } } },
+    },
+  } satisfies Prisma.VehicleInclude;
+}
 
-export type VehicleWithFleetDetails = Prisma.VehicleGetPayload<{ include: typeof vehicleListInclude }>;
+export type VehicleWithFleetDetails = Prisma.VehicleGetPayload<{ include: ReturnType<typeof vehicleListInclude> }>;
 
 function vehicleWhere(input: VehicleListInput): Prisma.VehicleWhereInput {
   return {
@@ -118,7 +132,7 @@ export async function findVehicleById(
       agencyId: input.agencyId,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
-    include: vehicleListInclude,
+    include: vehicleListInclude(input.agencyId),
   });
 }
 
@@ -130,7 +144,7 @@ export async function paginateVehicles(input: VehicleListInput, db: DatabaseClie
   const [data, total] = await Promise.all([
     db.vehicle.findMany({
       where,
-      include: vehicleListInclude,
+      include: vehicleListInclude(input.agencyId),
       orderBy: [{ [orderField]: direction }, { id: "asc" }],
       skip: pagination.skip,
       take: pagination.take,
@@ -192,6 +206,19 @@ export async function findVehicleCategoryByName(
   });
 }
 
+export async function findVehicleCategoryById(
+  input: { companyId: string; categoryId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleCategory.findFirst({
+    where: {
+      id: input.categoryId,
+      companyId: input.companyId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+  });
+}
+
 export async function listAvailableVehicles(
   input: { companyId: string; agencyId: string; startsAt?: Date; endsAt?: Date },
   db: DatabaseClient = prisma,
@@ -222,7 +249,7 @@ export async function listAvailableVehicles(
           }
         : {}),
     },
-    include: vehicleListInclude,
+    include: vehicleListInclude(input.agencyId),
     orderBy: { code: "asc" },
   });
 }
@@ -317,6 +344,94 @@ export async function createVehicleCategory(
   db: DatabaseClient = prisma,
 ) {
   return db.vehicleCategory.create({ data });
+}
+
+export async function findCurrentVehiclePricingRule(
+  input: {
+    companyId: string;
+    agencyId: string;
+    vehicleId?: string | null;
+    vehicleCategoryId?: string | null;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePricingRule.findFirst({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId ?? null,
+      vehicleCategoryId: input.vehicleCategoryId ?? null,
+      isCurrent: true,
+      deletedAt: null,
+    },
+    orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function listVehiclePricingRules(
+  input: {
+    companyId: string;
+    agencyId: string;
+    vehicleId?: string | null;
+    vehicleCategoryId?: string | null;
+    includeDeleted?: boolean;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePricingRule.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId ?? null,
+      vehicleCategoryId: input.vehicleCategoryId ?? null,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function markCurrentVehiclePricingRulesInactive(
+  input: {
+    companyId: string;
+    agencyId: string;
+    vehicleId?: string | null;
+    vehicleCategoryId?: string | null;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePricingRule.updateMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId ?? null,
+      vehicleCategoryId: input.vehicleCategoryId ?? null,
+      isCurrent: true,
+      deletedAt: null,
+    },
+    data: { isCurrent: false, validTo: new Date() },
+  });
+}
+
+export async function createVehiclePricingRule(
+  data: Prisma.VehiclePricingRuleUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePricingRule.create({ data });
+}
+
+export async function softDeleteVehiclePricingRule(
+  input: { companyId: string; agencyId: string; pricingRuleId: string; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePricingRule.updateMany({
+    where: {
+      id: input.pricingRuleId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+    },
+    data: { isCurrent: false, deletedAt: new Date(), deletedBy: input.deletedBy ?? null },
+  });
 }
 
 export async function listVehicleRegistrations(
@@ -593,6 +708,7 @@ export const carsRepository = {
   findVehicleByPlate,
   findVehicleByCode,
   findVehicleCategoryByName,
+  findVehicleCategoryById,
   listAvailableVehicles,
   createVehicle,
   updateVehicle,
@@ -603,6 +719,11 @@ export const carsRepository = {
   updateVehicleCategory,
   softDeleteVehicleCategory,
   countActiveVehiclesByCategory,
+  findCurrentVehiclePricingRule,
+  listVehiclePricingRules,
+  markCurrentVehiclePricingRulesInactive,
+  createVehiclePricingRule,
+  softDeleteVehiclePricingRule,
   listVehicleRegistrations,
   createVehicleRegistration,
   listVehicleInsurances,

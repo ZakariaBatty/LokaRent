@@ -12,6 +12,7 @@ import {
   createVehicleInsuranceService,
   createVehicleMaintenanceService,
   createVehicleMileageLogService,
+  createCurrentVehiclePricingRuleService,
   createVehicleRegistrationService,
   createVehicleService,
   createVehicleVignetteService,
@@ -32,6 +33,7 @@ import {
   createVehicleInsuranceSchema,
   createVehicleMaintenanceSchema,
   createVehicleMileageLogSchema,
+  createVehiclePricingRuleSchema,
   createVehicleRegistrationSchema,
   createVehicleSchema,
   createVehicleVignetteSchema,
@@ -62,6 +64,9 @@ function messageKeyForError(error: unknown) {
     if (error.message === "FLEET_DELETE_BLOCKED_BY_ACTIVE_RECORDS") return "fleet.errors.deleteBlocked";
     if (error.message === "FLEET_CATEGORY_IN_USE") return "fleet.errors.categoryInUse";
     if (error.message === "FLEET_INVALID_AVAILABILITY_BLOCK_DATES") return "fleet.errors.invalidAvailabilityDates";
+    if (error.message === "FLEET_PRICING_INVALID_TARGET") return "fleet.errors.invalidPricingTarget";
+    if (error.message === "FLEET_PRICING_INVALID_DATES") return "fleet.errors.invalidPricingDates";
+    if (error.message === "FLEET_PRICING_EMPTY") return "fleet.errors.emptyPricingRule";
     return "fleet.errors.validation";
   }
   return "fleet.errors.generic";
@@ -79,6 +84,24 @@ async function getActionContext(permission: (typeof PERMISSIONS)[keyof typeof PE
 
 function decimal(value?: number) {
   return value === undefined ? undefined : new Prisma.Decimal(value);
+}
+
+function hasPricingInput(input: {
+  dailyRate?: number;
+  weeklyRate?: number;
+  monthlyRate?: number;
+  depositAmount?: number;
+  mileageLimit?: number;
+  extraMileageRate?: number;
+}) {
+  return [
+    input.dailyRate,
+    input.weeklyRate,
+    input.monthlyRate,
+    input.depositAmount,
+    input.mileageLimit,
+    input.extraMileageRate,
+  ].some((value) => value !== undefined);
 }
 
 async function resolveCategoryId(input: {
@@ -101,7 +124,20 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
 
   try {
     const context = await getActionContext(PERMISSIONS.FLEET_CREATE);
-    const { mileage, categoryName, ...data } = parsed.data;
+    const {
+      mileage,
+      categoryName,
+      dailyRate,
+      weeklyRate,
+      monthlyRate,
+      depositAmount,
+      mileageLimit,
+      extraMileageRate,
+      pricingCurrency,
+      pricingValidFrom,
+      pricingValidTo,
+      ...data
+    } = parsed.data;
     const category = await resolveCategoryId({
       companyId: context.companyId,
       categoryId: data.categoryId,
@@ -131,6 +167,23 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
       await createVehicleMileageLogService({
         context,
         data: { vehicleId: vehicle.id, mileage, recordedAt: new Date(), source: "manual" },
+      });
+    }
+    if (hasPricingInput({ dailyRate, weeklyRate, monthlyRate, depositAmount, mileageLimit, extraMileageRate })) {
+      await createCurrentVehiclePricingRuleService({
+        context,
+        data: {
+          vehicleId: vehicle.id,
+          dailyRate: decimal(dailyRate),
+          weeklyRate: decimal(weeklyRate),
+          monthlyRate: decimal(monthlyRate),
+          depositAmount: decimal(depositAmount),
+          mileageLimit,
+          extraMileageRate: decimal(extraMileageRate),
+          currency: pricingCurrency ?? "MAD",
+          validFrom: pricingValidFrom ?? new Date(),
+          validTo: pricingValidTo,
+        },
       });
     }
     if (data.insuranceProvider && data.insurancePolicyNumber && data.insuranceStartsAt && data.insuranceExpiresAt) {
@@ -208,6 +261,15 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       vehicleId,
       mileage,
       categoryName,
+      dailyRate,
+      weeklyRate,
+      monthlyRate,
+      depositAmount,
+      mileageLimit,
+      extraMileageRate,
+      pricingCurrency,
+      pricingValidFrom,
+      pricingValidTo,
       vignetteTaxYear,
       vignettePaidAt,
       vignetteExpiresAt,
@@ -239,6 +301,23 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       await createVehicleMileageLogService({
         context,
         data: { vehicleId, mileage, recordedAt: new Date(), source: "manual" },
+      });
+    }
+    if (hasPricingInput({ dailyRate, weeklyRate, monthlyRate, depositAmount, mileageLimit, extraMileageRate })) {
+      await createCurrentVehiclePricingRuleService({
+        context,
+        data: {
+          vehicleId,
+          dailyRate: decimal(dailyRate),
+          weeklyRate: decimal(weeklyRate),
+          monthlyRate: decimal(monthlyRate),
+          depositAmount: decimal(depositAmount),
+          mileageLimit,
+          extraMileageRate: decimal(extraMileageRate),
+          currency: pricingCurrency ?? "MAD",
+          validFrom: pricingValidFrom ?? new Date(),
+          validTo: pricingValidTo,
+        },
       });
     }
     if (vignetteTaxYear && vignettePaidAt && vignetteExpiresAt) {
@@ -311,6 +390,34 @@ export async function createVehicleCategoryAction(input: unknown): Promise<CarAc
     await createVehicleCategoryService({ companyId: context.companyId, data: parsed.data });
     revalidatePath("/cars");
     return { success: true };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function createVehiclePricingRuleAction(input: unknown): Promise<CarActionResult> {
+  const parsed = createVehiclePricingRuleSchema.safeParse(input);
+  if (!parsed.success) return { success: false, messageKey: "fleet.errors.validation" };
+  try {
+    const context = await getActionContext(PERMISSIONS.FLEET_EDIT);
+    await createCurrentVehiclePricingRuleService({
+      context,
+      data: {
+        vehicleId: parsed.data.vehicleId,
+        vehicleCategoryId: parsed.data.vehicleCategoryId,
+        dailyRate: decimal(parsed.data.dailyRate),
+        weeklyRate: decimal(parsed.data.weeklyRate),
+        monthlyRate: decimal(parsed.data.monthlyRate),
+        depositAmount: decimal(parsed.data.depositAmount),
+        mileageLimit: parsed.data.mileageLimit,
+        extraMileageRate: decimal(parsed.data.extraMileageRate),
+        currency: parsed.data.currency,
+        validFrom: parsed.data.validFrom,
+        validTo: parsed.data.validTo,
+      },
+    });
+    revalidatePath("/cars");
+    return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }

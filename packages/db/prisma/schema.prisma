@@ -258,6 +258,7 @@ model Company {
   invitations                  Invitation[]
   vehicleCategories            VehicleCategory[]
   vehicles                     Vehicle[]
+  vehiclePricingRules          VehiclePricingRule[]
   vehicleInsurances            VehicleInsurance[]
   vehicleInspections           VehicleInspection[]
   vehicleMileageLogs           VehicleMileageLog[]
@@ -324,6 +325,7 @@ model Agency {
   agencyMemberships         AgencyMembership[]
   invitations               Invitation[]
   vehicles                  Vehicle[]
+  vehiclePricingRules       VehiclePricingRule[]
   vehicleInsurances         VehicleInsurance[]
   vehicleInspections        VehicleInspection[]
   vehicleMaintenances       VehicleMaintenance[]
@@ -652,8 +654,9 @@ model VehicleCategory {
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
   deletedBy String?   @map("deleted_by") @db.Uuid
 
-  company  Company   @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  vehicles Vehicle[]
+  company      Company              @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  vehicles     Vehicle[]
+  pricingRules VehiclePricingRule[]
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -694,6 +697,7 @@ model Vehicle {
   vehicleMileageLogs        VehicleMileageLog[]
   vehicleMaintenances       VehicleMaintenance[]
   vehicleAvailabilityBlocks VehicleAvailabilityBlock[]
+  vehiclePricingRules       VehiclePricingRule[]
   reservations              Reservation[]
   contracts                 Contract[]
   expenses                  Expense[]
@@ -708,6 +712,41 @@ model Vehicle {
   @@index([status])
   @@index([categoryId])
   @@map("vehicles")
+}
+
+model VehiclePricingRule {
+  id                String    @id @db.Uuid
+  companyId         String    @map("company_id") @db.Uuid
+  agencyId          String    @map("agency_id") @db.Uuid
+  vehicleId         String?   @map("vehicle_id") @db.Uuid
+  vehicleCategoryId String?   @map("vehicle_category_id") @db.Uuid
+  dailyRate         Decimal?  @map("daily_rate") @db.Decimal(14, 4)
+  weeklyRate        Decimal?  @map("weekly_rate") @db.Decimal(14, 4)
+  monthlyRate       Decimal?  @map("monthly_rate") @db.Decimal(14, 4)
+  depositAmount     Decimal?  @map("deposit_amount") @db.Decimal(14, 4)
+  mileageLimit      Int?      @map("mileage_limit")
+  extraMileageRate  Decimal?  @map("extra_mileage_rate") @db.Decimal(14, 4)
+  currency          String    @db.Char(3)
+  validFrom         DateTime  @map("valid_from") @db.Date
+  validTo           DateTime? @map("valid_to") @db.Date
+  isCurrent         Boolean   @default(true) @map("is_current")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt         DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy         String?   @map("deleted_by") @db.Uuid
+
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency          Agency           @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleCategory VehicleCategory? @relation(fields: [vehicleCategoryId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([agencyId, vehicleId, isCurrent])
+  @@index([agencyId, vehicleCategoryId, isCurrent])
+  @@index([vehicleId, validFrom])
+  @@index([vehicleCategoryId, validFrom])
+  @@index([createdAt])
+  @@map("vehicle_pricing_rules")
 }
 
 model VehicleInsurance {

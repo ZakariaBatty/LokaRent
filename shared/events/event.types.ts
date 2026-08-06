@@ -47,7 +47,8 @@ export type DomainEventName =
   | "VehicleAdded"
   | "VehicleBlockedManually"
   | "VehicleDeactivated"
-  | "VehicleMaintenanceStarted";
+  | "VehicleMaintenanceStarted"
+  | "VehiclePricingRuleChanged";
 
 export type DomainEvent = {
   name: DomainEventName;

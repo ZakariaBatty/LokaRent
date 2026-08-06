@@ -35,6 +35,15 @@ export const createVehicleSchema = z.object({
   status: vehicleStatusSchema.default("available"),
   notes: optionalText,
   mileage: z.coerce.number().int().nonnegative().optional(),
+  dailyRate: optionalAmount,
+  weeklyRate: optionalAmount,
+  monthlyRate: optionalAmount,
+  depositAmount: optionalAmount,
+  mileageLimit: z.coerce.number().int().nonnegative().optional(),
+  extraMileageRate: optionalAmount,
+  pricingCurrency: optionalText,
+  pricingValidFrom: optionalDate,
+  pricingValidTo: optionalDate,
   insuranceProvider: optionalText,
   insurancePolicyNumber: optionalText,
   insuranceCoverageType: insuranceCoverageTypeSchema.optional(),
@@ -65,6 +74,20 @@ export const createVehicleSchema = z.object({
 
 export const createVehicleCategorySchema = z.object({
   name: requiredText,
+});
+
+export const createVehiclePricingRuleSchema = z.object({
+  vehicleId: z.string().uuid().optional(),
+  vehicleCategoryId: z.string().uuid().optional(),
+  dailyRate: optionalAmount,
+  weeklyRate: optionalAmount,
+  monthlyRate: optionalAmount,
+  depositAmount: optionalAmount,
+  mileageLimit: z.coerce.number().int().nonnegative().optional(),
+  extraMileageRate: optionalAmount,
+  currency: requiredText.length(3),
+  validFrom: z.coerce.date(),
+  validTo: optionalDate,
 });
 
 export const createVehicleInsuranceSchema = z.object({

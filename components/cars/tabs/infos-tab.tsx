@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "motion/react"
 import { Check, Pencil, Gauge, Fuel, Users, Calendar, Palette, Tag } from "lucide-react"
-import { type Car, type CarStatus, statusConfig } from "@/lib/cars-data"
+import { type Car, type CarStatus, statusConfig, formatMAD } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
 
@@ -214,9 +214,50 @@ export function InfosTab({ car }: { car: Car }) {
 
       {/* Pricing */}
       <section>
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5">
-          <p className="text-xs font-semibold text-amber-800">{fr.fleet.pricing.unsupportedTitle}</p>
-          <p className="mt-0.5 text-[11px] text-amber-700">{fr.fleet.pricing.unsupportedDescription}</p>
+        <h3 className="mb-3 text-sm font-bold text-slate-900">{fr.fleet.pricing.title}</h3>
+        <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.dailyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.weeklyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceWeek)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.monthlyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceMonth)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.depositAmount}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.depositAmount === undefined ? "-" : formatMAD(car.depositAmount)}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.mileageLimit}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.mileageLimit === undefined ? "-" : `${car.mileageLimit.toLocaleString("fr-FR")} km`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.extraMileageRate}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.extraMileageRate === undefined ? "-" : formatMAD(car.extraMileageRate)}
+            </p>
+          </div>
         </div>
       </section>
     </div>

@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react"
 import { Eye, AlertTriangle } from "lucide-react"
-import { type Car, statusConfig } from "@/lib/cars-data"
+import { type Car, statusConfig, formatMAD } from "@/lib/cars-data"
 import { CarIllustration } from "./car-illustration"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
@@ -78,8 +78,8 @@ export function CarListRow({
       </div>
 
       <div className="hidden text-right lg:block">
-        <p className="text-sm font-bold text-slate-900 tabular-nums">{car.seats}</p>
-        <p className="text-[10px] text-slate-400">{fr.fleet.seats}</p>
+        <p className="text-sm font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
+        <p className="text-[10px] text-slate-400">{fr.fleet.pricing.perDay}</p>
       </div>
 
       <div className="flex items-center gap-2">

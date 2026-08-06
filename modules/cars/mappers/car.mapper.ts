@@ -90,6 +90,14 @@ function reservationAmount(reservation: VehicleWithFleetDetails["reservations"][
   return Number(reservation.totalAmount ?? 0);
 }
 
+function resolvePricingRule(vehicle: VehicleWithFleetDetails) {
+  return (
+    vehicle.vehiclePricingRules[0] ??
+    vehicle.category.pricingRules.find((rule) => rule.agencyId === vehicle.agencyId) ??
+    null
+  );
+}
+
 function mapReservations(vehicle: VehicleWithFleetDetails): ReservationHistory[] {
   return vehicle.reservations.map((reservation) => {
     const name = customerName(reservation);
@@ -118,6 +126,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
   const registration = vehicle.vehicleRegistrations[0];
   const vignette = vehicle.vehicleVignettes[0];
   const inspection = vehicle.vehicleInspections[0];
+  const pricingRule = resolvePricingRule(vehicle);
   const mileage = vehicle.vehicleMileageLogs[0]?.mileage ?? 0;
   const insuranceDays = daysUntil(insurance?.expiresAt);
   const vignetteDays = daysUntil(vignette?.expiresAt);
@@ -143,9 +152,16 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
     seats: vehicle.seats ?? 0,
     km: mileage,
     status: mapStatus(vehicle.status),
-    priceDay: 0,
-    priceWeek: 0,
-    priceMonth: 0,
+    priceDay: Number(pricingRule?.dailyRate ?? 0),
+    priceWeek: Number(pricingRule?.weeklyRate ?? 0),
+    priceMonth: Number(pricingRule?.monthlyRate ?? 0),
+    depositAmount: pricingRule?.depositAmount === null || pricingRule?.depositAmount === undefined
+      ? undefined
+      : Number(pricingRule.depositAmount),
+    mileageLimit: pricingRule?.mileageLimit ?? undefined,
+    extraMileageRate: pricingRule?.extraMileageRate === null || pricingRule?.extraMileageRate === undefined
+      ? undefined
+      : Number(pricingRule.extraMileageRate),
     insurance: {
       company: insurance?.provider ?? "",
       startDate: toIsoDate(insurance?.startsAt),

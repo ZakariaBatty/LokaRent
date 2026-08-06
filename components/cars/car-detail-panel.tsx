@@ -120,11 +120,9 @@ export function CarDetailPanel({
           <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                {fr.fleet.mileage}
+                {fr.fleet.pricing.dailyRate}
               </p>
-              <p className="text-base font-bold text-slate-900 tabular-nums">
-                {car.km.toLocaleString("fr-FR")} km
-              </p>
+              <p className="text-base font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Revenus</p>

@@ -19,15 +19,20 @@ import {
   createVehicleInsurance,
   createVehicleMaintenance,
   createVehicleMileageLog,
+  createVehiclePricingRule,
   createVehicleRegistration,
   createVehicleVignette,
   findVehicleAvailabilityOverlaps,
   findVehicleByCode,
   findVehicleById,
   findVehicleByPlate,
+  findVehicleCategoryById,
   findVehicleCategoryByName,
+  findCurrentVehiclePricingRule,
   listAvailableVehicles,
+  listVehiclePricingRules,
   listVehicleCategories,
+  markCurrentVehiclePricingRulesInactive,
   paginateVehicles,
   restoreVehicle,
   softDeleteVehicle,
@@ -39,6 +44,7 @@ import {
   updateVehicleInsurance,
   updateVehicleMaintenance,
   findCurrentVehicleMileage,
+  softDeleteVehiclePricingRule,
   type VehicleListInput,
 } from "../repositories/cars.repository";
 import { getCompanyService } from "@/modules/workspace/agencies/services/agencies.service";
@@ -60,6 +66,7 @@ type VehicleRegistrationCreateData = Omit<Parameters<typeof createVehicleRegistr
 type VehicleInsuranceCreateData = Omit<Parameters<typeof createVehicleInsurance>[0], "id" | "companyId" | "agencyId">;
 type VehicleInspectionCreateData = Omit<Parameters<typeof createVehicleInspection>[0], "id" | "companyId" | "agencyId">;
 type VehicleVignetteCreateData = Omit<Parameters<typeof createVehicleVignette>[0], "id" | "companyId" | "agencyId">;
+type VehiclePricingRuleCreateData = Omit<Parameters<typeof createVehiclePricingRule>[0], "id" | "companyId" | "agencyId">;
 type VehicleMileageLogCreateData = Omit<Parameters<typeof createVehicleMileageLog>[0], "id" | "companyId" | "recordedBy">;
 type VehicleMaintenanceCreateData = Omit<Parameters<typeof createVehicleMaintenance>[0], "id" | "companyId" | "agencyId" | "recordedBy">;
 type AvailabilityBlockCreateData = Omit<Parameters<typeof createAvailabilityBlock>[0], "id" | "companyId" | "agencyId" | "createdBy">;
@@ -145,6 +152,44 @@ async function assertMileageDoesNotDecrease(input: {
       nextMileage: input.mileage,
     });
   }
+}
+
+function hasPricingAmount(input: VehiclePricingRuleCreateData) {
+  return [
+    input.dailyRate,
+    input.weeklyRate,
+    input.monthlyRate,
+    input.depositAmount,
+    input.mileageLimit,
+    input.extraMileageRate,
+  ].some((value) => value !== undefined && value !== null);
+}
+
+function assertPricingTarget(input: VehiclePricingRuleCreateData) {
+  const hasVehicle = Boolean(input.vehicleId);
+  const hasCategory = Boolean(input.vehicleCategoryId);
+  if (hasVehicle === hasCategory) {
+    throw createValidationError("FLEET_PRICING_INVALID_TARGET");
+  }
+}
+
+function assertPricingDates(input: VehiclePricingRuleCreateData) {
+  if (input.validTo && toDate(input.validTo) < toDate(input.validFrom)) {
+    throw createValidationError("FLEET_PRICING_INVALID_DATES");
+  }
+}
+
+async function assertPricingTargetBelongsToScope(context: FleetServiceContext, data: VehiclePricingRuleCreateData) {
+  if (data.vehicleId) {
+    await assertVehicleBelongsToScope({ ...context, vehicleId: data.vehicleId });
+    return;
+  }
+  if (!data.vehicleCategoryId) return;
+  const category = await findVehicleCategoryById({
+    companyId: context.companyId,
+    categoryId: data.vehicleCategoryId,
+  });
+  if (!category) throw createNotFoundError("Vehicle category", data);
 }
 
 export async function getVehicleService(input: {
@@ -412,6 +457,120 @@ export async function listVehicleCategoriesService(companyId: string) {
   return listVehicleCategories(companyId);
 }
 
+export async function getCurrentVehiclePricingRuleService(input: {
+  companyId: string;
+  agencyId: string;
+  vehicleId?: string | null;
+  vehicleCategoryId?: string | null;
+}) {
+  return findCurrentVehiclePricingRule(input);
+}
+
+export async function listVehiclePricingRulesService(input: {
+  companyId: string;
+  agencyId: string;
+  vehicleId?: string | null;
+  vehicleCategoryId?: string | null;
+  includeDeleted?: boolean;
+}) {
+  return listVehiclePricingRules(input);
+}
+
+export async function createCurrentVehiclePricingRuleService(input: {
+  context: FleetServiceContext;
+  data: VehiclePricingRuleCreateData;
+}) {
+  assertPricingTarget(input.data);
+  assertPricingDates(input.data);
+  if (!hasPricingAmount(input.data)) {
+    throw createValidationError("FLEET_PRICING_EMPTY");
+  }
+  await assertPricingTargetBelongsToScope(input.context, input.data);
+
+  const rule = await runInTransaction(async (tx) => {
+    const previous = await findCurrentVehiclePricingRule(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        vehicleId: input.data.vehicleId ?? null,
+        vehicleCategoryId: input.data.vehicleCategoryId ?? null,
+      },
+      tx,
+    );
+    if (previous) {
+      await markCurrentVehiclePricingRulesInactive(
+        {
+          companyId: input.context.companyId,
+          agencyId: input.context.agencyId,
+          vehicleId: input.data.vehicleId ?? null,
+          vehicleCategoryId: input.data.vehicleCategoryId ?? null,
+        },
+        tx,
+      );
+    }
+    const created = await createVehiclePricingRule(
+      {
+        ...input.data,
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        isCurrent: true,
+      },
+      tx,
+    );
+    await writeAuditLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        actorName: input.context.actorName,
+        action: previous ? "VehiclePricingRuleUpdated" : "VehiclePricingRuleCreated",
+        entityType: "vehicle_pricing_rule",
+        entityId: created.id,
+        changes: {
+          previousPricingRuleId: previous?.id ?? null,
+          vehicleId: created.vehicleId,
+          vehicleCategoryId: created.vehicleCategoryId,
+        },
+      },
+      tx,
+    );
+    await writeActivityLog(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        userId: input.context.userId,
+        actorName: input.context.actorName,
+        entityType: "vehicle_pricing_rule",
+        entityId: created.id,
+        verb: previous ? "VehiclePricingUpdated" : "VehiclePricingCreated",
+      },
+      tx,
+    );
+    return created;
+  });
+
+  await publishDomainEvent({
+    name: "VehiclePricingRuleChanged",
+    companyId: rule.companyId,
+    agencyId: rule.agencyId,
+    entityType: "vehicle_pricing_rule",
+    entityId: rule.id,
+    userId: input.context.userId,
+    actorName: input.context.actorName,
+    occurredAt: new Date(),
+  });
+  return rule;
+}
+
+export async function deleteVehiclePricingRuleService(input: FleetServiceContext & { pricingRuleId: string }) {
+  const result = await softDeleteVehiclePricingRule({ ...input, deletedBy: input.userId ?? null });
+  if (result.count === 0) throw createNotFoundError("Vehicle pricing rule", input);
+  return result;
+}
+
 export async function createVehicleRegistrationService(input: {
   context: FleetServiceContext;
   data: VehicleRegistrationCreateData;
@@ -619,6 +778,10 @@ export const carsService = {
   updateVehicleCategoryService,
   deleteVehicleCategoryService,
   listVehicleCategoriesService,
+  getCurrentVehiclePricingRuleService,
+  listVehiclePricingRulesService,
+  createCurrentVehiclePricingRuleService,
+  deleteVehiclePricingRuleService,
   createVehicleRegistrationService,
   createVehicleInsuranceService,
   updateVehicleInsuranceService,

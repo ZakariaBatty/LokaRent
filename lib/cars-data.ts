@@ -70,6 +70,9 @@ export type Car = {
   priceDay: number
   priceWeek: number
   priceMonth: number
+  depositAmount?: number
+  mileageLimit?: number
+  extraMileageRate?: number
   insurance: Insurance
   vignette: Vignette
   visiteTechnique: VisiteTechnique
