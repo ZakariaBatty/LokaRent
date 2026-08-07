@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { Calendar, Clock, DollarSign, FileText, IdCard, Mail, Phone, Save, User, UserPlus, Wallet, X } from "lucide-react"
+import { Calendar, Clock, DollarSign, ExternalLink, FileText, IdCard, Mail, Phone, Save, Trash2, Upload, User, UserPlus, Wallet, X } from "lucide-react"
+import { toast } from "sonner"
 import { type Driver, type DriverStatus, type PaymentType } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
+import { uploadDriverDocumentAction } from "@/modules/drivers/actions/upload-driver-file.action"
 import fr from "@/translations/fr"
 
 export type DriverFormValues = {
@@ -16,8 +18,10 @@ export type DriverFormValues = {
   notes: string
   cinNumber: string
   cinExpiry: string
+  cinDocumentUrl: string
   licenseNumber: string
   licenseExpiry: string
+  licenseDocumentUrl: string
   status: DriverStatus
   paymentType: PaymentType
   monthlySalary: string
@@ -34,8 +38,10 @@ const defaultValues: DriverFormValues = {
   notes: "",
   cinNumber: "",
   cinExpiry: "",
+  cinDocumentUrl: "",
   licenseNumber: "",
   licenseExpiry: "",
+  licenseDocumentUrl: "",
   status: "active",
   paymentType: "monthly",
   monthlySalary: "",
@@ -77,6 +83,78 @@ const selectCls =
   "block w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 pr-9 text-sm text-slate-900 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
 
 type Mode = "create" | "edit"
+type UploadFieldKey = "cinDocumentUrl" | "licenseDocumentUrl"
+
+function DocumentUploadField({
+  label,
+  value,
+  uploading,
+  onChange,
+  onRemove,
+}: {
+  label: string
+  value: string
+  uploading: boolean
+  onChange: (ev: React.ChangeEvent<HTMLInputElement>) => void
+  onRemove: () => void
+}) {
+  return (
+    <Field icon={Upload} label={label}>
+      <label className="flex h-11 cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3.5 text-sm text-slate-600 transition hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700">
+        <span className="flex min-w-0 items-center gap-2">
+          {uploading ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-200 border-t-blue-600" />
+          ) : (
+            <Upload className="h-4 w-4" />
+          )}
+          <span className="truncate">
+            {uploading
+              ? fr.drivers.upload.uploading
+              : value
+                ? fr.drivers.upload.replaceFile
+                : fr.drivers.upload.chooseFile}
+          </span>
+        </span>
+        {value && !uploading && (
+          <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            {fr.drivers.upload.uploaded}
+          </span>
+        )}
+        <input
+          type="file"
+          accept="application/pdf,image/jpeg,image/png,image/webp"
+          onChange={onChange}
+          disabled={uploading}
+          className="hidden"
+        />
+      </label>
+      <div className="mt-1.5 flex items-center justify-between gap-3">
+        <p className="text-[10px] text-slate-400">{fr.drivers.upload.hint}</p>
+        {value && !uploading && (
+          <div className="flex items-center gap-2">
+            <a
+              href={value}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {fr.drivers.documents.open}
+            </a>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="inline-flex items-center gap-1 text-[10px] font-semibold text-rose-600 hover:text-rose-700"
+            >
+              <Trash2 className="h-3 w-3" />
+              {fr.drivers.upload.removeFile}
+            </button>
+          </div>
+        )}
+      </div>
+    </Field>
+  )
+}
 
 export function DriverFormPanel({
   open,
@@ -93,6 +171,7 @@ export function DriverFormPanel({
 }) {
   const [values, setValues] = useState<DriverFormValues>(defaultValues)
   const [saving, setSaving] = useState(false)
+  const [uploadingField, setUploadingField] = useState<UploadFieldKey | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -106,8 +185,10 @@ export function DriverFormPanel({
         notes: driver.notes,
         cinNumber: driver.cinNumber,
         cinExpiry: dateOnly(driver.cinExpiry),
+        cinDocumentUrl: driver.documents.find((document) => document.type === "national_id")?.documentUrl ?? "",
         licenseNumber: driver.licenseNumber,
         licenseExpiry: dateOnly(driver.licenseExpiry),
+        licenseDocumentUrl: driver.documents.find((document) => document.type === "driving_license")?.documentUrl ?? "",
         status: driver.status,
         paymentType: driver.paymentType,
         monthlySalary: driver.currentRate.monthlySalary?.toString() ?? "",
@@ -136,6 +217,29 @@ export function DriverFormPanel({
       if (ok) onClose()
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function uploadDocument(ev: React.ChangeEvent<HTMLInputElement>, key: UploadFieldKey, folder: string) {
+    const file = ev.target.files?.[0]
+    ev.target.value = ""
+    if (!file) return
+
+    const formData = new FormData()
+    formData.append("file", file)
+    formData.append("folder", folder)
+    setUploadingField(key)
+    try {
+      const result = await uploadDriverDocumentAction(formData)
+      if (!result.success) {
+        const keyName = result.messageKey.split(".").at(-1) as keyof typeof fr.drivers.upload.errors
+        toast.error(fr.drivers.upload.errors[keyName] ?? fr.drivers.upload.errors.generic)
+        return
+      }
+      setValues((current) => ({ ...current, [key]: result.upload.url }))
+      toast.success(fr.drivers.upload.uploaded)
+    } finally {
+      setUploadingField(null)
     }
   }
 
@@ -273,6 +377,13 @@ export function DriverFormPanel({
                         className={inputCls}
                       />
                     </Field>
+                    <DocumentUploadField
+                      label={fr.drivers.upload.nationalIdDocument}
+                      value={values.cinDocumentUrl}
+                      uploading={uploadingField === "cinDocumentUrl"}
+                      onChange={(event) => uploadDocument(event, "cinDocumentUrl", "drivers/documents/national-id")}
+                      onRemove={() => setValues({ ...values, cinDocumentUrl: "" })}
+                    />
                     <Field icon={IdCard} label={fr.drivers.licenseNumber}>
                       <input
                         value={values.licenseNumber}
@@ -289,6 +400,13 @@ export function DriverFormPanel({
                         className={inputCls}
                       />
                     </Field>
+                    <DocumentUploadField
+                      label={fr.drivers.upload.drivingLicenseDocument}
+                      value={values.licenseDocumentUrl}
+                      uploading={uploadingField === "licenseDocumentUrl"}
+                      onChange={(event) => uploadDocument(event, "licenseDocumentUrl", "drivers/documents/driving-license")}
+                      onRemove={() => setValues({ ...values, licenseDocumentUrl: "" })}
+                    />
                   </div>
                 </div>
 

@@ -76,11 +76,13 @@ function toActionInput(values: DriverFormValues, driverId?: string) {
         type: "national_id",
         documentNumber: values.cinNumber || undefined,
         expiresAt: values.cinExpiry || undefined,
+        documentUrl: values.cinDocumentUrl || undefined,
       },
       {
         type: "driving_license",
         documentNumber: values.licenseNumber || undefined,
         expiresAt: values.licenseExpiry || undefined,
+        documentUrl: values.licenseDocumentUrl || undefined,
       },
     ],
   }

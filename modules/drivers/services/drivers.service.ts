@@ -84,6 +84,29 @@ function assertDocumentDates(data: DriverDocumentCreateData) {
   }
 }
 
+function sameDate(left?: Date | string | null, right?: Date | string | null) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return toDate(left).toISOString().slice(0, 10) === toDate(right).toISOString().slice(0, 10);
+}
+
+function sameOptionalText(left?: string | null, right?: string | null) {
+  return (left ?? "") === (right ?? "");
+}
+
+function sameDriverDocument(
+  existing: Awaited<ReturnType<typeof listDriverDocuments>>[number],
+  next: DriverDocumentCreateData,
+) {
+  return (
+    existing.type === next.type &&
+    sameOptionalText(existing.documentNumber, next.documentNumber as string | null | undefined) &&
+    sameDate(existing.issuedAt, next.issuedAt as Date | string | null | undefined) &&
+    sameDate(existing.expiresAt, next.expiresAt as Date | string | null | undefined) &&
+    sameOptionalText(existing.documentUrl, next.documentUrl as string | null | undefined)
+  );
+}
+
 export async function getDriverService(input: {
   companyId: string;
   agencyId: string;
@@ -373,18 +396,38 @@ export async function upsertDriverDocumentByTypeService(
       tx,
     )).find((document) => document.type === input.data.type);
     if (existing) {
-      await updateDriverDocument(
+      if (sameDriverDocument(existing, input.data)) return existing;
+      await softDeleteDriverDocument(
         {
           companyId: input.companyId,
           driverId: input.driverId,
           documentId: existing.id,
-          data: input.data,
+          deletedBy: input.userId ?? null,
         },
         tx,
       );
-      return existing;
+      const created = await createDriverDocument(
+        {
+          ...input.data,
+          id: createId(),
+          companyId: input.companyId,
+          driverId: input.driverId,
+        },
+        tx,
+      );
+      await writeActivityLog({
+        id: createId(),
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        userId: input.userId,
+        actorName: input.actorName,
+        entityType: "driver_document",
+        entityId: created.id,
+        verb: "DriverDocumentReplaced",
+      }, tx);
+      return created;
     }
-    return createDriverDocument(
+    const created = await createDriverDocument(
       {
         ...input.data,
         id: createId(),
@@ -393,6 +436,17 @@ export async function upsertDriverDocumentByTypeService(
       },
       tx,
     );
+    await writeActivityLog({
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "driver_document",
+      entityId: created.id,
+      verb: "DriverDocumentCreated",
+    }, tx);
+    return created;
   });
 }
 

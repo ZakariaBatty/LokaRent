@@ -252,6 +252,23 @@ export default {
       expiresOn: 'Expires on',
       open: 'Open',
     },
+    upload: {
+      drivingLicenseDocument: 'Driving license document',
+      nationalIdDocument: 'National ID document',
+      chooseFile: 'Add file',
+      replaceFile: 'Replace file',
+      removeFile: 'Remove file',
+      uploading: 'Uploading…',
+      uploaded: 'File ready',
+      hint: 'PDF, JPG, or PNG up to 10 MB',
+      errors: {
+        validation: 'Please choose a valid file.',
+        unsupportedFile: 'This file type is not supported.',
+        fileTooLarge: 'The file is larger than the allowed maximum.',
+        providerNotConfigured: 'The storage provider is not configured.',
+        generic: 'Unable to upload this file right now.',
+      },
+    },
     documentTypes: {
       driving_license: 'Driving license',
       national_id: 'National ID',

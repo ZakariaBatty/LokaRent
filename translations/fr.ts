@@ -252,6 +252,23 @@ export default {
       expiresOn: 'Expire le',
       open: 'Ouvrir',
     },
+    upload: {
+      drivingLicenseDocument: 'Document permis de conduire',
+      nationalIdDocument: 'Document CIN',
+      chooseFile: 'Ajouter un fichier',
+      replaceFile: 'Remplacer le fichier',
+      removeFile: 'Retirer le fichier',
+      uploading: 'Téléversement…',
+      uploaded: 'Fichier prêt',
+      hint: 'PDF, JPG ou PNG jusqu’à 10 MB',
+      errors: {
+        validation: 'Veuillez choisir un fichier valide.',
+        unsupportedFile: 'Ce type de fichier n’est pas pris en charge.',
+        fileTooLarge: 'Le fichier dépasse la taille maximale autorisée.',
+        providerNotConfigured: 'Le fournisseur de stockage n’est pas configuré.',
+        generic: 'Impossible de téléverser ce fichier pour le moment.',
+      },
+    },
     documentTypes: {
       driving_license: 'Permis de conduire',
       national_id: 'Carte Nationale',

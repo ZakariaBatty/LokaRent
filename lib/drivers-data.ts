@@ -91,19 +91,19 @@ export type Driver = {
 
 export const statusConfig: Record<DriverStatus, { label: string; pillClass: string; dotClass: string; textClass: string }> = {
   active: {
-    label: "Actif",
+    label: "drivers.status.active",
     pillClass: "border-emerald-200 bg-emerald-50",
     dotClass: "bg-emerald-500",
     textClass: "text-emerald-700",
   },
   inactive: {
-    label: "Inactif",
+    label: "drivers.status.inactive",
     pillClass: "border-slate-200 bg-slate-50",
     dotClass: "bg-slate-400",
     textClass: "text-slate-600",
   },
   suspended: {
-    label: "Suspendu",
+    label: "drivers.status.suspended",
     pillClass: "border-rose-200 bg-rose-50",
     dotClass: "bg-rose-500",
     textClass: "text-rose-700",
