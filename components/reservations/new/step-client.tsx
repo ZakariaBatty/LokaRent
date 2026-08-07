@@ -28,8 +28,8 @@ function toSelected(c: Client): SelectedClient {
     phone: c.phone,
     email: c.email,
     status: c.status,
-    idType: c.idType,
-    idNumber: c.idNumber,
+    idType: c.idType ?? "CIN",
+    idNumber: c.idNumber ?? "",
     licenseExpiry: c.licenseExpiry,
   }
 }
@@ -53,7 +53,7 @@ export function StepClient() {
         (c) =>
           c.fullName.toLowerCase().includes(q) ||
           c.phone.replace(/\s/g, "").includes(q.replace(/\s/g, "")) ||
-          c.idNumber.toLowerCase().includes(q),
+          (c.idNumber ?? "").toLowerCase().includes(q),
       )
       .slice(0, 8)
   }, [query])

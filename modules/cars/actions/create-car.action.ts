@@ -17,7 +17,9 @@ import {
   createVehicleService,
   createVehicleVignetteService,
   deactivateVehicleService,
+  getVehicleService,
   listVehicleCategoriesService,
+  replaceVehiclePhotosService,
   restoreVehicleService,
   updateAvailabilityBlockService,
   updateVehicleInspectionService,
@@ -67,6 +69,7 @@ function messageKeyForError(error: unknown) {
     if (error.message === "FLEET_PRICING_INVALID_TARGET") return "fleet.errors.invalidPricingTarget";
     if (error.message === "FLEET_PRICING_INVALID_DATES") return "fleet.errors.invalidPricingDates";
     if (error.message === "FLEET_PRICING_EMPTY") return "fleet.errors.emptyPricingRule";
+    if (error.message === "FLEET_PHOTOS_LIMIT_EXCEEDED") return "fleet.errors.photoLimitExceeded";
     return "fleet.errors.validation";
   }
   return "fleet.errors.generic";
@@ -104,6 +107,21 @@ function hasPricingInput(input: {
   ].some((value) => value !== undefined);
 }
 
+function sameDate(left?: Date | string | null, right?: Date | string | null) {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  return new Date(left).toISOString().slice(0, 10) === new Date(right).toISOString().slice(0, 10);
+}
+
+function sameDecimal(left: unknown, right?: number) {
+  if (left === null || left === undefined) return right === undefined;
+  return Number(left) === Number(right ?? 0);
+}
+
+function sameText(left?: string | null, right?: string) {
+  return (left ?? "") === (right ?? "");
+}
+
 async function resolveCategoryId(input: {
   companyId: string;
   categoryId?: string;
@@ -136,6 +154,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
       pricingCurrency,
       pricingValidFrom,
       pricingValidTo,
+      photos,
       ...data
     } = parsed.data;
     const category = await resolveCategoryId({
@@ -167,6 +186,13 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
       await createVehicleMileageLogService({
         context,
         data: { vehicleId: vehicle.id, mileage, recordedAt: new Date(), source: "manual" },
+      });
+    }
+    if (photos !== undefined) {
+      await replaceVehiclePhotosService({
+        context,
+        vehicleId: vehicle.id,
+        photos,
       });
     }
     if (hasPricingInput({ dailyRate, weeklyRate, monthlyRate, depositAmount, mileageLimit, extraMileageRate })) {
@@ -270,6 +296,20 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       pricingCurrency,
       pricingValidFrom,
       pricingValidTo,
+      photos,
+      insuranceProvider,
+      insurancePolicyNumber,
+      insuranceCoverageType,
+      insuranceStartsAt,
+      insuranceExpiresAt,
+      insurancePremiumAmount,
+      insuranceCurrency,
+      insuranceDocumentUrl,
+      registrationNumber,
+      registrationIssuedAt,
+      registrationExpiresAt,
+      registrationIssuingAuthority,
+      registrationDocumentUrl,
       vignetteTaxYear,
       vignettePaidAt,
       vignetteExpiresAt,
@@ -291,6 +331,7 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       categoryName,
     });
     if (!category) return { success: false, messageKey: "fleet.errors.validation" };
+    const existing = await getVehicleService({ ...context, vehicleId });
 
     await updateVehicleService({
       context,
@@ -301,6 +342,13 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
       await createVehicleMileageLogService({
         context,
         data: { vehicleId, mileage, recordedAt: new Date(), source: "manual" },
+      });
+    }
+    if (photos !== undefined) {
+      await replaceVehiclePhotosService({
+        context,
+        vehicleId,
+        photos,
       });
     }
     if (hasPricingInput({ dailyRate, weeklyRate, monthlyRate, depositAmount, mileageLimit, extraMileageRate })) {
@@ -320,34 +368,110 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
         },
       });
     }
+    if (insuranceProvider && insurancePolicyNumber && insuranceStartsAt && insuranceExpiresAt) {
+      const current = existing.vehicleInsurances[0];
+      const changed =
+        !current ||
+        !sameText(current.provider, insuranceProvider) ||
+        !sameText(current.policyNumber, insurancePolicyNumber) ||
+        current.coverageType !== (insuranceCoverageType ?? null) ||
+        !sameDate(current.startsAt, insuranceStartsAt) ||
+        !sameDate(current.expiresAt, insuranceExpiresAt) ||
+        !sameDecimal(current.premiumAmount, insurancePremiumAmount) ||
+        !sameText(current.currency, insuranceCurrency ?? "MAD") ||
+        !sameText(current.documentUrl, insuranceDocumentUrl);
+      if (changed) {
+        await createVehicleInsuranceService({
+          context,
+          data: {
+            vehicleId,
+            provider: insuranceProvider,
+            policyNumber: insurancePolicyNumber,
+            coverageType: insuranceCoverageType,
+            startsAt: insuranceStartsAt,
+            expiresAt: insuranceExpiresAt,
+            premiumAmount: decimal(insurancePremiumAmount),
+            currency: insuranceCurrency ?? "MAD",
+            documentUrl: insuranceDocumentUrl,
+          },
+        });
+      }
+    }
+    if (registrationNumber && registrationExpiresAt) {
+      const current = existing.vehicleRegistrations[0];
+      const changed =
+        !current ||
+        !sameText(current.registrationNumber, registrationNumber) ||
+        !sameDate(current.issuedAt, registrationIssuedAt) ||
+        !sameDate(current.expiresAt, registrationExpiresAt) ||
+        !sameText(current.issuingAuthority, registrationIssuingAuthority) ||
+        !sameText(current.documentUrl, registrationDocumentUrl);
+      if (changed) {
+        await createVehicleRegistrationService({
+          context,
+          data: {
+            vehicleId,
+            registrationNumber,
+            issuedAt: registrationIssuedAt,
+            expiresAt: registrationExpiresAt,
+            issuingAuthority: registrationIssuingAuthority,
+            documentUrl: registrationDocumentUrl,
+          },
+        });
+      }
+    }
     if (vignetteTaxYear && vignettePaidAt && vignetteExpiresAt) {
-      await createVehicleVignetteService({
-        context,
-        data: {
-          vehicleId,
-          taxYear: vignetteTaxYear,
-          paidAt: vignettePaidAt,
-          expiresAt: vignetteExpiresAt,
-          amount: decimal(vignetteAmount),
-          currency: vignetteCurrency ?? "MAD",
-          documentUrl: vignetteDocumentUrl,
-        },
-      });
+      const current = existing.vehicleVignettes[0];
+      const changed =
+        !current ||
+        current.taxYear !== vignetteTaxYear ||
+        !sameDate(current.paidAt, vignettePaidAt) ||
+        !sameDate(current.expiresAt, vignetteExpiresAt) ||
+        !sameDecimal(current.amount, vignetteAmount) ||
+        !sameText(current.currency, vignetteCurrency ?? "MAD") ||
+        !sameText(current.documentUrl, vignetteDocumentUrl);
+      if (changed && current?.taxYear !== vignetteTaxYear) {
+        await createVehicleVignetteService({
+          context,
+          data: {
+            vehicleId,
+            taxYear: vignetteTaxYear,
+            paidAt: vignettePaidAt,
+            expiresAt: vignetteExpiresAt,
+            amount: decimal(vignetteAmount),
+            currency: vignetteCurrency ?? "MAD",
+            documentUrl: vignetteDocumentUrl,
+          },
+        });
+      }
     }
     if (inspectionInspectedAt && inspectionExpiresAt) {
-      await createVehicleInspectionService({
-        context,
-        data: {
-          vehicleId,
-          inspectedAt: inspectionInspectedAt,
-          expiresAt: inspectionExpiresAt,
-          result: inspectionResult ?? "pass",
-          center: inspectionCenter,
-          cost: decimal(inspectionCost),
-          currency: inspectionCurrency ?? "MAD",
-          documentUrl: inspectionDocumentUrl,
-        },
-      });
+      const current = existing.vehicleInspections[0];
+      const nextResult = inspectionResult ?? "pass";
+      const changed =
+        !current ||
+        !sameDate(current.inspectedAt, inspectionInspectedAt) ||
+        !sameDate(current.expiresAt, inspectionExpiresAt) ||
+        current.result !== nextResult ||
+        !sameText(current.center, inspectionCenter) ||
+        !sameDecimal(current.cost, inspectionCost) ||
+        !sameText(current.currency, inspectionCurrency ?? "MAD") ||
+        !sameText(current.documentUrl, inspectionDocumentUrl);
+      if (changed) {
+        await createVehicleInspectionService({
+          context,
+          data: {
+            vehicleId,
+            inspectedAt: inspectionInspectedAt,
+            expiresAt: inspectionExpiresAt,
+            result: nextResult,
+            center: inspectionCenter,
+            cost: decimal(inspectionCost),
+            currency: inspectionCurrency ?? "MAD",
+            documentUrl: inspectionDocumentUrl,
+          },
+        });
+      }
     }
     revalidatePath("/cars");
     return { success: true, vehicleId };

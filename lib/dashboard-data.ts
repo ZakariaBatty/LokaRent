@@ -1,14 +1,19 @@
 export type NavItem = {
-  label: string
-  href: string
-  icon: string
-  badge?: string | number
-}
+  label: string;
+  href: string;
+  icon: string;
+  badge?: string | number;
+};
 
 export const navItems: NavItem[] = [
   { label: "Tableau de bord", href: "/dashboard", icon: "LayoutDashboard" },
-  { label: "Flotte", href: "/fleet", icon: "Car" },
-  { label: "Réservations", href: "/reservations", icon: "CalendarCheck", badge: 5 },
+  { label: "Flotte", href: "/cars", icon: "Car" },
+  {
+    label: "Réservations",
+    href: "/reservations",
+    icon: "CalendarCheck",
+    badge: 5,
+  },
   { label: "Calendrier", href: "/calendar", icon: "CalendarDays" },
   { label: "Clients", href: "/clients", icon: "Users" },
   { label: "Chauffeurs", href: "/drivers", icon: "CarFront" },
@@ -18,13 +23,13 @@ export const navItems: NavItem[] = [
   { label: "Communication", href: "/communication", icon: "MessageCircle" },
   { label: "Alertes", href: "/alerts", icon: "Bell", badge: 4 },
   { label: "Rapports", href: "/reports", icon: "BarChart3" },
-]
+];
 
 export const secondaryNav: NavItem[] = [
   { label: "Workspace", href: "/workspace", icon: "Building2" },
   { label: "Paramètres", href: "/settings", icon: "Settings" },
   { label: "Aide & support", href: "/help", icon: "LifeBuoy" },
-]
+];
 
 export const kpis = [
   {
@@ -73,7 +78,7 @@ export const kpis = [
     accent: "amber" as const,
     spark: [1, 0, 2, 1, 3, 2, 2],
   },
-]
+];
 
 export const revenueData = [
   { month: "Jan", value: 18200 },
@@ -82,13 +87,13 @@ export const revenueData = [
   { month: "Avr", value: 21300 },
   { month: "Mai", value: 22800 },
   { month: "Juin", value: 24500 },
-]
+];
 
 export const fleetStatus = [
   { name: "Disponible", value: 8, color: "#10b981" },
   { name: "Louée", value: 5, color: "#3b82f6" },
   { name: "Maintenance", value: 1, color: "#f59e0b" },
-]
+];
 
 export const activeRentals = [
   {
@@ -146,7 +151,7 @@ export const activeRentals = [
     amount: "8 500 DH",
     status: "En cours",
   },
-]
+];
 
 export const upcomingReturns = [
   {
@@ -181,7 +186,7 @@ export const upcomingReturns = [
     time: "Demain · 16:30",
     soon: false,
   },
-]
+];
 
 export const topCars = [
   {
@@ -205,7 +210,7 @@ export const topCars = [
     occupancy: 76,
     trend: "+3%",
   },
-]
+];
 
 export const topClients = [
   {
@@ -229,4 +234,4 @@ export const topClients = [
     spent: "11 200 DH",
     loyalty: "Silver",
   },
-]
+];

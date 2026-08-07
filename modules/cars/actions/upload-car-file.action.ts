@@ -38,3 +38,27 @@ export async function uploadCarDocumentAction(formData: FormData): Promise<Uploa
     };
   }
 }
+
+export async function uploadCarImageAction(formData: FormData): Promise<UploadActionResult> {
+  const file = formData.get("file");
+  const folder = formData.get("folder");
+
+  if (!(file instanceof File) || typeof folder !== "string") {
+    return { success: false, messageKey: "fleet.upload.errors.validation" };
+  }
+
+  try {
+    const upload = await uploadFileService({
+      file,
+      kind: "image",
+      folder,
+    });
+    return { success: true, upload };
+  } catch (error) {
+    return {
+      success: false,
+      messageKey: messageKeyForUploadError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}

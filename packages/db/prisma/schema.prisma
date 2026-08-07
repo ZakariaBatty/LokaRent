@@ -258,6 +258,7 @@ model Company {
   invitations                  Invitation[]
   vehicleCategories            VehicleCategory[]
   vehicles                     Vehicle[]
+  vehiclePhotos                VehiclePhoto[]
   vehiclePricingRules          VehiclePricingRule[]
   vehicleInsurances            VehicleInsurance[]
   vehicleInspections           VehicleInspection[]
@@ -325,6 +326,7 @@ model Agency {
   agencyMemberships         AgencyMembership[]
   invitations               Invitation[]
   vehicles                  Vehicle[]
+  vehiclePhotos             VehiclePhoto[]
   vehiclePricingRules       VehiclePricingRule[]
   vehicleInsurances         VehicleInsurance[]
   vehicleInspections        VehicleInspection[]
@@ -697,6 +699,7 @@ model Vehicle {
   vehicleMileageLogs        VehicleMileageLog[]
   vehicleMaintenances       VehicleMaintenance[]
   vehicleAvailabilityBlocks VehicleAvailabilityBlock[]
+  vehiclePhotos             VehiclePhoto[]
   vehiclePricingRules       VehiclePricingRule[]
   reservations              Reservation[]
   contracts                 Contract[]
@@ -712,6 +715,36 @@ model Vehicle {
   @@index([status])
   @@index([categoryId])
   @@map("vehicles")
+}
+
+model VehiclePhoto {
+  id        String @id @db.Uuid
+  companyId String @map("company_id") @db.Uuid
+  agencyId  String @map("agency_id") @db.Uuid
+  vehicleId String @map("vehicle_id") @db.Uuid
+
+  url       String
+  publicId  String? @map("public_id")
+  mimeType  String? @map("mime_type")
+  sizeBytes Int?    @map("size_bytes")
+  sortOrder Int     @default(0) @map("sort_order")
+  isPrimary Boolean @default(false) @map("is_primary")
+
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy String?   @map("deleted_by") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency  @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@unique([vehicleId, sortOrder])
+  @@index([companyId])
+  @@index([agencyId, vehicleId])
+  @@index([vehicleId, isPrimary])
+  @@index([createdAt])
+  @@map("vehicle_photos")
 }
 
 model VehiclePricingRule {

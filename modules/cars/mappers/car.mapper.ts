@@ -129,6 +129,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
   const pricingRule = resolvePricingRule(vehicle);
   const mileage = vehicle.vehicleMileageLogs[0]?.mileage ?? 0;
   const insuranceDays = daysUntil(insurance?.expiresAt);
+  const registrationDays = daysUntil(registration?.expiresAt);
   const vignetteDays = daysUntil(vignette?.expiresAt);
   const inspectionDays = daysUntil(inspection?.expiresAt);
   const reservations = mapReservations(vehicle);
@@ -162,22 +163,54 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
     extraMileageRate: pricingRule?.extraMileageRate === null || pricingRule?.extraMileageRate === undefined
       ? undefined
       : Number(pricingRule.extraMileageRate),
+    photos: vehicle.vehiclePhotos.map((photo) => ({
+      url: photo.url,
+      publicId: photo.publicId ?? undefined,
+      mimeType: photo.mimeType ?? undefined,
+      sizeBytes: photo.sizeBytes ?? undefined,
+    })),
     insurance: {
       company: insurance?.provider ?? "",
+      policyNumber: insurance?.policyNumber ?? undefined,
       startDate: toIsoDate(insurance?.startsAt),
       endDate: toIsoDate(insurance?.expiresAt),
+      premiumAmount: insurance?.premiumAmount === null || insurance?.premiumAmount === undefined
+        ? undefined
+        : Number(insurance.premiumAmount),
+      currency: insurance?.currency ?? undefined,
+      documentUrl: insurance?.documentUrl ?? undefined,
       status: documentStatus(insuranceDays),
       daysLeft: insuranceDays,
     },
+    registration: registration
+      ? {
+          number: registration.registrationNumber,
+          issuedAt: toIsoDate(registration.issuedAt),
+          expiresAt: toIsoDate(registration.expiresAt),
+          issuingAuthority: registration.issuingAuthority ?? undefined,
+          documentUrl: registration.documentUrl ?? undefined,
+          status: documentStatus(registrationDays),
+          daysLeft: registrationDays,
+        }
+      : null,
     vignette: {
       year: vignette?.taxYear ?? new Date().getFullYear(),
+      paidAt: toIsoDate(vignette?.paidAt),
       endDate: toIsoDate(vignette?.expiresAt),
+      amount: vignette?.amount === null || vignette?.amount === undefined ? undefined : Number(vignette.amount),
+      currency: vignette?.currency ?? undefined,
+      documentUrl: vignette?.documentUrl ?? undefined,
       status: documentStatus(vignetteDays),
       daysLeft: vignetteDays,
     },
     visiteTechnique: {
       lastDate: toIsoDate(inspection?.inspectedAt),
       nextDate: toIsoDate(inspection?.expiresAt),
+      result: inspection?.result ?? undefined,
+      center: inspection?.center ?? undefined,
+      cost: inspection?.cost === null || inspection?.cost === undefined ? undefined : Number(inspection.cost),
+      currency: inspection?.currency ?? undefined,
+      documentUrl: inspection?.documentUrl ?? undefined,
       status: documentStatus(inspectionDays),
       daysLeft: inspectionDays,
     },

@@ -47,7 +47,7 @@ export function WizardShell() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50">
+    <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_24px_70px_rgba(15,23,42,0.12)]">
       {/* Soft background */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -58,7 +58,7 @@ export function WizardShell() {
       />
 
       {/* Top bar */}
-      <header className="relative z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
@@ -94,13 +94,13 @@ export function WizardShell() {
           </button>
         </div>
 
-        <div className="border-t border-slate-200/60 bg-white/60 px-4 py-6 sm:px-6">
+        <div className="border-t border-slate-200/60 bg-white/60 px-4 py-4 sm:px-6">
           <WizardProgress />
         </div>
       </header>
 
       {/* Body */}
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 pb-32 sm:px-6">
+      <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -108,6 +108,7 @@ export function WizardShell() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
+            className="mx-auto max-w-6xl"
           >
             {step === "client" && <StepClient />}
             {step === "vehicle" && <StepVehicle />}
@@ -119,7 +120,7 @@ export function WizardShell() {
       </main>
 
       {/* Sticky footer */}
-      <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/80 bg-white/90 backdrop-blur-xl">
+      <footer className="relative z-20 shrink-0 border-t border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <button
             type="button"

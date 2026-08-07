@@ -19,6 +19,7 @@ import {
   createVehicleInsurance,
   createVehicleMaintenance,
   createVehicleMileageLog,
+  createVehiclePhoto,
   createVehiclePricingRule,
   createVehicleRegistration,
   createVehicleVignette,
@@ -30,6 +31,7 @@ import {
   findVehicleCategoryByName,
   findCurrentVehiclePricingRule,
   listAvailableVehicles,
+  listVehiclePhotos,
   listVehiclePricingRules,
   listVehicleCategories,
   markCurrentVehiclePricingRulesInactive,
@@ -37,6 +39,7 @@ import {
   restoreVehicle,
   softDeleteVehicle,
   updateAvailabilityBlock,
+  updateVehiclePhoto,
   updateVehicle,
   updateVehicleCategory,
   softDeleteVehicleCategory,
@@ -44,6 +47,7 @@ import {
   updateVehicleInsurance,
   updateVehicleMaintenance,
   findCurrentVehicleMileage,
+  softDeleteVehiclePhotosAfterOrder,
   softDeleteVehiclePricingRule,
   type VehicleListInput,
 } from "../repositories/cars.repository";
@@ -61,6 +65,7 @@ type VehicleCreateData = Omit<Parameters<typeof createVehicle>[0], "id" | "compa
   code?: string | null;
 };
 type VehicleUpdateData = Parameters<typeof updateVehicle>[0]["data"];
+type VehiclePhotoCreateData = Omit<Parameters<typeof createVehiclePhoto>[0], "id" | "companyId" | "agencyId" | "vehicleId" | "sortOrder" | "isPrimary">;
 type VehicleCategoryCreateData = Omit<Parameters<typeof createVehicleCategory>[0], "id" | "companyId">;
 type VehicleRegistrationCreateData = Omit<Parameters<typeof createVehicleRegistration>[0], "id" | "companyId" | "agencyId">;
 type VehicleInsuranceCreateData = Omit<Parameters<typeof createVehicleInsurance>[0], "id" | "companyId" | "agencyId">;
@@ -291,6 +296,84 @@ export async function createVehicleService(input: {
     occurredAt: new Date(),
   });
   return vehicle;
+}
+
+export async function replaceVehiclePhotosService(input: {
+  context: FleetServiceContext;
+  vehicleId: string;
+  photos: VehiclePhotoCreateData[];
+}) {
+  await assertVehicleBelongsToScope({ ...input.context, vehicleId: input.vehicleId });
+  if (input.photos.length > 6) {
+    throw createValidationError("FLEET_PHOTOS_LIMIT_EXCEEDED");
+  }
+
+  return runInTransaction(async (tx) => {
+    const existing = await listVehiclePhotos(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        vehicleId: input.vehicleId,
+        includeDeleted: true,
+      },
+      tx,
+    );
+    const byOrder = new Map(existing.map((photo) => [photo.sortOrder, photo]));
+
+    await Promise.all(
+      input.photos.map((photo, sortOrder) => {
+        const existingPhoto = byOrder.get(sortOrder);
+        const data = {
+          ...photo,
+          sortOrder,
+          isPrimary: sortOrder === 0,
+          deletedAt: null,
+          deletedBy: null,
+        };
+        if (existingPhoto) {
+          return updateVehiclePhoto(
+            {
+              companyId: input.context.companyId,
+              agencyId: input.context.agencyId,
+              photoId: existingPhoto.id,
+              data,
+            },
+            tx,
+          );
+        }
+        return createVehiclePhoto(
+          {
+            ...data,
+            id: createId(),
+            companyId: input.context.companyId,
+            agencyId: input.context.agencyId,
+            vehicleId: input.vehicleId,
+          },
+          tx,
+        );
+      }),
+    );
+
+    await softDeleteVehiclePhotosAfterOrder(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        vehicleId: input.vehicleId,
+        sortOrder: input.photos.length,
+        deletedBy: input.context.userId ?? null,
+      },
+      tx,
+    );
+
+    return listVehiclePhotos(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        vehicleId: input.vehicleId,
+      },
+      tx,
+    );
+  });
 }
 
 export async function updateVehicleService(input: {
@@ -771,6 +854,7 @@ export const carsService = {
   listVehiclesService,
   listAvailableVehiclesService,
   createVehicleService,
+  replaceVehiclePhotosService,
   updateVehicleService,
   deactivateVehicleService,
   restoreVehicleService,

@@ -9,6 +9,12 @@ const optionalText = z
 const requiredText = z.string().trim().min(1);
 const optionalDate = z.coerce.date().optional();
 const optionalAmount = z.coerce.number().nonnegative().optional();
+const vehiclePhotoSchema = z.object({
+  url: requiredText,
+  publicId: optionalText,
+  mimeType: optionalText,
+  sizeBytes: z.coerce.number().int().nonnegative().optional(),
+});
 
 export const vehicleStatusSchema = z.enum(["available", "rented", "maintenance", "inactive", "retired"]);
 export const fuelTypeSchema = z.enum(["petrol", "diesel", "electric", "hybrid", "lpg"]);
@@ -70,6 +76,7 @@ export const createVehicleSchema = z.object({
   inspectionCost: optionalAmount,
   inspectionCurrency: optionalText,
   inspectionDocumentUrl: optionalText,
+  photos: z.array(vehiclePhotoSchema).max(6).optional(),
 });
 
 export const createVehicleCategorySchema = z.object({

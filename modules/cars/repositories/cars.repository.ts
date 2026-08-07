@@ -36,6 +36,11 @@ function vehicleListInclude(agencyId: string) {
       orderBy: [{ validFrom: "desc" }, { createdAt: "desc" }],
       take: 1,
     },
+    vehiclePhotos: {
+      where: { deletedAt: null },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      take: 6,
+    },
     vehicleInsurances: {
       where: { deletedAt: null },
       orderBy: [{ expiresAt: "desc" }, { createdAt: "desc" }],
@@ -256,6 +261,59 @@ export async function listAvailableVehicles(
 
 export async function createVehicle(data: Prisma.VehicleUncheckedCreateInput, db: DatabaseClient = prisma) {
   return db.vehicle.create({ data });
+}
+
+export async function listVehiclePhotos(
+  input: { companyId: string; agencyId: string; vehicleId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePhoto.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  });
+}
+
+export async function createVehiclePhoto(
+  data: Prisma.VehiclePhotoUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePhoto.create({ data });
+}
+
+export async function updateVehiclePhoto(
+  input: {
+    companyId: string;
+    agencyId: string;
+    photoId: string;
+    data: Prisma.VehiclePhotoUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePhoto.updateMany({
+    where: { id: input.photoId, companyId: input.companyId, agencyId: input.agencyId },
+    data: input.data,
+  });
+}
+
+export async function softDeleteVehiclePhotosAfterOrder(
+  input: { companyId: string; agencyId: string; vehicleId: string; sortOrder: number; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehiclePhoto.updateMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      vehicleId: input.vehicleId,
+      sortOrder: { gte: input.sortOrder },
+      deletedAt: null,
+    },
+    data: { isPrimary: false, deletedAt: new Date(), deletedBy: input.deletedBy ?? null },
+  });
 }
 
 export async function updateVehicle(
@@ -711,6 +769,10 @@ export const carsRepository = {
   findVehicleCategoryById,
   listAvailableVehicles,
   createVehicle,
+  listVehiclePhotos,
+  createVehiclePhoto,
+  updateVehiclePhoto,
+  softDeleteVehiclePhotosAfterOrder,
   updateVehicle,
   softDeleteVehicle,
   restoreVehicle,

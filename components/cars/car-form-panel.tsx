@@ -10,7 +10,6 @@ import {
   Gauge,
   Palette,
   ShieldCheck,
-  Sticker,
   Upload,
   X,
 } from "lucide-react"
@@ -20,9 +19,10 @@ import {
   type CarCategory,
   type CarStatus,
   type FuelType,
+  type VehiclePhoto,
   statusConfig,
 } from "@/lib/cars-data"
-import { uploadCarDocumentAction } from "@/modules/cars/actions/upload-car-file.action"
+import { uploadCarDocumentAction, uploadCarImageAction } from "@/modules/cars/actions/upload-car-file.action"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
 
@@ -45,14 +45,30 @@ export type CarFormDraft = {
   depositAmount: number | ""
   mileageLimit: number | ""
   extraMileageRate: number | ""
+  photos: VehiclePhoto[]
   km: number | ""
   status: CarStatus
   insuranceCompany: string
+  insurancePolicyNumber: string
+  insuranceStart: string
   insuranceEnd: string
+  insurancePremiumAmount: number | ""
   insuranceDocumentUrl: string
+  registrationNumber: string
+  registrationIssuedAt: string
+  registrationExpiresAt: string
+  registrationIssuingAuthority: string
+  registrationDocumentUrl: string
+  vignetteTaxYear: number | ""
+  vignettePaidAt: string
   vignetteEnd: string
+  vignetteAmount: number | ""
   vignetteDocumentUrl: string
+  visiteLast: string
   visiteNext: string
+  inspectionResult: "pass" | "fail" | "conditional"
+  inspectionCenter: string
+  inspectionCost: number | ""
   inspectionDocumentUrl: string
 }
 
@@ -76,15 +92,31 @@ function buildDraft(car?: Car | null): CarFormDraft {
     depositAmount: car?.depositAmount ?? "",
     mileageLimit: car?.mileageLimit ?? "",
     extraMileageRate: car?.extraMileageRate ?? "",
+    photos: car?.photos ?? [],
     km: car?.km ?? "",
     status: car?.status ?? "disponible",
     insuranceCompany: car?.insurance.company ?? "",
+    insurancePolicyNumber: car?.insurance.policyNumber ?? "",
+    insuranceStart: car?.insurance.startDate ? car.insurance.startDate.slice(0, 10) : "",
     insuranceEnd: car?.insurance.endDate ?? "",
-    insuranceDocumentUrl: "",
+    insurancePremiumAmount: car?.insurance.premiumAmount ?? "",
+    insuranceDocumentUrl: car?.insurance.documentUrl ?? "",
+    registrationNumber: car?.registration?.number ?? "",
+    registrationIssuedAt: car?.registration?.issuedAt ? car.registration.issuedAt.slice(0, 10) : "",
+    registrationExpiresAt: car?.registration?.expiresAt ? car.registration.expiresAt.slice(0, 10) : "",
+    registrationIssuingAuthority: car?.registration?.issuingAuthority ?? "",
+    registrationDocumentUrl: car?.registration?.documentUrl ?? "",
+    vignetteTaxYear: car?.vignette.year ?? "",
+    vignettePaidAt: car?.vignette.paidAt ? car.vignette.paidAt.slice(0, 10) : "",
     vignetteEnd: car?.vignette.endDate ?? "",
-    vignetteDocumentUrl: "",
+    vignetteAmount: car?.vignette.amount ?? "",
+    vignetteDocumentUrl: car?.vignette.documentUrl ?? "",
+    visiteLast: car?.visiteTechnique.lastDate ? car.visiteTechnique.lastDate.slice(0, 10) : "",
     visiteNext: car?.visiteTechnique.nextDate ?? "",
-    inspectionDocumentUrl: "",
+    inspectionResult: (car?.visiteTechnique.result as CarFormDraft["inspectionResult"]) ?? "pass",
+    inspectionCenter: car?.visiteTechnique.center ?? "",
+    inspectionCost: car?.visiteTechnique.cost ?? "",
+    inspectionDocumentUrl: car?.visiteTechnique.documentUrl ?? "",
   }
 }
 
@@ -103,6 +135,7 @@ export function CarFormPanel({
   const [errors, setErrors] = useState<Errors>({})
   const [saving, setSaving] = useState(false)
   const [uploadingField, setUploadingField] = useState<keyof CarFormDraft | null>(null)
+  const [uploadingPhotos, setUploadingPhotos] = useState(false)
 
   useEffect(() => {
     setDraft(buildDraft(car))
@@ -151,7 +184,7 @@ export function CarFormPanel({
 
   async function uploadDocument(
     ev: React.ChangeEvent<HTMLInputElement>,
-    key: "insuranceDocumentUrl" | "vignetteDocumentUrl" | "inspectionDocumentUrl",
+    key: "insuranceDocumentUrl" | "registrationDocumentUrl" | "vignetteDocumentUrl" | "inspectionDocumentUrl",
     folder: string,
   ) {
     const file = ev.target.files?.[0]
@@ -174,6 +207,46 @@ export function CarFormPanel({
     } finally {
       setUploadingField(null)
     }
+  }
+
+  async function uploadPhotos(ev: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(ev.target.files ?? [])
+    ev.target.value = ""
+    if (files.length === 0) return
+    if (draft.photos.length + files.length > 6) {
+      toast.error(fr.fleet.upload.errors.photoLimitExceeded)
+      return
+    }
+
+    setUploadingPhotos(true)
+    try {
+      const uploaded: VehiclePhoto[] = []
+      for (const file of files) {
+        const formData = new FormData()
+        formData.append("file", file)
+        formData.append("folder", "fleet/photos")
+        const result = await uploadCarImageAction(formData)
+        if (!result.success) {
+          const keyName = result.messageKey.split(".").at(-1) as keyof typeof fr.fleet.upload.errors
+          toast.error(fr.fleet.upload.errors[keyName] ?? fr.fleet.upload.errors.generic)
+          return
+        }
+        uploaded.push({
+          url: result.upload.url,
+          publicId: result.upload.publicId,
+          mimeType: result.upload.mimeType,
+          sizeBytes: result.upload.size,
+        })
+      }
+      set("photos", [...draft.photos, ...uploaded])
+      toast.success(fr.fleet.upload.uploaded)
+    } finally {
+      setUploadingPhotos(false)
+    }
+  }
+
+  function removePhoto(index: number) {
+    set("photos", draft.photos.filter((_, photoIndex) => photoIndex !== index))
   }
 
   return (
@@ -267,6 +340,53 @@ export function CarFormPanel({
                 invalid={!!errors.seats}
               />
             </Field>
+          </div>
+        </Section>
+
+        <Section title={fr.fleet.upload.vehiclePhotos} icon={CarIcon}>
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              {draft.photos.map((photo, index) => (
+                <div
+                  key={`${photo.url}-${index}`}
+                  className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                >
+                  <img src={photo.url} alt="" className="h-full w-full object-cover" />
+                  {index === 0 && (
+                    <span className="absolute left-2 top-2 rounded-full bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      {fr.fleet.documents.primaryPhoto}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(index)}
+                    className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 opacity-0 shadow-sm transition hover:text-rose-600 group-hover:opacity-100"
+                    aria-label={fr.fleet.upload.removeFile}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {draft.photos.length < 6 && (
+                <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-sm font-semibold text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700">
+                  {uploadingPhotos ? (
+                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                  ) : (
+                    <Upload className="h-5 w-5" />
+                  )}
+                  <span>{uploadingPhotos ? fr.fleet.upload.uploading : fr.fleet.upload.addPhotos}</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={uploadPhotos}
+                    disabled={uploadingPhotos}
+                    className="hidden"
+                  />
+                </label>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400">{fr.fleet.upload.photoHint}</p>
           </div>
         </Section>
 
@@ -372,11 +492,10 @@ export function CarFormPanel({
           </div>
         </Section>
 
-        {/* Documents */}
-        <Section title="Documents & échéances" icon={ShieldCheck}>
+        <Section title={fr.fleet.documents.title} icon={ShieldCheck}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Compagnie d'assurance">
+              <Field label={fr.fleet.documents.company}>
                 <div className="relative">
                   <ShieldCheck className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
@@ -387,40 +506,132 @@ export function CarFormPanel({
                   />
                 </div>
               </Field>
-              <Field label="Assurance — fin de validité">
+              <Field label={fr.fleet.documents.policyNumber}>
+                <Input
+                  value={draft.insurancePolicyNumber}
+                  onChange={(v) => set("insurancePolicyNumber", v)}
+                  placeholder={draft.plate || fr.fleet.documents.policyPlaceholder}
+                />
+              </Field>
+              <Field label={fr.fleet.documents.startDate}>
+                <DateInput value={draft.insuranceStart} onChange={(v) => set("insuranceStart", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.expiryDate}>
                 <DateInput value={draft.insuranceEnd} onChange={(v) => set("insuranceEnd", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.amount}>
+                <Input
+                  type="number"
+                  value={draft.insurancePremiumAmount}
+                  onChange={(v) => set("insurancePremiumAmount", v === "" ? "" : Number(v))}
+                  placeholder="4200"
+                  suffix="DH"
+                />
               </Field>
               <DocumentUploadField
                 label={fr.fleet.upload.insuranceDocument}
                 value={draft.insuranceDocumentUrl}
                 uploading={uploadingField === "insuranceDocumentUrl"}
                 onChange={(ev) => uploadDocument(ev, "insuranceDocumentUrl", "fleet/insurance")}
+                onRemove={() => set("insuranceDocumentUrl", "")}
               />
-              <Field label="Vignette — fin de validité">
+              <Field label={fr.fleet.documents.registration}>
+                <Input
+                  value={draft.registrationNumber}
+                  onChange={(v) => set("registrationNumber", v)}
+                  placeholder={draft.plate || fr.fleet.documents.registrationPlaceholder}
+                />
+              </Field>
+              <Field label={fr.fleet.documents.issuedAt}>
+                <DateInput value={draft.registrationIssuedAt} onChange={(v) => set("registrationIssuedAt", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.expiryDate}>
+                <DateInput value={draft.registrationExpiresAt} onChange={(v) => set("registrationExpiresAt", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.authority}>
+                <Input
+                  value={draft.registrationIssuingAuthority}
+                  onChange={(v) => set("registrationIssuingAuthority", v)}
+                  placeholder={fr.fleet.documents.authorityPlaceholder}
+                />
+              </Field>
+              <DocumentUploadField
+                label={fr.fleet.upload.registrationDocument}
+                value={draft.registrationDocumentUrl}
+                uploading={uploadingField === "registrationDocumentUrl"}
+                onChange={(ev) => uploadDocument(ev, "registrationDocumentUrl", "fleet/registrations")}
+                onRemove={() => set("registrationDocumentUrl", "")}
+              />
+              <Field label={fr.fleet.documents.taxYear}>
+                <Input
+                  type="number"
+                  value={draft.vignetteTaxYear}
+                  onChange={(v) => set("vignetteTaxYear", v === "" ? "" : Number(v))}
+                  placeholder={`${currentYear}`}
+                />
+              </Field>
+              <Field label={fr.fleet.documents.paidAt}>
+                <DateInput value={draft.vignettePaidAt} onChange={(v) => set("vignettePaidAt", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.expiryDate}>
                 <DateInput value={draft.vignetteEnd} onChange={(v) => set("vignetteEnd", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.amount}>
+                <Input
+                  type="number"
+                  value={draft.vignetteAmount}
+                  onChange={(v) => set("vignetteAmount", v === "" ? "" : Number(v))}
+                  placeholder="700"
+                  suffix="DH"
+                />
               </Field>
               <DocumentUploadField
                 label={fr.fleet.upload.vignetteDocument}
                 value={draft.vignetteDocumentUrl}
                 uploading={uploadingField === "vignetteDocumentUrl"}
                 onChange={(ev) => uploadDocument(ev, "vignetteDocumentUrl", "fleet/vignettes")}
+                onRemove={() => set("vignetteDocumentUrl", "")}
               />
-              <Field label="Visite technique — prochaine">
+              <Field label={fr.fleet.documents.inspectedAt}>
+                <DateInput value={draft.visiteLast} onChange={(v) => set("visiteLast", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.nextDate}>
                 <DateInput value={draft.visiteNext} onChange={(v) => set("visiteNext", v)} />
+              </Field>
+              <Field label={fr.fleet.documents.result}>
+                <Dropdown
+                  value={draft.inspectionResult}
+                  options={[
+                    { value: "pass", label: fr.fleet.documents.ok },
+                    { value: "conditional", label: fr.fleet.documents.alert },
+                    { value: "fail", label: fr.fleet.documents.expired },
+                  ]}
+                  onChange={(v) => set("inspectionResult", v as CarFormDraft["inspectionResult"])}
+                />
+              </Field>
+              <Field label={fr.fleet.documents.provider}>
+                <Input
+                  value={draft.inspectionCenter}
+                  onChange={(v) => set("inspectionCenter", v)}
+                  placeholder={fr.fleet.documents.inspectionCenterPlaceholder}
+                />
+              </Field>
+              <Field label={fr.fleet.documents.amount}>
+                <Input
+                  type="number"
+                  value={draft.inspectionCost}
+                  onChange={(v) => set("inspectionCost", v === "" ? "" : Number(v))}
+                  placeholder="350"
+                  suffix="DH"
+                />
               </Field>
               <DocumentUploadField
                 label={fr.fleet.upload.inspectionDocument}
                 value={draft.inspectionDocumentUrl}
                 uploading={uploadingField === "inspectionDocumentUrl"}
                 onChange={(ev) => uploadDocument(ev, "inspectionDocumentUrl", "fleet/inspections")}
+                onRemove={() => set("inspectionDocumentUrl", "")}
               />
-            </div>
-            <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-slate-50/60 px-3 py-2.5">
-              <Sticker className="h-4 w-4 text-amber-500" />
-              <p className="text-[11px] text-slate-500">
-                Les statuts (à jour / bientôt expiré / expiré) sont calculés automatiquement à
-                partir des dates renseignées.
-              </p>
             </div>
           </div>
         </Section>
@@ -590,11 +801,13 @@ function DocumentUploadField({
   value,
   uploading,
   onChange,
+  onRemove,
 }: {
   label: string
   value: string
   uploading: boolean
   onChange: (ev: React.ChangeEvent<HTMLInputElement>) => void
+  onRemove: () => void
 }) {
   return (
     <Field label={label}>
@@ -626,7 +839,28 @@ function DocumentUploadField({
           className="hidden"
         />
       </label>
-      <p className="text-[10px] text-slate-400">{fr.fleet.upload.hint}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] text-slate-400">{fr.fleet.upload.hint}</p>
+        {value && !uploading && (
+          <div className="flex items-center gap-2">
+            <a
+              href={value}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
+            >
+              {fr.fleet.upload.openFile}
+            </a>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="text-[10px] font-semibold text-rose-600 hover:text-rose-700"
+            >
+              {fr.fleet.upload.removeFile}
+            </button>
+          </div>
+        )}
+      </div>
     </Field>
   )
 }

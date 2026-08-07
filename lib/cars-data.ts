@@ -11,15 +11,33 @@ export type CarDocument = {
 
 export type Insurance = {
   company: string
+  policyNumber?: string
   startDate: string
   endDate: string
+  premiumAmount?: number
+  currency?: string
+  documentUrl?: string
   status: DocumentStatus
   daysLeft: number
 }
 
+export type Registration = {
+  number: string
+  issuedAt: string
+  expiresAt: string
+  issuingAuthority?: string
+  documentUrl?: string
+  status: DocumentStatus
+  daysLeft: number
+} | null
+
 export type Vignette = {
   year: number
+  paidAt?: string
   endDate: string
+  amount?: number
+  currency?: string
+  documentUrl?: string
   status: DocumentStatus
   daysLeft: number
 }
@@ -27,6 +45,11 @@ export type Vignette = {
 export type VisiteTechnique = {
   lastDate: string
   nextDate: string
+  result?: string
+  center?: string
+  cost?: number
+  currency?: string
+  documentUrl?: string
   status: DocumentStatus
   daysLeft: number
 }
@@ -36,6 +59,13 @@ export type CreditAuto = {
   monthlyPayment: number
   endDate: string
 } | null
+
+export type VehiclePhoto = {
+  url: string
+  publicId?: string
+  mimeType?: string
+  sizeBytes?: number
+}
 
 export type Expense = {
   type: "Maintenance" | "Réparation" | "Assurance" | "Vignette" | "Carburant"
@@ -73,7 +103,9 @@ export type Car = {
   depositAmount?: number
   mileageLimit?: number
   extraMileageRate?: number
+  photos?: VehiclePhoto[]
   insurance: Insurance
+  registration?: Registration
   vignette: Vignette
   visiteTechnique: VisiteTechnique
   carteGriseUploaded: boolean

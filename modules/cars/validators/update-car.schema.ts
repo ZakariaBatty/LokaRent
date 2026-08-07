@@ -22,6 +22,12 @@ const optionalText = z
 const requiredText = z.string().trim().min(1);
 const optionalAmount = z.coerce.number().nonnegative().optional();
 const optionalDate = z.coerce.date().optional();
+const vehiclePhotoSchema = z.object({
+  url: requiredText,
+  publicId: optionalText,
+  mimeType: optionalText,
+  sizeBytes: z.coerce.number().int().nonnegative().optional(),
+});
 
 export const vehicleIdSchema = z.object({
   vehicleId: z.string().uuid(),
@@ -52,6 +58,19 @@ export const updateVehicleSchema = z.object({
   pricingCurrency: optionalText,
   pricingValidFrom: optionalDate,
   pricingValidTo: optionalDate,
+  insuranceProvider: optionalText,
+  insurancePolicyNumber: optionalText,
+  insuranceCoverageType: insuranceCoverageTypeSchema.optional(),
+  insuranceStartsAt: optionalDate,
+  insuranceExpiresAt: optionalDate,
+  insurancePremiumAmount: optionalAmount,
+  insuranceCurrency: optionalText,
+  insuranceDocumentUrl: optionalText,
+  registrationNumber: optionalText,
+  registrationIssuedAt: optionalDate,
+  registrationExpiresAt: optionalDate,
+  registrationIssuingAuthority: optionalText,
+  registrationDocumentUrl: optionalText,
   vignetteTaxYear: z.coerce.number().int().min(2000).max(2100).optional(),
   vignettePaidAt: optionalDate,
   vignetteExpiresAt: optionalDate,
@@ -65,6 +84,7 @@ export const updateVehicleSchema = z.object({
   inspectionCost: optionalAmount,
   inspectionCurrency: optionalText,
   inspectionDocumentUrl: optionalText,
+  photos: z.array(vehiclePhotoSchema).max(6).optional(),
 });
 
 export const updateVehicleCategorySchema = z.object({
