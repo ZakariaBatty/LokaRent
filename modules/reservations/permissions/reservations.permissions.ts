@@ -1,3 +1,9 @@
-// TODO: Future implementation
-// RBAC permission definitions for reservations — which roles can do what
-export {}
+import { PERMISSIONS } from "@/shared/permissions";
+
+export const RESERVATION_PERMISSIONS = {
+  view: PERMISSIONS.RESERVATIONS_VIEW,
+  create: PERMISSIONS.RESERVATIONS_CREATE,
+  edit: PERMISSIONS.RESERVATIONS_EDIT,
+  cancel: PERMISSIONS.RESERVATIONS_CANCEL,
+  delete: PERMISSIONS.RESERVATIONS_DELETE,
+} as const;
