@@ -9,19 +9,20 @@ import { DriverProfilTab } from "./tabs/driver-profil-tab"
 import { DriverPaiementTab } from "./tabs/driver-paiement-tab"
 import { DriverHistoriqueTab } from "./tabs/driver-historique-tab"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 type TabKey = "profil" | "paiement" | "historique"
 
 const tabs: { key: TabKey; label: string; icon: React.ElementType }[] = [
-  { key: "profil", label: "Profil", icon: User },
-  { key: "paiement", label: "Paiement", icon: Wallet },
-  { key: "historique", label: "Historique", icon: History },
+  { key: "profil", label: fr.drivers.tabs.overview, icon: User },
+  { key: "paiement", label: fr.drivers.tabs.pricing, icon: Wallet },
+  { key: "historique", label: fr.drivers.tabs.history, icon: History },
 ]
 
 function DriverAvatar({ driver, size = "lg" }: { driver: Driver; size?: "lg" | "xl" }) {
   const initials = `${driver.firstName[0]}${driver.lastName[0]}`.toUpperCase()
   const colors = ["from-blue-500 to-indigo-600", "from-emerald-500 to-teal-600", "from-amber-500 to-orange-500", "from-rose-500 to-pink-600", "from-violet-500 to-purple-600"]
-  const color = colors[parseInt(driver.id.replace("d", ""), 10) % colors.length]
+  const color = colors[driver.id.charCodeAt(0) % colors.length]
   const cls = size === "xl" ? "h-14 w-14 rounded-2xl text-xl" : "h-11 w-11 rounded-xl text-base"
   return (
     <div className={cn("flex shrink-0 items-center justify-center bg-gradient-to-br font-bold text-white shadow-sm", cls, color)}>
@@ -35,11 +36,13 @@ export function DriverDetailPanel({
   onClose,
   onEdit,
   onDelete,
+  canDelete = true,
 }: {
   driver: Driver
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
+  canDelete?: boolean
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("profil")
   const status = statusConfig[driver.status]
@@ -65,11 +68,11 @@ export function DriverDetailPanel({
                   <div className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5", status.pillClass)}>
                     <span className={cn("h-1.5 w-1.5 rounded-full", status.dotClass)} />
                     <span className={cn("text-[10px] font-bold uppercase tracking-wider", status.textClass)}>
-                      {status.label}
+                      {fr.drivers.status[driver.status]}
                     </span>
                   </div>
                   <span className={cn("inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider", pt.color)}>
-                    {pt.label}
+                    {fr.drivers.pricing[driver.paymentType]}
                   </span>
                 </div>
                 <h2 className="mt-1 font-serif text-2xl text-slate-900 lg:text-3xl">
@@ -94,7 +97,7 @@ export function DriverDetailPanel({
                         driverName: driverFullName(driver),
                         phone: driver.phone,
                       }}
-                      title={`Chauffeur ${driverFullName(driver)}`}
+                      title={`${fr.drivers.title} ${driverFullName(driver)}`}
                       size="sm"
                     />
                   </div>
@@ -108,20 +111,22 @@ export function DriverDetailPanel({
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
               >
                 <Pencil className="h-3.5 w-3.5" />
-                Modifier
+                {fr.drivers.actions.edit}
               </button>
-              <button
-                onClick={onDelete}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-                aria-label="Supprimer"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              {canDelete && (
+                <button
+                  onClick={onDelete}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
+                  aria-label={fr.drivers.actions.delete}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
               <div className="mx-1 h-6 w-px bg-slate-200" />
               <button
                 onClick={onClose}
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
-                aria-label="Fermer"
+                aria-label={fr.drivers.form.close}
               >
                 <X className="h-4 w-4" />
               </button>
@@ -131,19 +136,21 @@ export function DriverDetailPanel({
           {/* Quick stats */}
           <div className="mt-5 grid grid-cols-3 gap-2">
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Missions</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{fr.drivers.kpis.assignments}</p>
               <p className="text-base font-bold text-slate-900 tabular-nums">{driver.totalAssignments}</p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total versé</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{fr.drivers.kpis.totalPaid}</p>
               <p className="text-base font-bold text-emerald-700 tabular-nums">{formatMAD(driver.totalEarned)}</p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Tarif</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{fr.drivers.table.currentRate}</p>
               <p className="text-base font-bold text-slate-900 tabular-nums">
                 {driver.paymentType === "monthly"
                   ? formatMAD(driver.currentRate.monthlySalary ?? 0)
-                  : formatMAD(driver.currentRate.pricePerMission ?? 0) + "/miss."}
+                  : driver.paymentType === "hourly"
+                    ? `${formatMAD(driver.currentRate.pricePerHour ?? 0)} / ${fr.drivers.pricing.hour}`
+                    : `${formatMAD(driver.currentRate.pricePerMission ?? 0)} / ${fr.drivers.pricing.missionShort}`}
               </p>
             </div>
           </div>

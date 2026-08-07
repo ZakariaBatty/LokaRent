@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { CarFront, Users, CheckCircle2, Clock, BanIcon, Wallet } from "lucide-react"
 import { type Driver, formatMAD } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 function KpiCard({
   icon: Icon,
@@ -49,41 +50,41 @@ export function DriversKpiBar({ drivers }: { drivers: Driver[] }) {
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
       <KpiCard
         icon={Users}
-        label="Total"
+        label={fr.drivers.kpis.total}
         value={stats.total}
-        sub="chauffeurs"
+        sub={fr.drivers.kpis.drivers}
         iconClass="bg-slate-100 text-slate-600"
       />
       <KpiCard
         icon={CheckCircle2}
-        label="Actifs"
+        label={fr.drivers.kpis.active}
         value={stats.active}
         iconClass="bg-emerald-50 text-emerald-600"
         valueClass="text-emerald-700"
       />
       <KpiCard
         icon={Clock}
-        label="Inactifs"
+        label={fr.drivers.kpis.inactive}
         value={stats.inactive}
         iconClass="bg-slate-100 text-slate-500"
       />
       <KpiCard
         icon={BanIcon}
-        label="Suspendus"
+        label={fr.drivers.kpis.suspended}
         value={stats.suspended}
         iconClass="bg-rose-50 text-rose-500"
         valueClass="text-rose-700"
       />
       <KpiCard
         icon={CarFront}
-        label="Missions"
+        label={fr.drivers.kpis.assignments}
         value={stats.totalAssignments}
-        sub="au total"
+        sub={fr.drivers.kpis.totalSub}
         iconClass="bg-blue-50 text-blue-600"
       />
       <KpiCard
         icon={Wallet}
-        label="Total versé"
+        label={fr.drivers.kpis.totalPaid}
         value={formatMAD(stats.totalEarned)}
         iconClass="bg-indigo-50 text-indigo-600"
         valueClass="text-indigo-700"
