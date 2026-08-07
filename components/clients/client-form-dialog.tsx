@@ -16,7 +16,6 @@ import {
   Building,
 } from "lucide-react"
 import { type Client, type Nationality } from "@/lib/clients-data"
-import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
 const nationalities: Nationality[] = ["Marocain", "Français", "Espagnol", "Anglais", "Allemand"]
@@ -38,11 +37,8 @@ export type ClientFormValues = {
   companyName?: string
   registrationNumber?: string
   taxId?: string
-  companyEmail?: string
-  companyPhone?: string
   contactPersonName?: string
   contactPersonPhone?: string
-  contactPersonEmail?: string
 }
 
 const defaultValues: ClientFormValues = {
@@ -58,11 +54,8 @@ const defaultValues: ClientFormValues = {
   companyName: "",
   registrationNumber: "",
   taxId: "",
-  companyEmail: "",
-  companyPhone: "+212 6",
   contactPersonName: "",
   contactPersonPhone: "+212 6",
-  contactPersonEmail: "",
 }
 
 function Field({
@@ -102,7 +95,7 @@ export function ClientFormDialog({
   mode: Mode
   client?: Client | null
   onClose: () => void
-  onSubmit: (values: ClientFormValues) => void
+  onSubmit: (values: ClientFormValues) => Promise<boolean>
 }) {
   const [values, setValues] = useState<ClientFormValues>(defaultValues)
   const [saving, setSaving] = useState(false)
@@ -123,11 +116,8 @@ export function ClientFormDialog({
           companyName: client.companyName,
           registrationNumber: client.registrationNumber,
           taxId: client.taxId,
-          companyEmail: client.companyEmail,
-          companyPhone: client.companyPhone,
           contactPersonName: client.contactPersonName,
           contactPersonPhone: client.contactPersonPhone,
-          contactPersonEmail: client.contactPersonEmail,
         })
       } else {
         setValues(defaultValues)
@@ -138,7 +128,6 @@ export function ClientFormDialog({
   const valid =
     values.phone.trim().length > 5 &&
     values.email.trim().length > 3 &&
-    values.city.trim().length > 1 &&
     (values.type === "individual"
       ? (values.fullName?.trim().length ?? 0) > 1 && (values.idNumber?.trim().length ?? 0) > 2
       : (values.companyName?.trim().length ?? 0) > 1 &&
@@ -148,16 +137,12 @@ export function ClientFormDialog({
   const submit = async () => {
     if (!valid) return
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 500))
-    onSubmit(values)
-    setSaving(false)
-    toast.success(mode === "create" ? "Client ajouté" : "Client mis à jour", {
-      description:
-        mode === "create"
-          ? `${values.fullName} a été ajouté à votre CRM.`
-          : "Les informations du client ont été enregistrées.",
-    })
-    onClose()
+    try {
+      const ok = await onSubmit(values)
+      if (ok) onClose()
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -233,6 +218,7 @@ export function ClientFormDialog({
                       <button
                         key={t}
                         type="button"
+                        disabled={mode === "edit"}
                         onClick={() =>
                           setValues({
                             ...defaultValues,
@@ -247,6 +233,7 @@ export function ClientFormDialog({
                           values.type === t
                             ? "bg-indigo-600 text-white shadow-sm"
                             : "text-slate-500 hover:text-slate-900",
+                          mode === "edit" && "cursor-not-allowed opacity-70",
                         )}
                       >
                         {t === "individual" ? (
@@ -401,26 +388,6 @@ export function ClientFormDialog({
                       </Field>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <Field icon={Mail} label="Email entreprise" required>
-                        <input
-                          type="email"
-                          value={values.companyEmail || ""}
-                          onChange={(e) => setValues({ ...values, companyEmail: e.target.value })}
-                          placeholder="contact@company.com"
-                          className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                        />
-                      </Field>
-                      <Field icon={Phone} label="Téléphone entreprise">
-                        <input
-                          value={values.companyPhone || ""}
-                          onChange={(e) => setValues({ ...values, companyPhone: e.target.value })}
-                          placeholder="+212 5 22 12 34 56"
-                          className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 font-mono text-sm tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                        />
-                      </Field>
-                    </div>
-
                     <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
                       <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-700">
                         Personne de contact
@@ -441,15 +408,6 @@ export function ClientFormDialog({
                             onChange={(e) => setValues({ ...values, contactPersonPhone: e.target.value })}
                             placeholder="+212 6 12 34 56 78"
                             className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 font-mono text-sm tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                          />
-                        </Field>
-                        <Field icon={Mail} label="Email">
-                          <input
-                            type="email"
-                            value={values.contactPersonEmail || ""}
-                            onChange={(e) => setValues({ ...values, contactPersonEmail: e.target.value })}
-                            placeholder="ahmed@company.com"
-                            className="block w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
                           />
                         </Field>
                       </div>
@@ -476,7 +434,7 @@ export function ClientFormDialog({
                       </Field>
                     </div>
 
-                    <Field icon={MapPin} label="Ville" required>
+                    <Field icon={MapPin} label="Ville">
                       <input
                         value={values.city}
                         onChange={(e) => setValues({ ...values, city: e.target.value })}

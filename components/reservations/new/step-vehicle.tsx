@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "motion/react"
 import {
   CalendarRange,
@@ -14,7 +14,10 @@ import {
   Building2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { cars, formatMAD } from "@/lib/cars-data"
+import { useI18n } from "@/contexts/i18n-context"
+import { formatMAD } from "@/lib/cars-data"
+import type { CarCategory } from "@/lib/cars-data"
+import { checkReservationAvailabilityAction } from "@/modules/reservations/actions/create-reservation.action"
 import { useWizard, type Location } from "./wizard-context"
 import { CarIllustration } from "@/components/cars/car-illustration"
 import { StepHeader } from "./step-header"
@@ -27,10 +30,10 @@ const LOCATIONS: { id: Location; label: string; icon: typeof Plane }[] = [
 ]
 
 export function StepVehicle() {
-  const { state, setState, totals } = useWizard()
+  const { t } = useI18n()
+  const { state, setState, totals, cars, reservationId, availability, setAvailability } = useWizard()
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
 
-  // Available cars (mock: filter out hors_service and maintenance)
   const availableCars = useMemo(() => {
     let list = cars.filter((c) => c.status === "disponible" || c.status === "louee")
     if (categoryFilter !== "all") {
@@ -39,7 +42,37 @@ export function StepVehicle() {
     return list
   }, [categoryFilter])
 
-  const categories = ["all", "Citadine", "Berline", "SUV", "Utilitaire"]
+  const categories = ["all", ...Array.from(new Set(cars.map((car) => car.category)))]
+
+  useEffect(() => {
+    if (!state.selectedCarId || !state.startDate || !state.endDate) {
+      setAvailability("idle")
+      return
+    }
+    const startsAt = new Date(`${state.startDate}T${state.startTime}:00`)
+    const endsAt = new Date(`${state.endDate}T${state.endTime}:00`)
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime()) || startsAt >= endsAt) {
+      setAvailability("idle")
+      return
+    }
+
+    let cancelled = false
+    setAvailability("checking")
+    void checkReservationAvailabilityAction({
+      vehicleId: state.selectedCarId,
+      startsAt,
+      endsAt,
+      reservationId,
+    }).then((result) => {
+      if (!cancelled) {
+        setAvailability(result.success && result.available ? "available" : "unavailable")
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [reservationId, setAvailability, state.endDate, state.endTime, state.selectedCarId, state.startDate, state.startTime])
 
   return (
     <div>
@@ -119,6 +152,12 @@ export function StepVehicle() {
             <span className="text-xs font-medium text-slate-500">
               ({availableCars.length} sur cette période)
             </span>
+            {availability === "checking" && (
+              <span className="text-xs font-medium text-blue-600">{t("reservations.form.checkingAvailability")}</span>
+            )}
+            {availability === "unavailable" && (
+              <span className="text-xs font-medium text-rose-600">{t("reservations.form.unavailableForDates")}</span>
+            )}
           </div>
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
             <Filter className="ml-2 h-3.5 w-3.5 text-slate-400" />
@@ -169,7 +208,7 @@ export function StepVehicle() {
                   </motion.div>
                 )}
                 <div className="mb-3 grid h-24 place-items-center rounded-lg bg-gradient-to-br from-slate-50 to-slate-100/60">
-                  <CarIllustration category={car.category} size="lg" />
+                  <CarIllustration category={car.category as CarCategory} size="lg" />
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">

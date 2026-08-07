@@ -1,3 +1,11 @@
-// TODO: Future implementation
-// Data Transfer Object — output shape returned to the client
-export {}
+import type { Car } from "@/lib/cars-data";
+
+export type CarListDto = {
+  data: Car[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+};

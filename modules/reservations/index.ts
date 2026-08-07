@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for the reservations module — barrel file
-export {}
+export * from "./repositories/reservations.repository";
+export * from "./services/reservations.service";

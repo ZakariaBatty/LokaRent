@@ -16,20 +16,19 @@ import {
   Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { clients, avatarGradient, getInitials, statusConfig } from "@/lib/clients-data"
-import type { Client } from "@/lib/clients-data"
+import { avatarGradient, getInitials, statusConfig } from "@/lib/clients-data"
 import { useWizard, type SelectedClient } from "./wizard-context"
 import { StepHeader } from "./step-header"
 
-function toSelected(c: Client): SelectedClient {
+function toSelected(c: ReturnType<typeof useWizard>["clients"][number]): SelectedClient {
   return {
     id: c.id,
     name: c.fullName,
     phone: c.phone,
     email: c.email,
     status: c.status,
-    idType: c.idType,
-    idNumber: c.idNumber,
+    idType: c.idType ?? "CIN",
+    idNumber: c.idNumber ?? "",
     licenseExpiry: c.licenseExpiry,
   }
 }
@@ -42,7 +41,7 @@ function daysUntil(iso?: string) {
 }
 
 export function StepClient() {
-  const { state, setState, setNewClient } = useWizard()
+  const { state, setState, setNewClient, clients } = useWizard()
   const [query, setQuery] = useState("")
 
   const results = useMemo(() => {
@@ -53,7 +52,7 @@ export function StepClient() {
         (c) =>
           c.fullName.toLowerCase().includes(q) ||
           c.phone.replace(/\s/g, "").includes(q.replace(/\s/g, "")) ||
-          c.idNumber.toLowerCase().includes(q),
+          (c.idNumber ?? "").toLowerCase().includes(q),
       )
       .slice(0, 8)
   }, [query])

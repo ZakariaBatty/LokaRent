@@ -6,7 +6,14 @@ import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
 import { ArrowLeft, ArrowRight, Check, Loader2, Save, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import { cn } from "@/lib/utils"
+import { createClientAction } from "@/modules/clients/actions/create-client.action"
+import {
+  confirmReservationAction,
+  createReservationAction,
+  updateReservationAction,
+} from "@/modules/reservations/actions/create-reservation.action"
 import { useWizard, STEP_ORDER } from "./wizard-context"
 import { WizardProgress } from "./wizard-progress"
 import { StepClient } from "./step-client"
@@ -17,7 +24,8 @@ import { StepSummary } from "./step-summary"
 
 export function WizardShell() {
   const router = useRouter()
-  const { step, stepIndex, prev, next, canProceed, state } = useWizard()
+  const { t } = useI18n()
+  const { step, stepIndex, prev, next, canProceed, state, totals, mode, reservationId, cars, sources } = useWizard()
   const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -27,27 +35,99 @@ export function WizardShell() {
 
   const handleSaveDraft = async () => {
     setSavingDraft(true)
-    await new Promise((r) => setTimeout(r, 700))
     setSavingDraft(false)
-    toast.success("Brouillon enregistré", {
-      description: "Vous pouvez reprendre cette réservation plus tard.",
-    })
+    toast.error(t("reservations.form.draftNotPersisted"))
   }
 
   const handleConfirm = async () => {
     setSubmitting(true)
-    await new Promise((r) => setTimeout(r, 900))
+    const selectedCar = cars.find((car) => car.id === state.selectedCarId)
+    const sourceId = sources[0]?.id
+    let customerId = state.selectedClient?.id
+
+    if (state.clientMode === "new") {
+      const createdClient = await createClientAction({
+        type: "individual",
+        fullName: `${state.newClient.firstName} ${state.newClient.lastName}`.trim(),
+        phone: state.newClient.phone,
+        email: state.newClient.email,
+        status: "active",
+        idType: state.newClient.idType,
+        idNumber: state.newClient.idNumber,
+        licenseNumber: state.newClient.licenseNumber,
+        licenseExpiresAt: state.newClient.licenseExpiry || undefined,
+      })
+      if (!createdClient.success || !createdClient.customerId) {
+        setSubmitting(false)
+        toast.error(t("reservations.form.clientCreateFailed"))
+        return
+      }
+      customerId = createdClient.customerId
+    }
+
+    if (!customerId || !state.selectedCarId || !sourceId || !selectedCar) {
+      setSubmitting(false)
+      toast.error(t("reservations.errors.validation"))
+      return
+    }
+
+    const startsAt = new Date(`${state.startDate}T${state.startTime}:00`)
+    const endsAt = new Date(`${state.endDate}T${state.endTime}:00`)
+    const extras = [
+      state.options.extraDriver && { label: "Conducteur supplémentaire", unitPrice: 50, quantity: totals.days },
+      state.options.gps && { label: "GPS", unitPrice: 30, quantity: totals.days },
+      state.options.babySeat && { label: "Siège bébé", unitPrice: 20, quantity: totals.days },
+      state.options.extraInsurance && { label: "Assurance complémentaire", unitPrice: 80, quantity: totals.days },
+    ].filter(Boolean)
+    const payload = {
+      customerId,
+      vehicleId: state.selectedCarId,
+      sourceId,
+      startsAt,
+      endsAt,
+      pickupLocation: state.pickupLocation === "Livraison adresse" ? state.pickupAddress : state.pickupLocation,
+      returnLocation: state.returnLocation === "Livraison adresse" ? state.returnAddress : state.returnLocation,
+      pricePerDay: totals.pricePerDay,
+      extrasTotal: totals.optionsTotal,
+      discountAmount: totals.discountAmount,
+      discountReason: state.discountReason,
+      currency: selectedCar.currency,
+      depositAmount: state.cautionAmount,
+      advanceAmount: state.avanceAmount,
+      internalNotes: state.remarks,
+      extras,
+    }
+
+    const result =
+      mode === "edit" && reservationId
+        ? await updateReservationAction({ reservationId, ...payload })
+        : await createReservationAction(payload)
+
+    if (!result.success || !result.reservationId) {
+      setSubmitting(false)
+      toast.error(t("reservations.form.saveFailed"))
+      return
+    }
+
+    if (mode === "create") {
+      const confirmed = await confirmReservationAction({ reservationId: result.reservationId })
+      if (!confirmed.success) {
+        setSubmitting(false)
+        toast.error(t("reservations.form.confirmAfterCreateFailed"))
+        router.push(`/reservations/${result.reservationId}/edit`)
+        return
+      }
+    }
+
     setSubmitting(false)
     setSuccess(true)
-    await new Promise((r) => setTimeout(r, 1400))
-    toast.success("Réservation confirmée", {
-      description: "Le contrat a été généré avec succès.",
-    })
+    await new Promise((r) => setTimeout(r, 900))
+    toast.success(mode === "edit" ? t("reservations.form.updated") : t("reservations.actions.confirmed"))
     router.push("/reservations")
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-slate-50">
+    <div className="relative mx-auto flex h-[calc(100vh-2rem)] max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-[0_24px_70px_rgba(15,23,42,0.12)]">
       {/* Soft background */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -58,7 +138,7 @@ export function WizardShell() {
       />
 
       {/* Top bar */}
-      <header className="relative z-20 border-b border-slate-200/80 bg-white/80 backdrop-blur-xl">
+      <header className="relative z-20 shrink-0 border-b border-slate-200/80 bg-white/90 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <Link
@@ -94,13 +174,13 @@ export function WizardShell() {
           </button>
         </div>
 
-        <div className="border-t border-slate-200/60 bg-white/60 px-4 py-6 sm:px-6">
+        <div className="border-t border-slate-200/60 bg-white/60 px-4 py-4 sm:px-6">
           <WizardProgress />
         </div>
       </header>
 
       {/* Body */}
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-8 pb-32 sm:px-6">
+      <main className="relative z-10 min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -108,6 +188,7 @@ export function WizardShell() {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -12 }}
             transition={{ duration: 0.22, ease: "easeOut" }}
+            className="mx-auto max-w-6xl"
           >
             {step === "client" && <StepClient />}
             {step === "vehicle" && <StepVehicle />}
@@ -119,7 +200,7 @@ export function WizardShell() {
       </main>
 
       {/* Sticky footer */}
-      <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200/80 bg-white/90 backdrop-blur-xl">
+      <footer className="relative z-20 shrink-0 border-t border-slate-200/80 bg-white/95 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <button
             type="button"

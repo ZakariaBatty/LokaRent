@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for the reports module — barrel file
-export {}
+export * from "./repositories/reports.repository";
+export * from "./services/reports.service";

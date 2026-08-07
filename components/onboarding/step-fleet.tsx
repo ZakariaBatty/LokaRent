@@ -16,14 +16,29 @@ import {
   createEmptyVehicle,
   useOnboarding,
   type OnboardingVehicle,
+  type OnboardingFuelType,
+  type OnboardingTransmission,
   type VehicleCategory,
 } from "./onboarding-context"
 import { useEffect, useRef } from "react"
+import { useI18n } from "@/contexts/i18n-context"
 
 const MARQUES = ["Dacia", "Renault", "Hyundai", "Kia", "Toyota", "Peugeot", "Citroën", "Autre"]
 const CATEGORIES: VehicleCategory[] = ["Citadine", "Berline", "SUV", "4x4", "Utilitaire"]
+const FUEL_TYPES: Array<{ value: OnboardingFuelType; label: string }> = [
+  { value: "petrol", label: "Essence" },
+  { value: "diesel", label: "Diesel" },
+  { value: "electric", label: "Électrique" },
+  { value: "hybrid", label: "Hybride" },
+  { value: "lpg", label: "GPL" },
+]
+const TRANSMISSIONS: Array<{ value: OnboardingTransmission; label: string }> = [
+  { value: "manual", label: "Manuelle" },
+  { value: "automatic", label: "Automatique" },
+]
 
 export function StepFleet() {
+  const { t } = useI18n()
   const { state, setVehicles } = useOnboarding()
   const lastAddedRef = useRef<string | null>(null)
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -190,6 +205,52 @@ export function StepFleet() {
                       {CATEGORIES.map((c) => (
                         <SelectItem key={c} value={c}>
                           {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    {t("onboarding.optional.vehicleFuelType")}
+                  </Label>
+                  <Select
+                    value={vehicle.fuelType}
+                    onValueChange={(v) =>
+                      updateVehicle(vehicle.id, { fuelType: v as OnboardingFuelType })
+                    }
+                  >
+                    <SelectTrigger className="h-10 border-white/10 bg-background/60">
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {FUEL_TYPES.map((fuel) => (
+                        <SelectItem key={fuel.value} value={fuel.value}>
+                          {t(`onboarding.vehicleFuel.${fuel.value}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-xs font-medium text-muted-foreground">
+                    {t("onboarding.optional.vehicleTransmission")}
+                  </Label>
+                  <Select
+                    value={vehicle.transmission}
+                    onValueChange={(v) =>
+                      updateVehicle(vehicle.id, { transmission: v as OnboardingTransmission })
+                    }
+                  >
+                    <SelectTrigger className="h-10 border-white/10 bg-background/60">
+                      <SelectValue placeholder="Sélectionner" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TRANSMISSIONS.map((transmission) => (
+                        <SelectItem key={transmission.value} value={transmission.value}>
+                          {t(`onboarding.vehicleTransmission.${transmission.value}`)}
                         </SelectItem>
                       ))}
                     </SelectContent>

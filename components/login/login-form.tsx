@@ -4,25 +4,36 @@ import type React from "react"
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { motion } from "motion/react"
 import { Eye, EyeOff, Mail, Lock, ArrowRight, ShieldCheck, Cloud, Zap, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { signInAction } from "@/modules/auth/actions"
 
 export function LoginForm() {
+  const router = useRouter()
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [remember, setRemember] = useState(true)
   const [loading, setLoading] = useState(false)
   const [focused, setFocused] = useState<"email" | "password" | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
     setLoading(true)
-    await new Promise((r) => setTimeout(r, 1200))
+    const result = await signInAction({ email, password, rememberMe: remember })
     setLoading(false)
+    if (!result.success) {
+      setError(result.message ?? "Email ou mot de passe invalide.")
+      return
+    }
+    router.push(result.redirectTo ?? "/dashboard")
+    router.refresh()
   }
 
   return (
@@ -155,6 +166,12 @@ export function LoginForm() {
             Se souvenir de moi
           </label>
         </div>
+
+        {error && (
+          <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
+        )}
 
         {/* Submit */}
         <Button

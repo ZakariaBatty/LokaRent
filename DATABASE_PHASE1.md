@@ -835,6 +835,7 @@ customers
   type            enum(individual, company) NOT NULL
   email           text
   phone           text
+  city            text
   status          enum(active, inactive, blacklisted) NOT NULL
   notes           text
   created_at      timestamptz

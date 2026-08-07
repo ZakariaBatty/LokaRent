@@ -3,32 +3,34 @@
 import { Search, SlidersHorizontal } from "lucide-react"
 import { type DriverStatus, type PaymentType } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 export type DriversFiltersState = {
   search: string
   status: DriverStatus | "all"
-  paymentType: PaymentType | "all"
-  sort: "name_asc" | "recent" | "assignments_desc" | "earned_desc"
+  pricingType: PaymentType | "all"
+  sort: "name_asc" | "recent" | "status" | "updated"
 }
 
 const statusOptions: { value: DriversFiltersState["status"]; label: string }[] = [
-  { value: "all", label: "Tous les statuts" },
-  { value: "active", label: "Actif" },
-  { value: "inactive", label: "Inactif" },
-  { value: "suspended", label: "Suspendu" },
+  { value: "all", label: fr.drivers.filters.allStatuses },
+  { value: "active", label: fr.drivers.status.active },
+  { value: "inactive", label: fr.drivers.status.inactive },
+  { value: "suspended", label: fr.drivers.status.suspended },
 ]
 
-const paymentOptions: { value: DriversFiltersState["paymentType"]; label: string }[] = [
-  { value: "all", label: "Tout type" },
-  { value: "monthly", label: "Mensuel" },
-  { value: "mission", label: "Mission" },
+const paymentOptions: { value: DriversFiltersState["pricingType"]; label: string }[] = [
+  { value: "all", label: fr.drivers.filters.allPricingTypes },
+  { value: "monthly", label: fr.drivers.pricing.monthly },
+  { value: "hourly", label: fr.drivers.pricing.hourly },
+  { value: "mission", label: fr.drivers.pricing.mission },
 ]
 
 const sortOptions: { value: DriversFiltersState["sort"]; label: string }[] = [
-  { value: "recent", label: "Plus récent" },
-  { value: "name_asc", label: "Nom A→Z" },
-  { value: "assignments_desc", label: "Missions ↓" },
-  { value: "earned_desc", label: "Versé ↓" },
+  { value: "recent", label: fr.drivers.filters.recent },
+  { value: "name_asc", label: fr.drivers.filters.nameAsc },
+  { value: "status", label: fr.drivers.filters.statusSort },
+  { value: "updated", label: fr.drivers.filters.updated },
 ]
 
 const selectCls =
@@ -51,7 +53,7 @@ export function DriversFilters({
         <input
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          placeholder="Rechercher par nom, téléphone…"
+          placeholder={fr.drivers.filters.searchPlaceholder}
           className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
         />
       </div>
@@ -69,8 +71,8 @@ export function DriversFilters({
 
       {/* Payment type */}
       <select
-        value={filters.paymentType}
-        onChange={(e) => onChange({ ...filters, paymentType: e.target.value as DriversFiltersState["paymentType"] })}
+        value={filters.pricingType}
+        onChange={(e) => onChange({ ...filters, pricingType: e.target.value as DriversFiltersState["pricingType"] })}
         className={selectCls}
       >
         {paymentOptions.map((o) => (
@@ -90,7 +92,9 @@ export function DriversFilters({
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
         </select>
-        <span className="whitespace-nowrap font-semibold tabular-nums text-slate-700">{total} résultat{total !== 1 ? "s" : ""}</span>
+        <span className="whitespace-nowrap font-semibold tabular-nums text-slate-700">
+          {total} {fr.drivers.filters.results}
+        </span>
       </div>
     </div>
   )

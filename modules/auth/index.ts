@@ -1,3 +1,11 @@
-// TODO: Future implementation
-// Public exports for the auth module — barrel file
-export {}
+export * from "./actions";
+export * from "./controllers/auth.controller";
+export * from "./dto/auth-response.dto";
+export * from "./dto/sign-in.dto";
+export * from "./mappers/user.mapper";
+export * from "./permissions/auth.permissions";
+export * from "./repositories/auth.repository";
+export * from "./services/auth.service";
+export * from "./types";
+export * from "./validators/register.schema";
+export * from "./validators/sign-in.schema";

@@ -1,3 +1,5 @@
-// TODO: Future implementation
-// ForbiddenError — 403, insufficient permissions
-export {}
+import { createAppError } from "./app-error";
+
+export function createForbiddenError(message = "Forbidden", details?: unknown) {
+  return createAppError(message, "FORBIDDEN", 403, details);
+}

@@ -1,3 +1,7 @@
-// TODO: Future implementation
-// Route controller — handles external auth HTTP requests
-export {}
+export {
+  registerAction,
+  requestPasswordResetAction,
+  resetPasswordAction,
+  signInAction,
+  signOutAction,
+} from "../actions";

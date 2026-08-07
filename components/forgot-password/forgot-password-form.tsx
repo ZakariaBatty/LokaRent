@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { requestPasswordResetAction } from "@/modules/auth/actions"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
@@ -36,7 +37,7 @@ export function ForgotPasswordForm() {
       return
     }
     setIsLoading(true)
-    await new Promise((r) => setTimeout(r, 1400))
+    await requestPasswordResetAction({ email })
     setSentTo(email)
     setSubmitted(true)
     setIsLoading(false)

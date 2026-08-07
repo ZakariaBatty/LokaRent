@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Phone,
@@ -19,6 +20,7 @@ import {
 import { type Client, formatDate, maskId, nationalityFlag } from "@/lib/clients-data"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { updateClientAction } from "@/modules/clients/actions/create-client.action"
 
 function Row({
   icon: Icon,
@@ -89,8 +91,18 @@ function EditableRow({
   )
 }
 
+function toCustomerStatus(status: Client["status"]) {
+  if (status === "blacklist") return "blacklisted"
+  if (status === "inactif") return "inactive"
+  return "active"
+}
+
 export function ProfilTab({ client }: { client: Client }) {
+  const router = useRouter()
+  const idExpiry = client.idExpiry ?? client.createdAt
+  const licenseExpiry = client.licenseExpiry ?? client.createdAt
   const [editMode, setEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [blacklisted, setBlacklisted] = useState(client.status === "blacklist")
   const [blacklistReason, setBlacklistReason] = useState(client.blacklistReason ?? "")
   const [form, setForm] = useState({
@@ -98,22 +110,60 @@ export function ProfilTab({ client }: { client: Client }) {
     phone: client.phone,
     email: client.email,
     city: client.city,
-    idNumber: client.idNumber,
-    licenseNumber: client.licenseNumber,
+    idNumber: client.idNumber ?? "",
+    licenseNumber: client.licenseNumber ?? "",
   })
 
   const idDaysLeft = Math.floor(
-    (new Date(client.idExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (new Date(idExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   )
   const licenseDaysLeft = Math.floor(
-    (new Date(client.licenseExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+    (new Date(licenseExpiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
   )
 
-  const save = () => {
+  const save = async () => {
+    setSaving(true)
+    const result = await updateClientAction(
+      client.type === "individual"
+        ? {
+            customerId: client.id,
+            type: "individual",
+            fullName: form.fullName,
+            phone: form.phone,
+            email: form.email,
+            city: form.city,
+            status: toCustomerStatus(client.status),
+            nationality: client.nationality,
+            idType: client.idType ?? "CIN",
+            idNumber: form.idNumber,
+            licenseNumber: form.licenseNumber,
+          }
+        : {
+            customerId: client.id,
+            type: "company",
+            companyName: form.fullName,
+            phone: form.phone,
+            email: form.email,
+            city: form.city,
+            status: toCustomerStatus(client.status),
+            registrationNumber: client.registrationNumber,
+            taxId: client.taxId,
+            contactPersonName: client.contactPersonName,
+            contactPersonPhone: client.contactPersonPhone,
+          },
+    )
+    setSaving(false)
+
+    if (!result.success) {
+      toast.error("Impossible d'enregistrer le profil.")
+      return
+    }
+
     toast.success("Profil mis à jour", {
       description: "Les modifications ont été enregistrées.",
     })
     setEditMode(false)
+    router.refresh()
   }
 
   const cancel = () => {
@@ -122,8 +172,8 @@ export function ProfilTab({ client }: { client: Client }) {
       phone: client.phone,
       email: client.email,
       city: client.city,
-      idNumber: client.idNumber,
-      licenseNumber: client.licenseNumber,
+      idNumber: client.idNumber ?? "",
+      licenseNumber: client.licenseNumber ?? "",
     })
     setEditMode(false)
   }
@@ -171,10 +221,11 @@ export function ProfilTab({ client }: { client: Client }) {
               </button>
               <button
                 onClick={save}
+                disabled={saving}
                 className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-indigo-600 to-blue-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:shadow"
               >
                 <Check className="h-3 w-3" />
-                Enregistrer
+                {saving ? "Enregistrement..." : "Enregistrer"}
               </button>
             </motion.div>
           )}
@@ -288,7 +339,7 @@ export function ProfilTab({ client }: { client: Client }) {
                 Numéro
               </p>
               <p className="mt-1 font-mono text-sm font-bold text-slate-900">
-                {maskId(client.idNumber)}
+                {maskId(client.idNumber ?? "")}
               </p>
             </div>
             <div>
@@ -297,7 +348,7 @@ export function ProfilTab({ client }: { client: Client }) {
               </p>
               <div className="mt-1 flex items-center gap-1.5">
                 <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                <p className="text-sm font-semibold text-slate-900">{formatDate(client.idExpiry)}</p>
+                <p className="text-sm font-semibold text-slate-900">{formatDate(idExpiry)}</p>
                 <span
                   className={cn(
                     "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
@@ -367,7 +418,7 @@ export function ProfilTab({ client }: { client: Client }) {
               </p>
               <div className="mt-1 flex items-center gap-1.5">
                 <p className="text-sm font-semibold text-slate-900">
-                  {formatDate(client.licenseExpiry)}
+                  {formatDate(licenseExpiry)}
                 </p>
                 <span
                   className={cn(

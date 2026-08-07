@@ -13,11 +13,13 @@ import {
   daysUntil,
 } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
+import { Skeleton } from "@/components/ui/skeleton"
+import fr from "@/translations/fr"
 
 function DriverAvatar({ driver }: { driver: Driver }) {
   const initials = `${driver.firstName[0]}${driver.lastName[0]}`.toUpperCase()
   const colors = ["from-blue-500 to-indigo-600", "from-emerald-500 to-teal-600", "from-amber-500 to-orange-500", "from-rose-500 to-pink-600", "from-violet-500 to-purple-600"]
-  const color = colors[parseInt(driver.id.replace("d", ""), 10) % colors.length]
+  const color = colors[driver.id.charCodeAt(0) % colors.length]
   return (
     <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br text-sm font-bold text-white shadow-sm", color)}>
       {initials}
@@ -57,9 +59,9 @@ function ActionsMenu({
               className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg"
             >
               {[
-                { icon: Eye, label: "Voir le dossier", action: onView },
-                { icon: Pencil, label: "Modifier", action: onEdit },
-                { icon: Trash2, label: "Supprimer", action: onDelete, danger: true },
+                { icon: Eye, label: fr.drivers.actions.view, action: onView },
+                { icon: Pencil, label: fr.drivers.actions.edit, action: onEdit },
+                { icon: Trash2, label: fr.drivers.actions.delete, action: onDelete, danger: true },
               ].map(({ icon: Icon, label, action, danger }) => (
                 <button
                   key={label}
@@ -87,21 +89,37 @@ export function DriversTable({
   onSelect,
   onEdit,
   onDelete,
+  loading,
+  canDelete = true,
 }: {
   drivers: Driver[]
   selectedId?: string | null
   onSelect: (d: Driver) => void
   onEdit: (d: Driver) => void
   onDelete: (d: Driver) => void
+  loading?: boolean
+  canDelete?: boolean
 }) {
+  if (loading) {
+    return (
+      <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_4px_rgba(15,23,42,0.04)]">
+        <div className="space-y-3 p-4">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <Skeleton key={index} className="h-14 w-full rounded-xl" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   if (drivers.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white py-16 text-center">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
           <CarFront className="h-7 w-7 text-slate-400" />
         </div>
-        <p className="mt-4 text-sm font-semibold text-slate-700">Aucun chauffeur trouvé</p>
-        <p className="mt-1 text-xs text-slate-400">Modifiez vos filtres ou ajoutez un nouveau chauffeur.</p>
+        <p className="mt-4 text-sm font-semibold text-slate-700">{fr.drivers.empty.title}</p>
+        <p className="mt-1 text-xs text-slate-400">{fr.drivers.empty.description}</p>
       </div>
     )
   }
@@ -112,7 +130,16 @@ export function DriversTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/60">
-              {["Chauffeur", "Téléphone", "Type paiement", "Tarif actuel", "Missions", "Statut", "Permis", ""].map((h) => (
+              {[
+                fr.drivers.table.driver,
+                fr.drivers.phone,
+                fr.drivers.table.pricingType,
+                fr.drivers.table.currentRate,
+                fr.drivers.table.assignments,
+                fr.drivers.status.label,
+                fr.drivers.table.license,
+                "",
+              ].map((h) => (
                 <th key={h} className="whitespace-nowrap px-4 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400 first:pl-5 last:pr-4">
                   {h}
                 </th>
@@ -140,7 +167,7 @@ export function DriversTable({
                       <DriverAvatar driver={driver} />
                       <div>
                         <p className="font-semibold text-slate-900">{driverFullName(driver)}</p>
-                        <p className="text-[11px] text-slate-400">{driver.city}</p>
+                        <p className="text-[11px] text-slate-400">{driver.reference ?? driver.homeAgencyName}</p>
                       </div>
                     </div>
                   </td>
@@ -160,15 +187,17 @@ export function DriversTable({
                   {/* Payment type */}
                   <td className="px-4 py-3.5">
                     <span className={cn("inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", pt.color)}>
-                      {pt.label}
+                      {fr.drivers.pricing[driver.paymentType]}
                     </span>
                   </td>
 
                   {/* Current rate */}
                   <td className="px-4 py-3.5 font-mono text-sm tabular-nums text-slate-900">
                     {driver.paymentType === "monthly"
-                      ? formatMAD(driver.currentRate.monthlySalary ?? 0) + "/mois"
-                      : formatMAD(driver.currentRate.pricePerMission ?? 0) + "/miss."}
+                      ? `${formatMAD(driver.currentRate.monthlySalary ?? 0)} / ${fr.drivers.pricing.month}`
+                      : driver.paymentType === "hourly"
+                        ? `${formatMAD(driver.currentRate.pricePerHour ?? 0)} / ${fr.drivers.pricing.hour}`
+                        : `${formatMAD(driver.currentRate.pricePerMission ?? 0)} / ${fr.drivers.pricing.missionShort}`}
                   </td>
 
                   {/* Assignments */}
@@ -200,7 +229,7 @@ export function DriversTable({
                         licenseDays > 0 ? "bg-amber-50 text-amber-700" :
                         "bg-rose-50 text-rose-700",
                       )}>
-                        {licenseDays > 0 ? `${licenseDays}j` : "Expiré"}
+                        {licenseDays > 0 ? `${licenseDays}${fr.drivers.daysShort}` : fr.drivers.documents.expired}
                       </span>
                     </div>
                   </td>
@@ -211,7 +240,7 @@ export function DriversTable({
                       driver={driver}
                       onView={() => onSelect(driver)}
                       onEdit={() => onEdit(driver)}
-                      onDelete={() => onDelete(driver)}
+                      onDelete={() => canDelete && onDelete(driver)}
                     />
                   </td>
                 </tr>

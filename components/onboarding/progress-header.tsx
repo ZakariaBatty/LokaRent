@@ -2,14 +2,17 @@
 
 import { motion } from "motion/react"
 import { Check } from "lucide-react"
+import { useI18n } from "@/contexts/i18n-context"
 
 const STEPS = [
-  { id: 1, label: "Votre flotte" },
-  { id: 2, label: "Grille tarifaire" },
-  { id: 3, label: "Paramètres de base" },
+  { id: 1, labelKey: "onboarding.progress.company" },
+  { id: 2, labelKey: "onboarding.progress.agency" },
+  { id: 3, labelKey: "onboarding.progress.preferences" },
+  { id: 4, labelKey: "onboarding.progress.optional" },
 ]
 
 export function ProgressHeader({ currentStep }: { currentStep: number }) {
+  const { t } = useI18n()
   const progress = ((currentStep - 1) / (STEPS.length - 1)) * 100
 
   return (
@@ -82,14 +85,14 @@ export function ProgressHeader({ currentStep }: { currentStep: number }) {
                       isActive || isCompleted ? "text-foreground" : "text-muted-foreground"
                     }`}
                   >
-                    Étape {step.id}
+                    {t("onboarding.progress.step")} {step.id}
                   </span>
                   <span
                     className={`text-sm font-medium transition-colors ${
                       isActive ? "text-foreground" : "text-muted-foreground"
                     }`}
                   >
-                    {step.label}
+                    {t(step.labelKey)}
                   </span>
                 </div>
               </li>

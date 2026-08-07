@@ -1,3 +1,9 @@
-// TODO: Future implementation
-// TypeScript types for the auth module
-export {}
+export type ServiceContextAuth = {
+  authUserId: string;
+  userId: string;
+  companyId: string;
+};
+
+export type AuthRedirect = {
+  redirectTo: string;
+};

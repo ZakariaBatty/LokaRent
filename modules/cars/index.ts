@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for the cars module — barrel file
-export {}
+export * from "./repositories/cars.repository";
+export * from "./services/cars.service";

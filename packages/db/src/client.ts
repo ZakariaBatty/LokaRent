@@ -1,3 +1,22 @@
-// TODO: Future implementation
-// Prisma client singleton — getClient() with connection pooling
-export {}
+import { PrismaClient } from "@prisma/client";
+
+const globalForPrisma = globalThis as typeof globalThis & {
+  __lokarentPrisma?: PrismaClient;
+};
+
+export const prisma =
+  globalForPrisma.__lokarentPrisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.__lokarentPrisma = prisma;
+}
+
+export function getPrismaClient() {
+  return prisma;
+}

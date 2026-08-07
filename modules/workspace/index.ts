@@ -1,3 +1,12 @@
-// TODO: Future implementation
-// Public exports for the workspace module — barrel file
-export {}
+export * from "./activity/repositories/activity.repository";
+export * from "./activity/services/activity.service";
+export * from "./agencies/repositories/agencies.repository";
+export * from "./agencies/services/agencies.service";
+export * from "./billing/repositories/billing.repository";
+export * from "./billing/services/billing.service";
+export * from "./invitations/repositories/invitations.repository";
+export * from "./invitations/services/invitations.service";
+export * from "./members/repositories/members.repository";
+export * from "./members/services/members.service";
+export * from "./permissions/repositories/permissions.repository";
+export * from "./permissions/services/permissions.service";

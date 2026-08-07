@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for shared/events
-export {}
+export * from "./event-bus";
+export * from "./event.types";

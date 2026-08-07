@@ -3,11 +3,12 @@
 import { CarFront, Calendar, User, Car } from "lucide-react"
 import { type Driver, formatDate } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 const assignmentStatusConfig = {
-  completed: { label: "Terminé", pillClass: "border-emerald-200 bg-emerald-50", textClass: "text-emerald-700", dotClass: "bg-emerald-500" },
-  ongoing: { label: "En cours", pillClass: "border-blue-200 bg-blue-50", textClass: "text-blue-700", dotClass: "bg-blue-500 animate-pulse" },
-  cancelled: { label: "Annulé", pillClass: "border-slate-200 bg-slate-50", textClass: "text-slate-500", dotClass: "bg-slate-400" },
+  completed: { label: fr.drivers.assignments.completed, pillClass: "border-emerald-200 bg-emerald-50", textClass: "text-emerald-700", dotClass: "bg-emerald-500" },
+  ongoing: { label: fr.drivers.assignments.ongoing, pillClass: "border-blue-200 bg-blue-50", textClass: "text-blue-700", dotClass: "bg-blue-500 animate-pulse" },
+  cancelled: { label: fr.drivers.assignments.cancelled, pillClass: "border-slate-200 bg-slate-50", textClass: "text-slate-500", dotClass: "bg-slate-400" },
 }
 
 export function DriverHistoriqueTab({ driver }: { driver: Driver }) {
@@ -17,8 +18,8 @@ export function DriverHistoriqueTab({ driver }: { driver: Driver }) {
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
           <CarFront className="h-6 w-6 text-slate-400" />
         </div>
-        <p className="mt-4 text-sm font-semibold text-slate-600">Aucune mission enregistrée</p>
-        <p className="mt-1 text-xs text-slate-400">Les missions assignées apparaîtront ici.</p>
+        <p className="mt-4 text-sm font-semibold text-slate-600">{fr.drivers.assignments.emptyTitle}</p>
+        <p className="mt-1 text-xs text-slate-400">{fr.drivers.assignments.emptyDescription}</p>
       </div>
     )
   }
@@ -31,7 +32,7 @@ export function DriverHistoriqueTab({ driver }: { driver: Driver }) {
           <CarFront className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total missions</p>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{fr.drivers.assignments.total}</p>
           <p className="text-xl font-bold text-slate-900 tabular-nums">{driver.totalAssignments}</p>
         </div>
       </div>

@@ -3,7 +3,7 @@
 import { motion } from "motion/react"
 import { Calculator, CreditCard, Percent, Wallet } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { cars, formatMAD } from "@/lib/cars-data"
+import { formatMAD } from "@/lib/cars-data"
 import { useWizard, type PaymentMethod } from "./wizard-context"
 import { StepHeader } from "./step-header"
 import { AnimatedNumber } from "./animated-number"
@@ -11,7 +11,7 @@ import { AnimatedNumber } from "./animated-number"
 const PAYMENT_METHODS: PaymentMethod[] = ["Cash", "Chèque", "Carte", "Virement"]
 
 export function StepPricing() {
-  const { state, setState, totals } = useWizard()
+  const { state, setState, totals, cars } = useWizard()
   const car = cars.find((c) => c.id === state.selectedCarId)
   const basePrice = car?.priceDay ?? 0
   const effectivePrice = state.pricePerDayOverride ?? basePrice

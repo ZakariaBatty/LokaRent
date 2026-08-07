@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "motion/react"
-import { X, Pencil, Info, FileText, BarChart3, History, MoreHorizontal } from "lucide-react"
+import { X, Pencil, Info, FileText, BarChart3, History, Trash2 } from "lucide-react"
 import { type Car, type CarStatus, statusConfig, formatMAD } from "@/lib/cars-data"
 
 const statusTextColor: Record<CarStatus, string> = {
@@ -17,6 +17,7 @@ import { DocumentsTab } from "./tabs/documents-tab"
 import { FinancesTab } from "./tabs/finances-tab"
 import { HistoriqueTab } from "./tabs/historique-tab"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 type TabKey = "infos" | "documents" | "finances" | "historique"
 
@@ -31,10 +32,14 @@ export function CarDetailPanel({
   car,
   onClose,
   onEdit,
+  onDelete,
+  canDelete = false,
 }: {
   car: Car
   onClose: () => void
   onEdit?: () => void
+  onDelete?: () => void
+  canDelete?: boolean
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("infos")
   const status = statusConfig[car.status]
@@ -91,9 +96,15 @@ export function CarDetailPanel({
                 <Pencil className="h-4 w-4" />
                 <span className="text-xs font-semibold">Modifier</span>
               </button>
-              <button className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
-                <MoreHorizontal className="h-4 w-4" />
-              </button>
+              {canDelete && (
+                <button
+                  onClick={onDelete}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-700"
+                  aria-label={fr.fleet.deleteVehicle}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
               <div className="mx-1 h-6 w-px bg-slate-200" />
               <button
                 onClick={onClose}
@@ -109,7 +120,7 @@ export function CarDetailPanel({
           <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Prix / jour
+                {fr.fleet.pricing.dailyRate}
               </p>
               <p className="text-base font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
             </div>

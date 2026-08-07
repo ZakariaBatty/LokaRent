@@ -1,3 +1,7 @@
-// TODO: Future implementation
-// Data Transfer Object — input shape for creating a reservations record
-export {}
+import type { Reservation } from "@/lib/reservations-data";
+import type { PaginationMeta } from "@/shared/database";
+
+export type ReservationListDto = {
+  data: Reservation[];
+  pagination: PaginationMeta;
+};

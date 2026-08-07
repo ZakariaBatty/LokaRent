@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { Check, Pencil, Gauge, Fuel, Users, Calendar, Palette, Tag } from "lucide-react"
 import { type Car, type CarStatus, statusConfig, formatMAD } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 const allStatuses: CarStatus[] = ["disponible", "louee", "maintenance", "hors_service"]
 
@@ -116,18 +117,12 @@ function EditableField({
 export function InfosTab({ car }: { car: Car }) {
   const [status, setStatus] = useState<CarStatus>(car.status)
   const [km, setKm] = useState(car.km)
-  const [priceDay, setPriceDay] = useState(car.priceDay)
-  const [priceWeek, setPriceWeek] = useState(car.priceWeek)
-  const [priceMonth, setPriceMonth] = useState(car.priceMonth)
   const [statusSaved, setStatusSaved] = useState(false)
 
   useEffect(() => {
     setStatus(car.status)
     setKm(car.km)
-    setPriceDay(car.priceDay)
-    setPriceWeek(car.priceWeek)
-    setPriceMonth(car.priceMonth)
-  }, [car.id, car.status, car.km, car.priceDay, car.priceWeek, car.priceMonth])
+  }, [car.id, car.status, car.km])
 
   const handleStatusChange = (s: CarStatus) => {
     setStatus(s)
@@ -219,32 +214,48 @@ export function InfosTab({ car }: { car: Car }) {
 
       {/* Pricing */}
       <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900">Grille tarifaire</h3>
-          <p className="text-[11px] text-slate-500">Cliquez sur un montant pour modifier.</p>
-        </div>
+        <h3 className="mb-3 text-sm font-bold text-slate-900">{fr.fleet.pricing.title}</h3>
         <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
-          <EditableField label="Prix jour" value={priceDay} suffix="DH/jour" onChange={setPriceDay} />
-          <EditableField label="Prix semaine" value={priceWeek} suffix="DH/sem" onChange={setPriceWeek} />
-          <EditableField label="Prix mois" value={priceMonth} suffix="DH/mois" onChange={setPriceMonth} />
-        </div>
-        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remise semaine</p>
-            <p className="text-sm font-semibold text-slate-900">
-              {Math.round((1 - priceWeek / 7 / priceDay) * 100)}%{" "}
-              <span className="text-[11px] font-normal text-slate-500">
-                vs {formatMAD(priceDay * 7)}/7j
-              </span>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.dailyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.weeklyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceWeek)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.monthlyRate}
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900 tabular-nums">{formatMAD(car.priceMonth)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.depositAmount}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.depositAmount === undefined ? "-" : formatMAD(car.depositAmount)}
             </p>
           </div>
-          <div className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Remise mois</p>
-            <p className="text-sm font-semibold text-slate-900">
-              {Math.round((1 - priceMonth / 30 / priceDay) * 100)}%{" "}
-              <span className="text-[11px] font-normal text-slate-500">
-                vs {formatMAD(priceDay * 30)}/30j
-              </span>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.mileageLimit}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.mileageLimit === undefined ? "-" : `${car.mileageLimit.toLocaleString("fr-FR")} km`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200/80 bg-white p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              {fr.fleet.pricing.extraMileageRate}
+            </p>
+            <p className="mt-2 text-lg font-bold text-slate-900 tabular-nums">
+              {car.extraMileageRate === undefined ? "-" : formatMAD(car.extraMileageRate)}
             </p>
           </div>
         </div>

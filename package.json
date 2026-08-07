@@ -1,12 +1,29 @@
 {
-  "name": "my-project",
+  "name": "LOKA-RENT",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "db:format": "npm run prisma:format --workspace=@lokarent/db",
+    "db:validate": "npm run prisma:validate --workspace=@lokarent/db",
+    "db:generate": "npm run prisma:generate --workspace=@lokarent/db",
+    "db:studio": "npm run prisma:studio --workspace=@lokarent/db",
+    "db:version": "npm run prisma:version --workspace=@lokarent/db",
+    "db:migrate": "npm run migrate --workspace=@lokarent/db",
+    "db:migrate:create": "npm run migrate:create --workspace=@lokarent/db",
+    "db:migrate:deploy": "npm run migrate:deploy --workspace=@lokarent/db",
+    "db:migrate:status": "npm run migrate:status --workspace=@lokarent/db",
+    "db:migrate:reset": "npm run migrate:reset --workspace=@lokarent/db",
+    "db:seed": "npm run seed --workspace=@lokarent/db",
+    "db:seed:core": "npm run seed:core --workspace=@lokarent/db",
+    "db:pull": "npm run db:pull --workspace=@lokarent/db",
+    "db:check": "npm run check --workspace=@lokarent/db"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -39,6 +56,7 @@
     "@radix-ui/react-tooltip": "1.2.8",
     "@vercel/analytics": "1.6.1",
     "autoprefixer": "^10.4.20",
+    "better-auth": "^1.6.26",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",

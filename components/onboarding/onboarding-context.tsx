@@ -1,8 +1,40 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react"
 
 export type VehicleCategory = "Citadine" | "Berline" | "SUV" | "4x4" | "Utilitaire"
+export type OnboardingFuelType = "petrol" | "diesel" | "electric" | "hybrid" | "lpg"
+export type OnboardingTransmission = "manual" | "automatic"
+export type OnboardingCustomerType = "individual" | "company"
+
+export interface CompanyProfile {
+  legalName: string
+  logoUrl: string
+  phone: string
+  address: string
+  countryCode: string
+  timezone: string
+  currency: string
+}
+
+export interface AgencyProfile {
+  name: string
+  code: string
+  phone: string
+  email: string
+  address: string
+  isPrimaryConfirmed: boolean
+}
+
+export interface BusinessPreferences {
+  invoicePrefix: string
+  reservationPrefix: string
+  contractPrefix: string
+  taxRate: string
+  defaultLanguage: "fr" | "en"
+  emailNotifications: boolean
+  whatsappNotifications: boolean
+}
 
 export interface OnboardingVehicle {
   id: string
@@ -11,6 +43,8 @@ export interface OnboardingVehicle {
   annee: string
   immatriculation: string
   categorie: VehicleCategory | ""
+  fuelType: OnboardingFuelType | ""
+  transmission: OnboardingTransmission | ""
   prixJour: string
 }
 
@@ -30,15 +64,30 @@ export interface OnboardingSettings {
   logo: string | null
 }
 
+export interface OnboardingCustomer {
+  type: OnboardingCustomerType
+  fullName: string
+  phone: string
+  email: string
+}
+
 export interface OnboardingState {
+  company: CompanyProfile
+  agency: AgencyProfile
+  preferences: BusinessPreferences
   vehicles: OnboardingVehicle[]
+  customer: OnboardingCustomer
   pricing: CategoryPricing[]
   settings: OnboardingSettings
 }
 
 interface OnboardingContextValue {
   state: OnboardingState
+  setCompany: (company: CompanyProfile) => void
+  setAgency: (agency: AgencyProfile) => void
+  setPreferences: (preferences: BusinessPreferences) => void
   setVehicles: (v: OnboardingVehicle[]) => void
+  setCustomer: (customer: OnboardingCustomer) => void
   setPricing: (p: CategoryPricing[]) => void
   setSettings: (s: OnboardingSettings) => void
 }
@@ -52,12 +101,52 @@ const createEmptyVehicle = (): OnboardingVehicle => ({
   annee: new Date().getFullYear().toString(),
   immatriculation: "",
   categorie: "",
+  fuelType: "",
+  transmission: "",
   prixJour: "",
 })
 
-export function OnboardingProvider({ children }: { children: ReactNode }) {
+export function OnboardingProvider({
+  children,
+  initialData,
+}: {
+  children: ReactNode
+  initialData?: Partial<Pick<OnboardingState, "company" | "agency">>
+}) {
   const [state, setState] = useState<OnboardingState>({
+    company: {
+      legalName: initialData?.company?.legalName ?? "",
+      logoUrl: initialData?.company?.logoUrl ?? "",
+      phone: initialData?.company?.phone ?? "",
+      address: initialData?.company?.address ?? "",
+      countryCode: initialData?.company?.countryCode ?? "MA",
+      timezone: initialData?.company?.timezone ?? "Africa/Casablanca",
+      currency: initialData?.company?.currency ?? "MAD",
+    },
+    agency: {
+      name: initialData?.agency?.name ?? "",
+      code: initialData?.agency?.code ?? "MAIN",
+      phone: initialData?.agency?.phone ?? "",
+      email: initialData?.agency?.email ?? "",
+      address: initialData?.agency?.address ?? "",
+      isPrimaryConfirmed: initialData?.agency?.isPrimaryConfirmed ?? true,
+    },
+    preferences: {
+      invoicePrefix: "INV-",
+      reservationPrefix: "RES-",
+      contractPrefix: "CTR-",
+      taxRate: "0",
+      defaultLanguage: "fr",
+      emailNotifications: true,
+      whatsappNotifications: false,
+    },
     vehicles: [createEmptyVehicle()],
+    customer: {
+      type: "individual",
+      fullName: "",
+      phone: "",
+      email: "",
+    },
     pricing: [],
     settings: {
       caution: "3000",
@@ -66,16 +155,52 @@ export function OnboardingProvider({ children }: { children: ReactNode }) {
       logo: null,
     },
   })
+  const setCompany = useCallback((company: CompanyProfile) => {
+    setState((current) => ({ ...current, company }))
+  }, [])
+  const setAgency = useCallback((agency: AgencyProfile) => {
+    setState((current) => ({ ...current, agency }))
+  }, [])
+  const setPreferences = useCallback((preferences: BusinessPreferences) => {
+    setState((current) => ({ ...current, preferences }))
+  }, [])
+  const setVehicles = useCallback((vehicles: OnboardingVehicle[]) => {
+    setState((current) => ({ ...current, vehicles }))
+  }, [])
+  const setCustomer = useCallback((customer: OnboardingCustomer) => {
+    setState((current) => ({ ...current, customer }))
+  }, [])
+  const setPricing = useCallback((pricing: CategoryPricing[]) => {
+    setState((current) => ({ ...current, pricing }))
+  }, [])
+  const setSettings = useCallback((settings: OnboardingSettings) => {
+    setState((current) => ({ ...current, settings }))
+  }, [])
+  const value = useMemo(
+    () => ({
+      state,
+      setCompany,
+      setAgency,
+      setPreferences,
+      setVehicles,
+      setCustomer,
+      setPricing,
+      setSettings,
+    }),
+    [
+      state,
+      setCompany,
+      setAgency,
+      setPreferences,
+      setVehicles,
+      setCustomer,
+      setPricing,
+      setSettings,
+    ],
+  )
 
   return (
-    <OnboardingContext.Provider
-      value={{
-        state,
-        setVehicles: (vehicles) => setState((s) => ({ ...s, vehicles })),
-        setPricing: (pricing) => setState((s) => ({ ...s, pricing })),
-        setSettings: (settings) => setState((s) => ({ ...s, settings })),
-      }}
-    >
+    <OnboardingContext.Provider value={value}>
       {children}
     </OnboardingContext.Provider>
   )

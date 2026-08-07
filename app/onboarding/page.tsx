@@ -1,5 +1,10 @@
 import { Suspense } from "react"
+import { redirect } from "next/navigation"
 import { OnboardingWizard } from "@/components/onboarding/onboarding-wizard"
+import { getAgencyService, getCompanyService } from "@/modules/workspace/agencies/services/agencies.service"
+import { listUserAgencyMembershipsService } from "@/modules/workspace/members/services/members.service"
+import { getCurrentCompanyContext } from "@/shared/auth"
+import { isAppError } from "@/shared/errors"
 
 export const metadata = {
   title: "Configuration initiale | LokaRent",
@@ -7,10 +12,94 @@ export const metadata = {
     "Configurez votre flotte, vos tarifs et vos paramètres pour démarrer avec LokaRent.",
 }
 
-export default function OnboardingPage() {
+export default async function OnboardingPage() {
+  const context = await getOnboardingCompanyContext()
+
+  if (!context) redirect("/login")
+  if (context === "provisioning-retry") return <ProvisioningRetryState />
+  if (context.companyStatus === "active") redirect("/dashboard")
+  if (context.companyStatus === "suspended" || context.companyStatus === "cancelled") {
+    redirect("/blocked-account")
+  }
+
+  if (String(context.companyStatus) !== "onboarding" && context.companyStatus !== "trial") {
+    redirect("/blocked-account")
+  }
+
+  const agencyMemberships = await listUserAgencyMembershipsService({
+    companyId: context.companyId,
+    userId: context.userId,
+  })
+  const agencyMembership = agencyMemberships.find(
+    (membership) => membership.status === "active" && membership.agency.status === "active",
+  )
+  if (!agencyMembership) return <ProvisioningRetryState />
+
+  const [company, agency] = await Promise.all([
+    getCompanyService({ companyId: context.companyId }),
+    getAgencyService({ companyId: context.companyId, agencyId: agencyMembership.agencyId }),
+  ])
+
   return (
     <Suspense fallback={null}>
-      <OnboardingWizard />
+      <OnboardingWizard
+        initialData={{
+          company: {
+            legalName: company.name,
+            phone: agency.phone ?? "",
+            address:
+              typeof agency.address === "object" &&
+              agency.address &&
+              "city" in agency.address &&
+              typeof agency.address.city === "string"
+                ? agency.address.city
+                : "",
+            countryCode: company.countryCode,
+            timezone: company.timezone,
+            currency: company.currency,
+            logoUrl: "",
+          },
+          agency: {
+            name: agency.name,
+            code: agency.code,
+            phone: agency.phone ?? "",
+            email: agency.email ?? "",
+            address:
+              typeof agency.address === "object" &&
+              agency.address &&
+              "city" in agency.address &&
+              typeof agency.address.city === "string"
+                ? agency.address.city
+                : "",
+            isPrimaryConfirmed: agencyMembership.isPrimary,
+          },
+        }}
+      />
     </Suspense>
   )
+}
+
+function ProvisioningRetryState() {
+  return (
+    <main className="flex min-h-screen items-center justify-center px-6 text-center">
+      <div className="max-w-md space-y-3">
+        <h1 className="text-2xl font-semibold text-slate-900">Configuration du compte en cours</h1>
+        <p className="text-sm leading-6 text-slate-600">
+          Nous finalisons la liaison de votre compte LokaRent. Rechargez la page dans quelques
+          instants pour reprendre la configuration.
+        </p>
+      </div>
+    </main>
+  )
+}
+
+async function getOnboardingCompanyContext() {
+  try {
+    return await getCurrentCompanyContext()
+  } catch (error) {
+    if (isAppError(error) && error.code === "NOT_FOUND") {
+      return "provisioning-retry" as const
+    }
+    throw error
+  }
 }

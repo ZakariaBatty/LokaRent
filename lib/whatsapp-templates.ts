@@ -12,6 +12,7 @@ export type WhatsAppTemplate =
   | "payment_receipt"
   | "deposit_receipt"
   | "driver_info"
+  | "client_contact"
 
 export interface WhatsAppMessage {
   template: WhatsAppTemplate
@@ -166,6 +167,17 @@ Voici les coordonnées de votre chauffeur pour la location.
 N'hésitez pas à le contacter pour toute question. 🚗`
 }
 
+export function generateClientContactMessage(data: {
+  clientName: string
+  phone: string
+}): string {
+  return `Bonjour ${data.clientName},
+
+Nous vous contactons au sujet de votre dossier client LokaRent.
+
+Téléphone enregistré: ${data.phone}`
+}
+
 /**
  * Generate message from template
  */
@@ -175,17 +187,19 @@ export function generateMessage(
 ): string {
   switch (template) {
     case "reservation_summary":
-      return generateReservationMessage(data)
+      return generateReservationMessage(data as Parameters<typeof generateReservationMessage>[0])
     case "invoice":
-      return generateInvoiceMessage(data)
+      return generateInvoiceMessage(data as Parameters<typeof generateInvoiceMessage>[0])
     case "contract":
-      return generateContractMessage(data)
+      return generateContractMessage(data as Parameters<typeof generateContractMessage>[0])
     case "payment_receipt":
-      return generatePaymentReceiptMessage(data)
+      return generatePaymentReceiptMessage(data as Parameters<typeof generatePaymentReceiptMessage>[0])
     case "deposit_receipt":
-      return generateDepositReceiptMessage(data)
+      return generateDepositReceiptMessage(data as Parameters<typeof generateDepositReceiptMessage>[0])
     case "driver_info":
-      return generateDriverInfoMessage(data)
+      return generateDriverInfoMessage(data as Parameters<typeof generateDriverInfoMessage>[0])
+    case "client_contact":
+      return generateClientContactMessage(data as Parameters<typeof generateClientContactMessage>[0])
     default:
       return ""
   }

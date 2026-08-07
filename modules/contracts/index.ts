@@ -1,3 +1,2 @@
-// TODO: Future implementation
-// Public exports for the contracts module — barrel file
-export {}
+export * from "./repositories/contracts.repository";
+export * from "./services/contracts.service";
