@@ -18,8 +18,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { cars, formatMAD } from "@/lib/cars-data"
-import { clients } from "@/lib/clients-data"
+import { formatMAD } from "@/lib/cars-data"
 import { useWizard } from "./wizard-context"
 import { StepHeader } from "./step-header"
 
@@ -43,7 +42,7 @@ function formatDateTime(date: string, time: string) {
 }
 
 export function StepSummary() {
-  const { state, setState, setEtat, totals } = useWizard()
+  const { state, setState, setEtat, totals, cars, clients } = useWizard()
 
   const car = cars.find((c) => c.id === state.selectedCarId)
   const client =

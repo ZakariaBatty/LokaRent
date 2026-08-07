@@ -6,7 +6,14 @@ import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
 import { ArrowLeft, ArrowRight, Check, Loader2, Save, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import { cn } from "@/lib/utils"
+import { createClientAction } from "@/modules/clients/actions/create-client.action"
+import {
+  confirmReservationAction,
+  createReservationAction,
+  updateReservationAction,
+} from "@/modules/reservations/actions/create-reservation.action"
 import { useWizard, STEP_ORDER } from "./wizard-context"
 import { WizardProgress } from "./wizard-progress"
 import { StepClient } from "./step-client"
@@ -17,7 +24,8 @@ import { StepSummary } from "./step-summary"
 
 export function WizardShell() {
   const router = useRouter()
-  const { step, stepIndex, prev, next, canProceed, state } = useWizard()
+  const { t } = useI18n()
+  const { step, stepIndex, prev, next, canProceed, state, totals, mode, reservationId, cars, sources } = useWizard()
   const [submitting, setSubmitting] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -27,22 +35,94 @@ export function WizardShell() {
 
   const handleSaveDraft = async () => {
     setSavingDraft(true)
-    await new Promise((r) => setTimeout(r, 700))
     setSavingDraft(false)
-    toast.success("Brouillon enregistré", {
-      description: "Vous pouvez reprendre cette réservation plus tard.",
-    })
+    toast.error(t("reservations.form.draftNotPersisted"))
   }
 
   const handleConfirm = async () => {
     setSubmitting(true)
-    await new Promise((r) => setTimeout(r, 900))
+    const selectedCar = cars.find((car) => car.id === state.selectedCarId)
+    const sourceId = sources[0]?.id
+    let customerId = state.selectedClient?.id
+
+    if (state.clientMode === "new") {
+      const createdClient = await createClientAction({
+        type: "individual",
+        fullName: `${state.newClient.firstName} ${state.newClient.lastName}`.trim(),
+        phone: state.newClient.phone,
+        email: state.newClient.email,
+        status: "active",
+        idType: state.newClient.idType,
+        idNumber: state.newClient.idNumber,
+        licenseNumber: state.newClient.licenseNumber,
+        licenseExpiresAt: state.newClient.licenseExpiry || undefined,
+      })
+      if (!createdClient.success || !createdClient.customerId) {
+        setSubmitting(false)
+        toast.error(t("reservations.form.clientCreateFailed"))
+        return
+      }
+      customerId = createdClient.customerId
+    }
+
+    if (!customerId || !state.selectedCarId || !sourceId || !selectedCar) {
+      setSubmitting(false)
+      toast.error(t("reservations.errors.validation"))
+      return
+    }
+
+    const startsAt = new Date(`${state.startDate}T${state.startTime}:00`)
+    const endsAt = new Date(`${state.endDate}T${state.endTime}:00`)
+    const extras = [
+      state.options.extraDriver && { label: "Conducteur supplémentaire", unitPrice: 50, quantity: totals.days },
+      state.options.gps && { label: "GPS", unitPrice: 30, quantity: totals.days },
+      state.options.babySeat && { label: "Siège bébé", unitPrice: 20, quantity: totals.days },
+      state.options.extraInsurance && { label: "Assurance complémentaire", unitPrice: 80, quantity: totals.days },
+    ].filter(Boolean)
+    const payload = {
+      customerId,
+      vehicleId: state.selectedCarId,
+      sourceId,
+      startsAt,
+      endsAt,
+      pickupLocation: state.pickupLocation === "Livraison adresse" ? state.pickupAddress : state.pickupLocation,
+      returnLocation: state.returnLocation === "Livraison adresse" ? state.returnAddress : state.returnLocation,
+      pricePerDay: totals.pricePerDay,
+      extrasTotal: totals.optionsTotal,
+      discountAmount: totals.discountAmount,
+      discountReason: state.discountReason,
+      currency: selectedCar.currency,
+      depositAmount: state.cautionAmount,
+      advanceAmount: state.avanceAmount,
+      internalNotes: state.remarks,
+      extras,
+    }
+
+    const result =
+      mode === "edit" && reservationId
+        ? await updateReservationAction({ reservationId, ...payload })
+        : await createReservationAction(payload)
+
+    if (!result.success || !result.reservationId) {
+      setSubmitting(false)
+      toast.error(t("reservations.form.saveFailed"))
+      return
+    }
+
+    if (mode === "create") {
+      const confirmed = await confirmReservationAction({ reservationId: result.reservationId })
+      if (!confirmed.success) {
+        setSubmitting(false)
+        toast.error(t("reservations.form.confirmAfterCreateFailed"))
+        router.push(`/reservations/${result.reservationId}/edit`)
+        return
+      }
+    }
+
     setSubmitting(false)
     setSuccess(true)
-    await new Promise((r) => setTimeout(r, 1400))
-    toast.success("Réservation confirmée", {
-      description: "Le contrat a été généré avec succès.",
-    })
+    await new Promise((r) => setTimeout(r, 900))
+    toast.success(mode === "edit" ? t("reservations.form.updated") : t("reservations.actions.confirmed"))
     router.push("/reservations")
   }
 

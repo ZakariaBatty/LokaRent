@@ -1,5 +1,8 @@
 import type { Prisma, ReservationStatus as DbReservationStatus } from "@lokarent/db";
 import type { Reservation, ReservationStatus, TimelineEvent } from "@/lib/reservations-data";
+import type { Client } from "@/lib/clients-data";
+import type { VehicleWithFleetDetails } from "@/modules/cars/repositories/cars.repository";
+import { mapCategoryName } from "@/modules/cars/mappers/car.mapper";
 
 type ReservationPayload = Prisma.ReservationGetPayload<{
   include: {
@@ -18,6 +21,28 @@ function customerName(customer: ReservationPayload["customer"]) {
   if (customer.type === "company") return customer.business?.companyName ?? customer.email ?? customer.code;
   return [customer.individual?.firstName, customer.individual?.lastName].filter(Boolean).join(" ") || customer.email || customer.code;
 }
+
+type ReservationCustomerOption = Pick<
+  Client,
+  "id" | "fullName" | "phone" | "email" | "status" | "idType" | "idNumber" | "licenseExpiry" | "blacklistReason"
+>;
+
+export type ReservationVehicleOption = {
+  id: string;
+  brand: string;
+  model: string;
+  year: number;
+  plate: string;
+  category: string;
+  status: "disponible" | "louee" | "maintenance" | "hors_service";
+  priceDay: number;
+  priceWeek: number;
+  priceMonth: number;
+  depositAmount?: number;
+  mileageLimit?: number;
+  extraMileageRate?: number;
+  currency: string;
+};
 
 function initials(name: string) {
   return name
@@ -116,5 +141,60 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
           phone: driverAssignment.driver.phone ?? "",
         }
       : null,
+  };
+}
+
+export function mapClientToReservationOption(client: ReservationCustomerOption) {
+  return {
+    id: client.id,
+    fullName: client.fullName,
+    phone: client.phone,
+    email: client.email,
+    status: client.status,
+    idType: client.idType ?? "CIN",
+    idNumber: client.idNumber ?? "",
+    licenseExpiry: client.licenseExpiry,
+    blacklistReason: client.blacklistReason,
+  };
+}
+
+function resolveVehiclePricingRule(vehicle: VehicleWithFleetDetails) {
+  return (
+    vehicle.vehiclePricingRules[0] ??
+    vehicle.category.pricingRules.find((rule) => rule.agencyId === vehicle.agencyId) ??
+    null
+  );
+}
+
+export function mapVehicleToReservationOption(vehicle: VehicleWithFleetDetails): ReservationVehicleOption {
+  const pricingRule = resolveVehiclePricingRule(vehicle);
+  const status =
+    vehicle.status === "available"
+      ? "disponible"
+      : vehicle.status === "rented"
+        ? "louee"
+        : vehicle.status === "maintenance"
+          ? "maintenance"
+          : "hors_service";
+
+  return {
+    id: vehicle.id,
+    brand: vehicle.brand,
+    model: vehicle.model,
+    year: vehicle.year,
+    plate: vehicle.plate,
+    category: mapCategoryName(vehicle.category.name),
+    status,
+    priceDay: Number(pricingRule?.dailyRate ?? 0),
+    priceWeek: Number(pricingRule?.weeklyRate ?? 0),
+    priceMonth: Number(pricingRule?.monthlyRate ?? 0),
+    depositAmount: pricingRule?.depositAmount === null || pricingRule?.depositAmount === undefined
+      ? undefined
+      : Number(pricingRule.depositAmount),
+    mileageLimit: pricingRule?.mileageLimit ?? undefined,
+    extraMileageRate: pricingRule?.extraMileageRate === null || pricingRule?.extraMileageRate === undefined
+      ? undefined
+      : Number(pricingRule.extraMileageRate),
+    currency: pricingRule?.currency ?? "MAD",
   };
 }

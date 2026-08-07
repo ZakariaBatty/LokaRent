@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { reservationExtraInputSchema } from "./create-reservation.schema";
 
 const optionalText = z
   .string()
@@ -29,6 +30,7 @@ export const updateReservationSchema = reservationIdSchema.extend({
   depositAmount: optionalAmount,
   advanceAmount: optionalAmount,
   internalNotes: optionalText,
+  extras: z.array(reservationExtraInputSchema).max(20).optional(),
 });
 
 export const cancelReservationSchema = reservationIdSchema.extend({

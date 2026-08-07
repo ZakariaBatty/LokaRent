@@ -16,12 +16,11 @@ import {
   Users,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { clients, avatarGradient, getInitials, statusConfig } from "@/lib/clients-data"
-import type { Client } from "@/lib/clients-data"
+import { avatarGradient, getInitials, statusConfig } from "@/lib/clients-data"
 import { useWizard, type SelectedClient } from "./wizard-context"
 import { StepHeader } from "./step-header"
 
-function toSelected(c: Client): SelectedClient {
+function toSelected(c: ReturnType<typeof useWizard>["clients"][number]): SelectedClient {
   return {
     id: c.id,
     name: c.fullName,
@@ -42,7 +41,7 @@ function daysUntil(iso?: string) {
 }
 
 export function StepClient() {
-  const { state, setState, setNewClient } = useWizard()
+  const { state, setState, setNewClient, clients } = useWizard()
   const [query, setQuery] = useState("")
 
   const results = useMemo(() => {

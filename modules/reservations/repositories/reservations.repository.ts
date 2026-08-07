@@ -312,6 +312,15 @@ export async function createReservationExtra(
   return db.reservationExtra.create({ data });
 }
 
+export async function deleteReservationExtras(
+  input: { companyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtra.deleteMany({
+    where: { companyId: input.companyId, reservationId: input.reservationId },
+  });
+}
+
 export async function createReservationTimelineEvent(
   data: Prisma.ReservationTimelineEventUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -349,6 +358,7 @@ export const reservationsRepository = {
   markPricingSnapshotsNotCurrent,
   listReservationExtras,
   createReservationExtra,
+  deleteReservationExtras,
   createReservationTimelineEvent,
   listReservationTimeline,
 };

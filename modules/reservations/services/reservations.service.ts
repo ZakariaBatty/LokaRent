@@ -24,6 +24,7 @@ import {
   restoreReservation,
   softDeleteReservation,
   updateReservation,
+  deleteReservationExtras,
   type ReservationListInput,
 } from "../repositories/reservations.repository";
 
@@ -332,6 +333,7 @@ export async function updateReservationService(input: {
   context: ReservationServiceContext;
   reservationId: string;
   data: ReservationUpdateData;
+  extras?: ReservationExtraCreateData[];
 }) {
   const scope = { companyId: input.context.companyId, agencyId: input.context.agencyId, reservationId: input.reservationId };
   const reservation = await getReservationService(scope);
@@ -375,6 +377,20 @@ export async function updateReservationService(input: {
       tx,
     );
     if (result.count === 0) throw createNotFoundError("Reservation", scope);
+    if (input.extras) {
+      await deleteReservationExtras({ companyId: input.context.companyId, reservationId: input.reservationId }, tx);
+      for (const extra of input.extras) {
+        await createReservationExtra(
+          {
+            ...extra,
+            id: createId(),
+            companyId: input.context.companyId,
+            reservationId: input.reservationId,
+          },
+          tx,
+        );
+      }
+    }
     await appendTimeline({
       companyId: input.context.companyId,
       reservationId: input.reservationId,

@@ -1,7 +1,20 @@
 import { notFound } from "next/navigation"
-import { cars } from "@/lib/cars-data"
+import { requireCurrentAgencyContext } from "@/shared/auth"
+import { PERMISSIONS, requirePermission } from "@/shared/permissions"
 import { WizardProvider } from "@/components/reservations/new/wizard-context"
 import { WizardShell } from "@/components/reservations/new/wizard-shell"
+import { listCustomersService } from "@/modules/clients/services/clients.service"
+import { mapCustomerToClient } from "@/modules/clients/mappers/client.mapper"
+import { listAvailableVehiclesService } from "@/modules/cars/services/cars.service"
+import {
+  getReservationService,
+  listReservationSourcesService,
+} from "@/modules/reservations/services/reservations.service"
+import {
+  mapClientToReservationOption,
+  mapReservationToUi,
+  mapVehicleToReservationOption,
+} from "@/modules/reservations/mappers/reservation.mapper"
 
 export const metadata = {
   title: "Éditer réservation · LokaRent",
@@ -11,16 +24,46 @@ export const metadata = {
 export default function EditReservationPage({
   params,
 }: {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }) {
-  // TODO: In a real app, fetch the reservation by ID and pass it to the wizard
-  // For now, we'll just use the wizard in create mode
+  return <EditReservationContent params={params} />
+}
 
-  const minimalCars = cars.map((c) => ({ id: c.id, priceDay: c.priceDay }))
+async function EditReservationContent({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const context = await requireCurrentAgencyContext()
+  await requirePermission(PERMISSIONS.RESERVATIONS_EDIT, context)
+  const reservation = await getReservationService({
+    companyId: context.companyId,
+    agencyId: context.agencyId,
+    reservationId: id,
+  }).catch(() => null)
+  if (!reservation) notFound()
+  const [customers, vehicles, sources] = await Promise.all([
+    listCustomersService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      page: 1,
+      pageSize: 100,
+      orderBy: "createdAt",
+      direction: "desc",
+    }),
+    listAvailableVehiclesService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+    }),
+    listReservationSourcesService(),
+  ])
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5">
-      <WizardProvider cars={minimalCars}>
+      <WizardProvider
+        mode="edit"
+        initialReservation={mapReservationToUi(reservation)}
+        cars={vehicles.map(mapVehicleToReservationOption)}
+        clients={customers.data.map(mapCustomerToClient).map(mapClientToReservationOption)}
+        sources={sources.map((source) => ({ id: source.id, key: source.key, label: source.label }))}
+      >
         <WizardShell />
       </WizardProvider>
     </div>

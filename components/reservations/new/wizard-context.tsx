@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useMemo, useState, type ReactNode } from "react"
+import type { Reservation } from "@/lib/reservations-data"
 
 export type WizardStepId = "client" | "vehicle" | "pricing" | "options" | "summary"
 
@@ -29,6 +30,41 @@ export type SelectedClient = {
   idType: "CIN" | "Passeport"
   idNumber: string
   licenseExpiry?: string // ISO
+}
+
+export type ReservationClientOption = {
+  id: string
+  fullName: string
+  phone: string
+  email?: string
+  status: "actif" | "blacklist" | "inactif"
+  idType: "CIN" | "Passeport"
+  idNumber: string
+  licenseExpiry?: string
+  blacklistReason?: string
+}
+
+export type ReservationCarOption = {
+  id: string
+  brand: string
+  model: string
+  year: number
+  plate: string
+  category: string
+  status: "disponible" | "louee" | "maintenance" | "hors_service"
+  priceDay: number
+  priceWeek: number
+  priceMonth: number
+  depositAmount?: number
+  mileageLimit?: number
+  extraMileageRate?: number
+  currency: string
+}
+
+export type ReservationSourceOption = {
+  id: string
+  key: string
+  label: string
 }
 
 export type NewClientDraft = {
@@ -161,6 +197,11 @@ const initialState: WizardState = {
 
 type Ctx = {
   state: WizardState
+  mode: "create" | "edit"
+  reservationId?: string
+  clients: ReservationClientOption[]
+  cars: ReservationCarOption[]
+  sources: ReservationSourceOption[]
   setState: (patch: Partial<WizardState>) => void
   setOptions: (patch: Partial<ReservationOptions>) => void
   setEtat: (patch: Partial<EtatDesLieux>) => void
@@ -171,6 +212,8 @@ type Ctx = {
   prev: () => void
   goTo: (s: WizardStepId) => void
   canProceed: boolean
+  availability: "idle" | "checking" | "available" | "unavailable"
+  setAvailability: (value: Ctx["availability"]) => void
   totals: {
     days: number
     pricePerDay: number
@@ -186,15 +229,82 @@ type Ctx = {
 
 const WizardCtx = createContext<Ctx | null>(null)
 
+function splitDateTime(iso: string) {
+  const date = new Date(iso)
+  return {
+    date: date.toISOString().slice(0, 10),
+    time: date.toISOString().slice(11, 16),
+  }
+}
+
+function toLocation(value: string): Location {
+  if (value === "Aéroport CMN" || value === "Aéroport RAK" || value === "Livraison adresse") return value
+  return "Agence"
+}
+
+function reservationToInitialState(reservation?: Reservation): WizardState {
+  if (!reservation) return initialState
+  const start = splitDateTime(reservation.startDate)
+  const end = splitDateTime(reservation.endDate)
+  const baseSubtotal = reservation.pricePerDay * reservation.days
+  const discountPct =
+    baseSubtotal > 0 && reservation.total < baseSubtotal
+      ? Math.round(((baseSubtotal - reservation.total) / baseSubtotal) * 100)
+      : 0
+
+  return {
+    ...initialState,
+    selectedClient: {
+      id: reservation.client.id,
+      name: reservation.client.name,
+      phone: reservation.client.phone,
+      status: "actif",
+      idType: "CIN",
+      idNumber: "",
+    },
+    startDate: start.date,
+    startTime: start.time,
+    endDate: end.date,
+    endTime: end.time,
+    selectedCarId: reservation.car.id,
+    pickupLocation: toLocation(reservation.pickupLocation),
+    returnLocation: toLocation(reservation.returnLocation),
+    pricePerDayOverride: reservation.pricePerDay,
+    discountPct: Math.max(0, Math.min(50, Number.isFinite(discountPct) ? discountPct : 0)),
+    cautionAmount: reservation.caution,
+    avanceAmount: reservation.advance,
+    options: {
+      extraDriver: Boolean(reservation.extras.additionalDriver),
+      extraDriverName: reservation.extras.additionalDriver ?? "",
+      extraDriverPermit: "",
+      gps: reservation.extras.gps,
+      babySeat: reservation.extras.babySeat,
+      extraInsurance: reservation.extras.insuranceUpgrade,
+    },
+    remarks: "",
+    signatureAccepted: true,
+    signatureName: reservation.client.name,
+  }
+}
+
 export function WizardProvider({
   children,
   cars,
+  clients,
+  sources,
+  initialReservation,
+  mode = "create",
 }: {
   children: ReactNode
-  cars: Array<{ id: string; priceDay: number }>
+  cars: ReservationCarOption[]
+  clients: ReservationClientOption[]
+  sources: ReservationSourceOption[]
+  initialReservation?: Reservation
+  mode?: "create" | "edit"
 }) {
-  const [state, _setState] = useState<WizardState>(initialState)
+  const [state, _setState] = useState<WizardState>(() => reservationToInitialState(initialReservation))
   const [step, setStep] = useState<WizardStepId>("client")
+  const [availability, setAvailability] = useState<Ctx["availability"]>("idle")
 
   const setState = (patch: Partial<WizardState>) =>
     _setState((s) => ({ ...s, ...patch }))
@@ -271,6 +381,7 @@ export function WizardProvider({
     if (step === "vehicle") {
       return (
         !!state.selectedCarId &&
+        availability !== "unavailable" &&
         !!state.startDate &&
         !!state.endDate &&
         new Date(`${state.endDate}T${state.endTime}`) >
@@ -301,6 +412,11 @@ export function WizardProvider({
     <WizardCtx.Provider
       value={{
         state,
+        mode,
+        reservationId: initialReservation?.id,
+        clients,
+        cars,
+        sources,
         setState,
         setOptions,
         setEtat,
@@ -311,6 +427,8 @@ export function WizardProvider({
         prev,
         goTo,
         canProceed,
+        availability,
+        setAvailability,
         totals,
       }}
     >

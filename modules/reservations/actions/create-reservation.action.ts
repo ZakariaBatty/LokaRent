@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@lokarent/db";
+import { z } from "zod";
 import { requireCurrentAgencyContext } from "@/shared/auth";
 import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
@@ -15,6 +16,7 @@ import {
   markReservationNoShowService,
   restoreReservationService,
   updateReservationService,
+  checkReservationAvailabilityService,
   type ReservationServiceContext,
 } from "../services/reservations.service";
 import { createReservationSchema } from "../validators/create-reservation.schema";
@@ -125,20 +127,55 @@ export async function updateReservationAction(input: unknown): Promise<Reservati
   try {
     const context = await getActionContext(PERMISSIONS.RESERVATIONS_EDIT);
     const { reservationId, ...data } = parsed.data;
+    const extrasTotal = data.extras?.reduce((sum, extra) => sum + extra.unitPrice * extra.quantity, 0);
     await updateReservationService({
       context,
       reservationId,
       data: {
         ...data,
         pricePerDay: data.pricePerDay === undefined ? undefined : decimal(data.pricePerDay),
-        extrasTotal: data.extrasTotal === undefined ? undefined : decimal(data.extrasTotal),
+        extrasTotal: extrasTotal === undefined ? (data.extrasTotal === undefined ? undefined : decimal(data.extrasTotal)) : decimal(extrasTotal),
         discountAmount: data.discountAmount === undefined ? undefined : decimal(data.discountAmount),
         depositAmount: data.depositAmount === undefined ? undefined : decimal(data.depositAmount),
         advanceAmount: data.advanceAmount === undefined ? undefined : decimal(data.advanceAmount),
       },
+      extras: data.extras?.map((extra) => ({
+        label: extra.label,
+        unitPrice: decimal(extra.unitPrice),
+        quantity: extra.quantity,
+        totalPrice: decimal(extra.unitPrice * extra.quantity),
+      })),
     });
     revalidateReservationPaths();
     return { success: true, reservationId };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function checkReservationAvailabilityAction(input: unknown): Promise<
+  | { success: true; available: boolean }
+  | { success: false; messageKey: string; code?: string }
+> {
+  const parsed = z.object({
+    vehicleId: z.string().uuid(),
+    startsAt: z.coerce.date(),
+    endsAt: z.coerce.date(),
+    reservationId: z.string().uuid().optional(),
+  }).safeParse(input);
+  if (!parsed.success) return { success: false, messageKey: "reservations.errors.validation" };
+
+  try {
+    const context = await getActionContext(PERMISSIONS.RESERVATIONS_CREATE);
+    const result = await checkReservationAvailabilityService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      vehicleId: parsed.data.vehicleId,
+      startsAt: parsed.data.startsAt,
+      endsAt: parsed.data.endsAt,
+      excludeReservationId: parsed.data.reservationId,
+    });
+    return { success: true, available: result.available };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }
