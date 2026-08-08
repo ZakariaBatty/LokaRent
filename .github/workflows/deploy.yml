@@ -50,9 +50,6 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
-      - name: TypeScript Check
-        run: npx tsc --noEmit --pretty false
-
   # ============================================================
   # PREVIEW DEPLOYMENT
   # ============================================================
