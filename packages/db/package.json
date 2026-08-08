@@ -5,24 +5,24 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "prisma:format": "set -a; . ../../.env; set +a; prisma format --schema prisma/schema.prisma",
-    "prisma:validate": "set -a; . ../../.env; set +a; prisma validate --schema prisma/schema.prisma",
-    "prisma:generate": "set -a; . ../../.env; set +a; prisma generate --schema prisma/schema.prisma",
-    "prisma:studio": "set -a; . ../../.env; set +a; prisma studio --schema prisma/schema.prisma",
+    "prisma:format": "prisma format --schema prisma/schema.prisma",
+    "prisma:validate": "prisma validate --schema prisma/schema.prisma",
+    "prisma:generate": "prisma generate --schema prisma/schema.prisma",
+    "prisma:studio": "prisma studio --schema prisma/schema.prisma",
     "prisma:version": "prisma version",
 
-    "migrate": "set -a; . ../../.env; set +a; prisma migrate dev --schema prisma/schema.prisma",
-    "migrate:create": "set -a; . ../../.env; set +a; prisma migrate dev --create-only --schema prisma/schema.prisma",
-    "migrate:deploy": "set -a; . ../../.env; set +a; prisma migrate deploy --schema prisma/schema.prisma",
-    "migrate:status": "set -a; . ../../.env; set +a; prisma migrate status --schema prisma/schema.prisma",
-    "migrate:reset": "set -a; . ../../.env; set +a; prisma migrate reset --schema prisma/schema.prisma",
+    "migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "migrate:create": "prisma migrate dev --create-only --schema prisma/schema.prisma",
+    "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "migrate:status": "prisma migrate status --schema prisma/schema.prisma",
+    "migrate:reset": "prisma migrate reset --schema prisma/schema.prisma",
 
-    "db:pull": "set -a; . ../../.env; set +a; prisma db pull --schema prisma/schema.prisma",
+    "db:pull": "prisma db pull --schema prisma/schema.prisma",
 
-    "seed": "set -a; . ../../.env; set +a; node --experimental-strip-types src/seed.ts",
-    "seed:core": "set -a; . ../../.env; set +a; node --experimental-strip-types src/seed.ts",
+    "seed": "node --experimental-strip-types src/seed.ts",
+    "seed:core": "node --experimental-strip-types src/seed.ts",
 
-    "check": "pnpm prisma:format && pnpm prisma:validate && pnpm prisma:generate"
+    "check": "npm run prisma:format && npm run prisma:validate && npm run prisma:generate"
   },
   "dependencies": {
     "@prisma/client": "6.19.3"
