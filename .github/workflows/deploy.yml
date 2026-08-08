@@ -24,7 +24,7 @@ jobs:
   # CI
   # ============================================================
   ci:
-    name: Validate & Build
+    name: Validate
     runs-on: ubuntu-latest
 
     steps:
@@ -42,19 +42,19 @@ jobs:
 
       - name: Generate Prisma Client
         run: npm run db:generate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Validate Prisma Schema
         run: npm run db:validate
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: TypeScript Check
         run: npx tsc --noEmit --pretty false
 
-      - name: Build Application
-        run: npm run build
-
   # ============================================================
   # PREVIEW DEPLOYMENT
-  # Runs only on Pull Requests to main
   # ============================================================
   deploy-preview:
     name: Deploy Preview
@@ -83,26 +83,16 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Preview Environment
-        run: >
-          vercel pull
-          --yes
-          --environment=preview
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build Preview
-        run: >
-          vercel build
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy Preview
-        run: >
-          vercel deploy
-          --prebuilt
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
 
   # ============================================================
   # PRODUCTION DATABASE MIGRATIONS
-  # Runs only after CI passes on main
   # ============================================================
   migrate-production:
     name: Deploy Database Migrations
@@ -131,16 +121,15 @@ jobs:
       - name: Deploy Prisma Migrations
         run: npm run db:migrate:deploy
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_DIRECT_URL }}
 
       - name: Verify Migration Status
         run: npm run db:migrate:status
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_DIRECT_URL }}
 
   # ============================================================
   # PRODUCTION DEPLOYMENT
-  # Runs only after CI + DB migrations pass
   # ============================================================
   deploy-production:
     name: Deploy Production
@@ -171,21 +160,10 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Production Environment
-        run: >
-          vercel pull
-          --yes
-          --environment=production
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build Production
-        run: >
-          vercel build
-          --prod
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy Production
-        run: >
-          vercel deploy
-          --prebuilt
-          --prod
-          --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
