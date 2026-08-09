@@ -1,7 +1,7 @@
 import type { CustomerStatus, CustomerType, Prisma } from "@lokarent/db";
 import type { Client, ClientStatus, ClientTier, Nationality, Reservation } from "@/lib/clients-data";
 import type { ClientBlacklistDto, ClientDetailDto, ClientDocumentDto } from "../dto/client-response.dto";
-import type { CustomerListItem } from "../repositories/clients.repository";
+import type { CustomerListItem, CustomerReservationSummary } from "../repositories/clients.repository";
 
 type CustomerWithProfile = Prisma.CustomerGetPayload<{
   include: {
@@ -13,7 +13,9 @@ type CustomerWithProfile = Prisma.CustomerGetPayload<{
   };
 }>;
 
-type CustomerForClient = CustomerWithProfile | CustomerListItem;
+type CustomerForClient = (CustomerWithProfile | CustomerListItem) & {
+  reservationSummary?: CustomerReservationSummary;
+};
 
 const NATIONALITIES = new Set<Nationality>([
   "Marocain",
@@ -80,6 +82,7 @@ export function mapCustomerToClient(customer: CustomerForClient): Client {
   const activeBlacklistEntry = activeBlacklist(customer);
   const createdAt = toIso(customer.createdAt) ?? new Date(0).toISOString();
   const displayName = fullName(customer);
+  const summary = customer.reservationSummary;
 
   return {
     id: customer.id,
@@ -106,13 +109,22 @@ export function mapCustomerToClient(customer: CustomerForClient): Client {
     companyPhone: customer.type === "company" ? customer.phone ?? undefined : undefined,
     contactPersonName: customer.business?.contactPersonName ?? undefined,
     contactPersonPhone: customer.business?.contactPersonPhone ?? undefined,
-    totalRentals: 0,
-    totalSpent: 0,
-    lastRentalDate: createdAt,
-    monthly: [0, 0, 0, 0, 0, 0],
+    totalRentals: summary?.totalRentals ?? 0,
+    totalSpent: summary?.totalSpent ?? 0,
+    lastRentalDate: toIso(summary?.lastRentalDate) ?? createdAt,
+    monthly: summary?.monthly ?? [0, 0, 0, 0, 0, 0],
     createdAt,
     blacklistReason: activeBlacklistEntry?.reason,
-    reservations: [] satisfies Reservation[],
+    reservations: summary?.reservations.map((reservation) => ({
+      id: reservation.id,
+      carBrand: reservation.carBrand,
+      carModel: reservation.carModel,
+      plate: reservation.plate,
+      startDate: reservation.startDate.toISOString(),
+      endDate: reservation.endDate.toISOString(),
+      amount: reservation.amount,
+      status: reservation.status,
+    })) ?? ([] satisfies Reservation[]),
     notes: customer.notes
       ? [
           {

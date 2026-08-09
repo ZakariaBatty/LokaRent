@@ -1,8 +1,14 @@
-import { Prisma, ReservationStatus } from "@lokarent/db";
+import { DriverRole, DriverStatus, Prisma, ReservationStatus } from "@lokarent/db";
 import { createId, createNotFoundError, createValidationError, publishDomainEvent, runInTransaction } from "@/shared";
 import { writeActivityLog, writeAuditLog } from "@/shared/audit";
 import { findVehicleAvailabilityOverlaps, findCurrentVehiclePricingRule } from "@/modules/cars/repositories/cars.repository";
 import { findActiveCustomerBlacklist } from "@/modules/clients/repositories/clients.repository";
+import {
+  createDriverReservationAssignment,
+  findDriverById,
+  listAssignableDrivers,
+  softDeleteReservationDriverAssignments,
+} from "@/modules/drivers/repositories/drivers.repository";
 import { incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
 import {
   countBlockingReservations,
@@ -227,6 +233,13 @@ export async function listReservationSourcesService() {
   return listReservationSources();
 }
 
+export async function listAssignableReservationDriversService(input: {
+  companyId: string;
+  agencyId: string;
+}) {
+  return listAssignableDrivers(input);
+}
+
 export async function checkReservationAvailabilityService(input: {
   companyId: string;
   agencyId: string;
@@ -406,6 +419,78 @@ export async function updateReservationService(input: {
     }, tx);
   });
 
+  return getReservationService(scope);
+}
+
+export async function assignReservationDriverService(input: {
+  context: ReservationServiceContext;
+  reservationId: string;
+  driverId?: string | null;
+}) {
+  const scope = { companyId: input.context.companyId, agencyId: input.context.agencyId, reservationId: input.reservationId };
+  await getReservationService(scope);
+
+  const driver = input.driverId
+    ? await findDriverById({
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        driverId: input.driverId,
+      })
+    : null;
+  if (input.driverId && (!driver || driver.status !== DriverStatus.active)) {
+    throw createValidationError("RESERVATION_DRIVER_NOT_ASSIGNABLE");
+  }
+
+  await runInTransaction(async (tx) => {
+    await softDeleteReservationDriverAssignments(
+      {
+        companyId: input.context.companyId,
+        reservationId: input.reservationId,
+        role: DriverRole.primary,
+        deletedBy: input.context.userId ?? null,
+      },
+      tx,
+    );
+    if (driver) {
+      await createDriverReservationAssignment(
+        {
+          id: createId(),
+          companyId: input.context.companyId,
+          reservationId: input.reservationId,
+          driverId: driver.id,
+          role: DriverRole.primary,
+        },
+        tx,
+      );
+    }
+    await appendTimeline({
+      companyId: input.context.companyId,
+      reservationId: input.reservationId,
+      eventType: driver ? "driver_assigned" : "driver_unassigned",
+      description: driver ? `${driver.firstName} ${driver.lastName}` : null,
+      performedBy: input.context.userId ?? null,
+    }, tx);
+    await writeReservationLogs({
+      context: input.context,
+      reservationId: input.reservationId,
+      action: driver ? "ReservationDriverAssigned" : "ReservationDriverUnassigned",
+      verb: driver ? "ReservationDriverAssigned" : "ReservationDriverUnassigned",
+      changes: { driverId: driver?.id ?? null },
+    }, tx);
+  });
+
+  if (input.driverId) {
+    await publishDomainEvent({
+      name: "DriverAssignedToReservation",
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      entityType: "reservation",
+      entityId: input.reservationId,
+      userId: input.context.userId,
+      actorName: input.context.actorName,
+      occurredAt: new Date(),
+    });
+  }
   return getReservationService(scope);
 }
 
@@ -634,10 +719,12 @@ export const reservationsService = {
   getReservationService,
   listReservationsService,
   listReservationSourcesService,
+  listAssignableReservationDriversService,
   checkReservationAvailabilityService,
   resolveReservationPricingService,
   createReservationService,
   updateReservationService,
+  assignReservationDriverService,
   confirmReservationService,
   activateReservationService,
   cancelReservationService,

@@ -1,10 +1,12 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "motion/react"
-import { X, Info, FileText, Wallet, History, ChevronRight, CarFront, ChevronDown, Check } from "lucide-react"
+import { X, Info, FileText, Wallet, History, ChevronRight, CarFront, ChevronDown, Check, Loader2 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import {
   type Reservation,
   type ReservationStatus,
@@ -13,7 +15,10 @@ import {
   formatDate,
   formatMAD,
 } from "@/lib/reservations-data"
-import { drivers } from "@/lib/drivers-data"
+import {
+  assignReservationDriverAction,
+  listAssignableReservationDriversAction,
+} from "@/modules/reservations/actions/create-reservation.action"
 import { DetailsTab } from "./tabs/details-tab"
 import { ContractTab } from "./tabs/contract-tab"
 import { PaymentTab } from "./tabs/payment-tab"
@@ -22,6 +27,13 @@ import { WhatsAppShareButton } from "@/components/communication/whatsapp-share-b
 import { cn } from "@/lib/utils"
 
 type TabId = "details" | "contract" | "payment" | "timeline"
+
+type AssignableDriver = {
+  id: string
+  firstName: string
+  lastName: string
+  phone: string | null
+}
 
 const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "details", label: "Détails", icon: Info },
@@ -39,13 +51,55 @@ export function ReservationDetailPanel({
   onClose: () => void
   onStatusChange: (id: string, next: ReservationStatus) => void
 }) {
+  const router = useRouter()
+  const { t } = useI18n()
   const [tab, setTab] = useState<TabId>("details")
-  const [assignedDriverId, setAssignedDriverId] = useState<string | null>(
-    reservation.driver?.id ?? null,
-  )
+  const [assignedDriver, setAssignedDriver] = useState<Reservation["driver"]>(reservation.driver ?? null)
+  const [availableDrivers, setAvailableDrivers] = useState<AssignableDriver[]>([])
+  const [driversLoaded, setDriversLoaded] = useState(false)
+  const [driversLoading, setDriversLoading] = useState(false)
+  const [driverSaving, setDriverSaving] = useState(false)
   const [driverOpen, setDriverOpen] = useState(false)
   const cfg = statusConfig[reservation.status]
-  const assignedDriver = drivers.find((d) => d.id === assignedDriverId) ?? null
+
+  const openDriverMenu = async () => {
+    setDriverOpen((value) => !value)
+    if (driversLoaded || driversLoading) return
+    setDriversLoading(true)
+    const result = await listAssignableReservationDriversAction()
+    setDriversLoading(false)
+    if (!result.success) {
+      toast.error(t("reservations.form.driverLoadFailed"))
+      return
+    }
+    setAvailableDrivers(result.drivers)
+    setDriversLoaded(true)
+  }
+
+  const assignDriver = async (driver: AssignableDriver | null) => {
+    setDriverSaving(true)
+    const result = await assignReservationDriverAction({
+      reservationId: reservation.id,
+      driverId: driver?.id ?? null,
+    })
+    setDriverSaving(false)
+    if (!result.success) {
+      toast.error(t(result.messageKey))
+      return
+    }
+    setAssignedDriver(
+      driver
+        ? {
+            id: driver.id,
+            name: `${driver.firstName} ${driver.lastName}`,
+            phone: driver.phone ?? "",
+          }
+        : null,
+    )
+    setDriverOpen(false)
+    toast.success(driver ? t("reservations.form.driverAssigned") : t("reservations.form.driverRemoved"))
+    router.refresh()
+  }
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.10)]">
@@ -167,7 +221,8 @@ export function ReservationDetailPanel({
           <span className="text-xs font-semibold text-slate-500">Chauffeur</span>
           <div className="relative ml-auto">
             <button
-              onClick={() => setDriverOpen((v) => !v)}
+              onClick={() => void openDriverMenu()}
+              disabled={driverSaving}
               className={cn(
                 "inline-flex h-7 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition",
                 assignedDriver
@@ -176,9 +231,9 @@ export function ReservationDetailPanel({
               )}
             >
               {assignedDriver
-                ? `${assignedDriver.firstName} ${assignedDriver.lastName}`
-                : "Assigner un chauffeur"}
-              <ChevronDown className="h-3 w-3 opacity-60" />
+                ? assignedDriver.name
+                : t("reservations.form.assignDriver")}
+              {driverSaving ? <Loader2 className="h-3 w-3 animate-spin opacity-60" /> : <ChevronDown className="h-3 w-3 opacity-60" />}
             </button>
             <AnimatePresence>
               {driverOpen && (
@@ -192,30 +247,35 @@ export function ReservationDetailPanel({
                     className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
                   >
                     <button
-                      onClick={() => {
-                        setAssignedDriverId(null)
-                        setDriverOpen(false)
-                        toast.success("Chauffeur retiré")
-                      }}
+                      onClick={() => void assignDriver(null)}
+                      disabled={driverSaving}
                       className="flex w-full items-center gap-2 px-3.5 py-2 text-xs text-slate-500 hover:bg-slate-50"
                     >
-                      Aucun chauffeur
+                      {t("reservations.form.noDriver")}
                     </button>
                     <div className="my-1 h-px bg-slate-100" />
-                    {drivers.filter((d) => d.status === "active").map((d) => (
-                      <button
-                        key={d.id}
-                        onClick={() => {
-                          setAssignedDriverId(d.id)
-                          setDriverOpen(false)
-                          toast.success(`Chauffeur assigné : ${d.firstName} ${d.lastName}`)
-                        }}
-                        className="flex w-full items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                      >
-                        <span className="flex-1 text-left">{d.firstName} {d.lastName}</span>
-                        {assignedDriverId === d.id && <Check className="h-3 w-3 text-blue-600" />}
-                      </button>
-                    ))}
+                    {driversLoading ? (
+                      <div className="flex items-center gap-2 px-3.5 py-2 text-xs text-slate-500">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {t("reservations.form.loadingDrivers")}
+                      </div>
+                    ) : availableDrivers.length === 0 ? (
+                      <div className="px-3.5 py-2 text-xs text-slate-500">
+                        {t("reservations.form.noAssignableDrivers")}
+                      </div>
+                    ) : (
+                      availableDrivers.map((d) => (
+                        <button
+                          key={d.id}
+                          onClick={() => void assignDriver(d)}
+                          disabled={driverSaving}
+                          className="flex w-full items-center gap-2.5 px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <span className="flex-1 text-left">{d.firstName} {d.lastName}</span>
+                          {assignedDriver?.id === d.id && <Check className="h-3 w-3 text-blue-600" />}
+                        </button>
+                      ))
+                    )}
                   </motion.div>
                 </>
               )}
@@ -261,9 +321,7 @@ export function ReservationDetailPanel({
           <DetailsTab
             reservation={{
               ...reservation,
-              driver: assignedDriver
-                ? { id: assignedDriver.id, name: `${assignedDriver.firstName} ${assignedDriver.lastName}`, phone: assignedDriver.phone }
-                : null,
+              driver: assignedDriver,
             }}
           />
         )}

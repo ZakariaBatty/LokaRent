@@ -134,7 +134,7 @@ export function mapDriverToUi(driver: DriverWithDetails): Driver {
     documents,
     status: driver.status,
     createdAt: toIsoDate(driver.createdAt),
-    totalAssignments: assignments.length,
+    totalAssignments: driver._count.reservationAssignments,
     totalEarned: payments.reduce((sum, payment) => sum + payment.amount, 0),
   };
 }

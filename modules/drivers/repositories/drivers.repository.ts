@@ -1,4 +1,4 @@
-import { DriverPricingType, DriverStatus, Prisma, prisma } from "@lokarent/db";
+import { DriverPricingType, DriverRole, DriverStatus, Prisma, prisma } from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -39,6 +39,11 @@ function driverInclude() {
       take: 10,
     },
     payments: { orderBy: { createdAt: "desc" }, take: 10 },
+    _count: {
+      select: {
+        reservationAssignments: { where: { deletedAt: null } },
+      },
+    },
   } satisfies Prisma.DriverInclude;
 }
 
@@ -119,6 +124,28 @@ export async function listDrivers(
     },
     include: driverInclude(),
     orderBy: [{ status: "asc" }, { lastName: "asc" }, { firstName: "asc" }],
+  });
+}
+
+export async function listAssignableDrivers(
+  input: { companyId: string; agencyId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.driver.findMany({
+    where: {
+      companyId: input.companyId,
+      homeAgencyId: input.agencyId,
+      status: DriverStatus.active,
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      phone: true,
+      status: true,
+    },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }, { id: "asc" }],
   });
 }
 
@@ -279,6 +306,29 @@ export async function createDriverReservationAssignment(
   return db.driverReservationAssignment.create({ data });
 }
 
+export async function softDeleteReservationDriverAssignments(
+  input: {
+    companyId: string;
+    reservationId: string;
+    role?: DriverRole;
+    deletedBy?: string | null;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.driverReservationAssignment.updateMany({
+    where: {
+      companyId: input.companyId,
+      reservationId: input.reservationId,
+      role: input.role,
+      deletedAt: null,
+    },
+    data: {
+      deletedAt: new Date(),
+      deletedBy: input.deletedBy ?? null,
+    },
+  });
+}
+
 export async function listDriverReservationAssignments(
   input: { companyId: string; reservationId?: string; driverId?: string; includeDeleted?: boolean },
   db: DatabaseClient = prisma,
@@ -299,6 +349,7 @@ export const driversRepository = {
   findDriverById,
   paginateDrivers,
   listDrivers,
+  listAssignableDrivers,
   createDriver,
   updateDriver,
   softDeleteDriver,
@@ -314,5 +365,6 @@ export const driversRepository = {
   updateDriverDocument,
   softDeleteDriverDocument,
   createDriverReservationAssignment,
+  softDeleteReservationDriverAssignments,
   listDriverReservationAssignments,
 };

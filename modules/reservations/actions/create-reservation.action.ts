@@ -8,11 +8,13 @@ import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
 import {
   activateReservationService,
+  assignReservationDriverService,
   cancelReservationService,
   completeReservationStatusService,
   confirmReservationService,
   createReservationService,
   deleteReservationService,
+  listAssignableReservationDriversService,
   markReservationNoShowService,
   restoreReservationService,
   updateReservationService,
@@ -48,6 +50,7 @@ function messageKeyForError(error: unknown) {
     if (error.message === "RESERVATION_EDIT_BLOCKED_BY_STATUS") return "reservations.errors.editBlockedByStatus";
     if (error.message === "RESERVATION_DELETE_BLOCKED_BY_STATUS") return "reservations.errors.deleteBlockedByStatus";
     if (error.message === "RESERVATION_CONFIRMATION_ACTOR_REQUIRED") return "reservations.errors.confirmationActorRequired";
+    if (error.message === "RESERVATION_DRIVER_NOT_ASSIGNABLE") return "reservations.errors.driverNotAssignable";
     return "reservations.errors.validation";
   }
   return "reservations.errors.generic";
@@ -176,6 +179,49 @@ export async function checkReservationAvailabilityAction(input: unknown): Promis
       excludeReservationId: parsed.data.reservationId,
     });
     return { success: true, available: result.available };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function listAssignableReservationDriversAction(): Promise<
+  | {
+      success: true;
+      drivers: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        phone: string | null;
+      }[];
+    }
+  | { success: false; messageKey: string; code?: string }
+> {
+  try {
+    const context = await getActionContext(PERMISSIONS.RESERVATIONS_EDIT);
+    const drivers = await listAssignableReservationDriversService(context);
+    return { success: true, drivers };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function assignReservationDriverAction(input: unknown): Promise<ReservationActionResult> {
+  const parsed = z.object({
+    reservationId: z.string().uuid(),
+    driverId: z.string().uuid().nullable().optional(),
+  }).safeParse(input);
+  if (!parsed.success) return { success: false, messageKey: "reservations.errors.validation" };
+
+  try {
+    const context = await getActionContext(PERMISSIONS.RESERVATIONS_EDIT);
+    await assignReservationDriverService({
+      context,
+      reservationId: parsed.data.reservationId,
+      driverId: parsed.data.driverId ?? null,
+    });
+    revalidateReservationPaths();
+    revalidatePath("/drivers");
+    return { success: true, reservationId: parsed.data.reservationId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }

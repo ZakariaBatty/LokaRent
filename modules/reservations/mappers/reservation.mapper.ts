@@ -81,6 +81,18 @@ function mapTimeline(event: ReservationPayload["timelineEvents"][number]): Timel
   };
 }
 
+function includesAny(value: string, terms: string[]) {
+  const normalized = value.toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+function additionalDriverName(extras: ReservationPayload["extras"]) {
+  const extra = extras.find((item) => includesAny(item.label, ["conducteur", "driver"]));
+  if (!extra) return null;
+  const [, name] = extra.label.split(/:|-/).map((part) => part.trim());
+  return name || extra.label;
+}
+
 export function mapReservationToUi(reservation: ReservationPayload): Reservation {
   const name = customerName(reservation.customer);
   const driverAssignment = reservation.driverAssignments[0];
@@ -110,10 +122,10 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
     pickupLocation: reservation.pickupLocation ?? "",
     returnLocation: reservation.returnLocation ?? "",
     extras: {
-      gps: reservation.extras.some((extra) => extra.label.toLowerCase().includes("gps")),
-      babySeat: reservation.extras.some((extra) => extra.label.toLowerCase().includes("baby")),
-      insuranceUpgrade: reservation.extras.some((extra) => extra.label.toLowerCase().includes("insurance")),
-      additionalDriver: null,
+      gps: reservation.extras.some((extra) => includesAny(extra.label, ["gps"])),
+      babySeat: reservation.extras.some((extra) => includesAny(extra.label, ["baby", "bébé", "bebe", "siège", "siege"])),
+      insuranceUpgrade: reservation.extras.some((extra) => includesAny(extra.label, ["insurance", "assurance"])),
+      additionalDriver: additionalDriverName(reservation.extras),
     },
     startKm: null,
     returnKm: null,

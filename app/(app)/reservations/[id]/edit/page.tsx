@@ -54,13 +54,30 @@ async function EditReservationContent({ params }: { params: Promise<{ id: string
     }),
     listReservationSourcesService(),
   ])
+  const carOptions = vehicles.map(mapVehicleToReservationOption)
+  if (!carOptions.some((car) => car.id === reservation.vehicleId)) {
+    carOptions.push({
+      id: reservation.vehicle.id,
+      brand: reservation.vehicle.brand,
+      model: reservation.vehicle.model,
+      year: reservation.vehicle.year,
+      plate: reservation.vehicle.plate,
+      category: reservation.vehicle.category.name,
+      status: "disponible",
+      priceDay: Number(reservation.pricePerDay),
+      priceWeek: Number(reservation.pricePerDay) * 7,
+      priceMonth: Number(reservation.pricePerDay) * 30,
+      depositAmount: Number(reservation.depositAmount),
+      currency: reservation.currency,
+    })
+  }
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5">
       <WizardProvider
         mode="edit"
         initialReservation={mapReservationToUi(reservation)}
-        cars={vehicles.map(mapVehicleToReservationOption)}
+        cars={carOptions}
         clients={customers.data.map(mapCustomerToClient).map(mapClientToReservationOption)}
         sources={sources.map((source) => ({ id: source.id, key: source.key, label: source.label }))}
       >
