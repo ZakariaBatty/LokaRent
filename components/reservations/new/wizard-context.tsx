@@ -67,6 +67,17 @@ export type ReservationSourceOption = {
   label: string
 }
 
+export type ReservationExtraDefinitionOption = {
+  id: string
+  key: string
+  label: string
+  description?: string | null
+  price: number
+  currency: string
+  sortOrder: number
+  isActive: boolean
+}
+
 export type NewClientDraft = {
   firstName: string
   lastName: string
@@ -130,6 +141,7 @@ export type WizardState = {
   avanceMethod: PaymentMethod
   // Step 4
   options: ReservationOptions
+  selectedExtraDefinitionIds: string[]
   // Step 5
   etatDesLieux: EtatDesLieux
   signatureName: string
@@ -181,6 +193,7 @@ const initialState: WizardState = {
     babySeat: false,
     extraInsurance: false,
   },
+  selectedExtraDefinitionIds: [],
   etatDesLieux: {
     carrosserieAvant: true,
     carrosserieArriere: true,
@@ -202,8 +215,10 @@ type Ctx = {
   clients: ReservationClientOption[]
   cars: ReservationCarOption[]
   sources: ReservationSourceOption[]
+  extraDefinitions: ReservationExtraDefinitionOption[]
   setState: (patch: Partial<WizardState>) => void
   setOptions: (patch: Partial<ReservationOptions>) => void
+  toggleExtraDefinition: (definitionId: string, enabled?: boolean) => void
   setEtat: (patch: Partial<EtatDesLieux>) => void
   setNewClient: (patch: Partial<NewClientDraft>) => void
   step: WizardStepId
@@ -252,6 +267,7 @@ function reservationToInitialState(reservation?: Reservation): WizardState {
       ? Math.round(((baseSubtotal - reservation.total) / baseSubtotal) * 100)
       : 0
 
+  const authorizedDriver = reservation.authorizedDrivers?.[0]
   return {
     ...initialState,
     selectedClient: {
@@ -274,13 +290,14 @@ function reservationToInitialState(reservation?: Reservation): WizardState {
     cautionAmount: reservation.caution,
     avanceAmount: reservation.advance,
     options: {
-      extraDriver: Boolean(reservation.extras.additionalDriver),
-      extraDriverName: reservation.extras.additionalDriver ?? "",
-      extraDriverPermit: "",
+      extraDriver: Boolean(authorizedDriver || reservation.extras.additionalDriver),
+      extraDriverName: authorizedDriver?.fullName ?? reservation.extras.additionalDriver ?? "",
+      extraDriverPermit: authorizedDriver?.licenseNumber ?? "",
       gps: reservation.extras.gps,
       babySeat: reservation.extras.babySeat,
       extraInsurance: reservation.extras.insuranceUpgrade,
     },
+    selectedExtraDefinitionIds: (reservation.extraItems?.map((extra) => extra.definitionId).filter(Boolean) as string[]) ?? [],
     remarks: "",
     signatureAccepted: true,
     signatureName: reservation.client.name,
@@ -292,6 +309,7 @@ export function WizardProvider({
   cars,
   clients,
   sources,
+  extraDefinitions = [],
   initialReservation,
   mode = "create",
 }: {
@@ -299,6 +317,7 @@ export function WizardProvider({
   cars: ReservationCarOption[]
   clients: ReservationClientOption[]
   sources: ReservationSourceOption[]
+  extraDefinitions?: ReservationExtraDefinitionOption[]
   initialReservation?: Reservation
   mode?: "create" | "edit"
 }) {
@@ -310,6 +329,17 @@ export function WizardProvider({
     _setState((s) => ({ ...s, ...patch }))
   const setOptions = (patch: Partial<ReservationOptions>) =>
     _setState((s) => ({ ...s, options: { ...s.options, ...patch } }))
+  const toggleExtraDefinition = (definitionId: string, enabled?: boolean) =>
+    _setState((s) => {
+      const isSelected = s.selectedExtraDefinitionIds.includes(definitionId)
+      const shouldEnable = enabled ?? !isSelected
+      return {
+        ...s,
+        selectedExtraDefinitionIds: shouldEnable
+          ? Array.from(new Set([...s.selectedExtraDefinitionIds, definitionId]))
+          : s.selectedExtraDefinitionIds.filter((id) => id !== definitionId),
+      }
+    })
   const setEtat = (patch: Partial<EtatDesLieux>) =>
     _setState((s) => ({ ...s, etatDesLieux: { ...s.etatDesLieux, ...patch } }))
   const setNewClient = (patch: Partial<NewClientDraft>) =>
@@ -340,11 +370,9 @@ export function WizardProvider({
     const discountAmount = Math.round((subtotal * state.discountPct) / 100)
     const afterDiscount = subtotal - discountAmount
 
-    const optionsPerDay =
-      (state.options.extraDriver ? 50 : 0) +
-      (state.options.gps ? 30 : 0) +
-      (state.options.babySeat ? 20 : 0) +
-      (state.options.extraInsurance ? 80 : 0)
+    const optionsPerDay = extraDefinitions
+      .filter((definition) => state.selectedExtraDefinitionIds.includes(definition.id))
+      .reduce((sum, definition) => sum + definition.price, 0)
     const optionsTotal = optionsPerDay * days
 
     const grandTotal = afterDiscount + optionsTotal
@@ -361,7 +389,7 @@ export function WizardProvider({
       grandTotal,
       reste,
     }
-  }, [state, cars])
+  }, [state, cars, extraDefinitions])
 
   const canProceed = useMemo(() => {
     if (step === "client") {
@@ -417,8 +445,10 @@ export function WizardProvider({
         clients,
         cars,
         sources,
+        extraDefinitions,
         setState,
         setOptions,
+        toggleExtraDefinition,
         setEtat,
         setNewClient,
         step,

@@ -10,7 +10,8 @@ type ReservationPayload = Prisma.ReservationGetPayload<{
     vehicle: { include: { category: true } };
     source: true;
     pricingSnapshots: true;
-    extras: true;
+    extras: { include: { definition: true } };
+    authorizedDrivers: true;
     timelineEvents: true;
     contract: true;
     driverAssignments: { include: { driver: true } };
@@ -98,6 +99,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
   const driverAssignment = reservation.driverAssignments[0];
   const total = Number(reservation.totalAmount);
   const advance = Number(reservation.advanceAmount);
+  const authorizedDriver = reservation.authorizedDrivers[0];
   return {
     id: reservation.id,
     code: reservation.code,
@@ -125,8 +127,26 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
       gps: reservation.extras.some((extra) => includesAny(extra.label, ["gps"])),
       babySeat: reservation.extras.some((extra) => includesAny(extra.label, ["baby", "bébé", "bebe", "siège", "siege"])),
       insuranceUpgrade: reservation.extras.some((extra) => includesAny(extra.label, ["insurance", "assurance"])),
-      additionalDriver: additionalDriverName(reservation.extras),
+      additionalDriver: authorizedDriver?.fullName ?? additionalDriverName(reservation.extras),
     },
+    extraItems: reservation.extras.map((extra) => ({
+      id: extra.id,
+      definitionId: extra.definitionId,
+      key: extra.definition?.key ?? null,
+      label: extra.label,
+      unitPrice: Number(extra.unitPrice),
+      quantity: extra.quantity,
+      totalPrice: Number(extra.totalPrice),
+      currency: extra.currency,
+    })),
+    authorizedDrivers: reservation.authorizedDrivers.map((driver) => ({
+      id: driver.id,
+      fullName: driver.fullName,
+      licenseNumber: driver.licenseNumber,
+      licenseIssuedAt: driver.licenseIssuedAt?.toISOString() ?? null,
+      licenseExpiresAt: driver.licenseExpiresAt?.toISOString() ?? null,
+      documentUrl: driver.documentUrl,
+    })),
     startKm: null,
     returnKm: null,
     pricePerDay: Number(reservation.pricePerDay),

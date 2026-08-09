@@ -75,15 +75,14 @@ export function ContractDetailPanel({
           <div className="flex items-center gap-1.5">
             {contract.client.phone && (
               <WhatsAppShareButton
-                template="contract_summary"
+                template="contract"
                 phoneNumber={contract.client.phone}
                 templateData={{
                   contractCode: contract.code,
                   clientName: contract.client.fullName,
-                  carBrand: contract.car.brand,
-                  carModel: contract.car.model,
-                  carPlate: contract.car.plate,
-                  status: contract.status,
+                  carDescription: `${contract.car.brand} ${contract.car.model} (${contract.car.plate})`,
+                  startDate: contract.period.start,
+                  endDate: contract.period.end,
                 }}
                 title={`Contrat #${contract.code}`}
                 size="sm"

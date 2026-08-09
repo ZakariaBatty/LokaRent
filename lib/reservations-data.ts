@@ -9,6 +9,26 @@ export type ReservationExtras = {
   additionalDriver: string | null
 }
 
+export type ReservationExtraItem = {
+  id: string
+  definitionId: string | null
+  key?: string | null
+  label: string
+  unitPrice: number
+  quantity: number
+  totalPrice: number
+  currency: string
+}
+
+export type ReservationAuthorizedDriver = {
+  id: string
+  fullName: string
+  licenseNumber: string
+  licenseIssuedAt?: string | null
+  licenseExpiresAt?: string | null
+  documentUrl?: string | null
+}
+
 export type ContractChecklistItem = {
   label: string
   ok: boolean
@@ -56,6 +76,8 @@ export type Reservation = {
   returnLocation: string
 
   extras: ReservationExtras
+  extraItems?: ReservationExtraItem[]
+  authorizedDrivers?: ReservationAuthorizedDriver[]
 
   startKm: number | null
   returnKm: number | null

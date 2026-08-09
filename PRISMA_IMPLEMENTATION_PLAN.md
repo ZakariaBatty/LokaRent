@@ -1,7 +1,7 @@
 # LokaRent — Prisma Implementation Plan
 
 > **Status:** Pre-schema plan. No Prisma code yet. Architecture documentation is the single source of truth.
-> **Scope:** Phase 1 — 55 Prisma models = 55 database tables (`NumberSequence` and `ContractTemplateVersion` included). See § 10.5 for reconciliation.
+> **Scope:** Phase 1 — 57 Prisma models = 57 database tables (`NumberSequence`, `ContractTemplateVersion`, `ReservationExtraDefinition`, and `ReservationAuthorizedDriver` included). See § 10.5 for reconciliation.
 > **Purpose:** Bridge document between architecture and schema generation. Every decision here is traceable to `DATABASE_DOMAIN_DESIGN.md`, `DATABASE_PHASE1.md`, and `DATABASE_SPECIFICATION.md`.
 
 ---
@@ -23,7 +23,7 @@
 
 ## 1. Complete Model List
 
-55 Prisma models. Listed by domain in declaration order. Every model maps to exactly one database table. See § 10.5 for the authoritative count reconciliation.
+57 Prisma models. Listed by domain in declaration order. Every model maps to exactly one database table. See § 10.5 for the authoritative count reconciliation.
 
 ### Domain 1 — Multi-Tenant (2 models)
 
@@ -78,15 +78,17 @@
 | 27 | `CustomerDocument` | `customer_documents` | Identity documents with expiry tracking. |
 | 28 | `CustomerBlacklist` | `customer_blacklist` | Auditable blacklist entries. Not a boolean flag. |
 
-### Domain 6 — Reservations (5 models)
+### Domain 6 — Reservations (7 models)
 
 | # | Prisma Model | DB Table | Notes |
 |---|---|---|---|
 | 29 | `ReservationSource` | `reservation_sources` | Lookup table. Seeded at deploy. |
 | 30 | `Reservation` | `reservations` | The central business entity. |
 | 31 | `ReservationPricingSnapshot` | `reservation_pricing_snapshots` | Each row immutable. Supersession chain per reservation; one `is_current = true`. |
-| 32 | `ReservationExtra` | `reservation_extras` | Add-ons per reservation. |
-| 33 | `ReservationTimelineEvent` | `reservation_timeline_events` | Append-only status log. |
+| 32 | `ReservationExtraDefinition` | `reservation_extra_definitions` | Mutable company/agency-scoped catalog for selectable extras. |
+| 33 | `ReservationExtra` | `reservation_extras` | Immutable add-on snapshots per reservation, copied from the catalog at write time. |
+| 34 | `ReservationAuthorizedDriver` | `reservation_authorized_drivers` | Renter/customer authorized drivers; distinct from internal chauffeur assignments. |
+| 35 | `ReservationTimelineEvent` | `reservation_timeline_events` | Append-only status log. |
 
 ### Domain 7 — Contracts (5 models)
 
@@ -143,13 +145,13 @@
 
 | # | Prisma Model | DB Table | Notes |
 |---|---|---|---|
-| 55 | `NumberSequence` | `number_sequences` | Row-level lock counter for gapless human-readable codes. |
+| 57 | `NumberSequence` | `number_sequences` | Row-level lock counter for gapless human-readable codes. |
 
-**Total: 55 Prisma models mapping to 55 database tables.**
+**Total: 57 Prisma models mapping to 57 database tables.**
 
-Domain breakdown (declaration order, matching the enumerated list above): Multi-Tenant 2 + Identity 8 + Subscription 3 + Fleet 9 + Customers 6 + Reservations 5 + Contracts 5 + Finance 8 (includes `DriverPayment`) + Drivers 4 + Documents 1 + Audit 2 + Settings 1 + Utility (`NumberSequence`) 1 = **55**.
+Domain breakdown (declaration order, matching the enumerated list above): Multi-Tenant 2 + Identity 8 + Subscription 3 + Fleet 9 + Customers 6 + Reservations 7 + Contracts 5 + Finance 8 (includes `DriverPayment`) + Drivers 4 + Documents 1 + Audit 2 + Settings 1 + Utility (`NumberSequence`) 1 = **57**.
 
-> **Authoritative count:** `DriverPayment` belongs to Finance only (its primary domain per the Phase 1 decision) — one model, not double-counted. `ContractTemplateVersion` is included in Phase 1 (Contracts = 5) per the `DATABASE_FINAL_REVIEW.md` verdict that template versioning is a blocking legal-integrity dependency. Earlier drafts that reported 54/56/59/60 either omitted template versions, double-counted `driver_payments`, or counted lookup tables inconsistently. The canonical figure is **55 models = 55 tables**. See § 10.5 for the full reconciliation.
+> **Authoritative count:** `DriverPayment` belongs to Finance only (its primary domain per the Phase 1 decision) — one model, not double-counted. `ContractTemplateVersion` is included in Phase 1 (Contracts = 5) per the `DATABASE_FINAL_REVIEW.md` verdict that template versioning is a blocking legal-integrity dependency. Reservations now include `ReservationExtraDefinition` and `ReservationAuthorizedDriver`. The canonical figure is **57 models = 57 tables**. See § 10.5 for the full reconciliation.
 
 ---
 
@@ -778,6 +780,7 @@ Every business model receives the following indexes via `@@index`:
 | `Reservation` | `@@index([createdAt])` |
 | `ReservationTimelineEvent` | `@@index([reservationId, createdAt])` |
 | `ReservationPricingSnapshot` | `@@index([reservationId, createdAt])` — full chain / latest-by-created_at |
+| `ReservationPricingSnapshot` | `@@index([pricingRuleId])` — resolved pricing rule used when snapshot was locked |
 | `ReservationPricingSnapshot` | **Partial unique** `UNIQUE(reservation_id) WHERE is_current = true` — not expressible in Prisma schema; add via raw migration (see §5 raw-SQL block) |
 
 #### Contracts
@@ -790,6 +793,7 @@ Every business model receives the following indexes via `@@index`:
 | `Contract` | `@@index([templateVersionId])` — supports version-usage lookups |
 | `ContractTemplateVersion` | `@@unique([templateId, versionNumber])` — one row per version per template |
 | `ContractTemplateVersion` | `@@index([templateId])` |
+| `ContractTemplate` | **Partial unique** `UNIQUE(company_id, agency_id) WHERE is_default = true AND deleted_at IS NULL AND agency_id IS NOT NULL` — one active default template per agency; raw migration only |
 | `ContractSignature` | `@@index([contractId, signerType])` |
 
 #### Finance
@@ -955,7 +959,7 @@ Soft delete (`deleted_at` + `deleted_by`) is present on these models:
 
 **Yes — `deletedAt` + `deletedBy`:**
 
-`Company`, `Agency`, `User`, `CompanyMembership`, `AgencyMembership`, `Role`, `Invitation`, `VehicleCategory`, `Vehicle`, `VehicleAvailabilityBlock`, `VehicleRegistration`, `VehicleInsurance`, `VehicleInspection`, `VehicleVignette`, `VehicleMaintenance`, `Customer`, `CustomerDocument`, `CustomerContact`, `CustomerBlacklist`, `Driver`, `DriverPricingRule`, `DriverDocument`, `DriverReservationAssignment`, `ContractTemplate`, `Contract`, `ContractInspectionItem`, `Reservation`, `ReservationExtra`, `Expense`, `Setting`, `Document`
+`Company`, `Agency`, `User`, `CompanyMembership`, `AgencyMembership`, `Role`, `Invitation`, `VehicleCategory`, `Vehicle`, `VehicleAvailabilityBlock`, `VehicleRegistration`, `VehicleInsurance`, `VehicleInspection`, `VehicleVignette`, `VehicleMaintenance`, `Customer`, `CustomerDocument`, `CustomerContact`, `CustomerBlacklist`, `Driver`, `DriverPricingRule`, `DriverDocument`, `DriverReservationAssignment`, `ContractTemplate`, `Contract`, `ContractInspectionItem`, `Reservation`, `ReservationExtraDefinition`, `ReservationExtra`, `ReservationAuthorizedDriver`, `Expense`, `Setting`, `Document`
 
 **No soft delete — these records are immutable or never deleted:**
 
@@ -1336,13 +1340,13 @@ All architectural decisions have been finalized. Every item below is marked **RE
 
 ### AMBIGUITY G — `user_permission_overrides` — is it Phase 1? — RESOLVED
 
-**Resolution:** `user_permission_overrides` **is included in Phase 1** and is counted in the canonical 55 models (Identity = 8 tables). It is the documented per-user permission exception path referenced throughout the architecture. This aligns the Identity domain count across `FINAL_DATABASE_SOURCE_OF_TRUTH.md`, this plan (§ 1, § 10.5), and the `DATABASE_PHASE1.md` Summary. No open decision remains.
+**Resolution:** `user_permission_overrides` **is included in Phase 1** and is counted in the canonical 57 models (Identity = 8 tables). It is the documented per-user permission exception path referenced throughout the architecture. This aligns the Identity domain count across `FINAL_DATABASE_SOURCE_OF_TRUTH.md`, this plan (§ 1, § 10.5), and the `DATABASE_PHASE1.md` Summary. No open decision remains.
 
 ---
 
 ### AMBIGUITY H — `credit_notes` — Phase 1 or Phase 2? — RESOLVED
 
-**Resolution:** `credit_notes` **is included in Phase 1** and is counted in the canonical 55 models (Finance = 8 tables). It is the correction mechanism required by the `invoices.status = voided` path, so shipping without it would leave that status as orphaned logic. This aligns the Finance domain count across `FINAL_DATABASE_SOURCE_OF_TRUTH.md`, this plan (§ 1, § 10.5), and the `DATABASE_PHASE1.md` Summary. No open decision remains.
+**Resolution:** `credit_notes` **is included in Phase 1** and is counted in the canonical 57 models (Finance = 8 tables). It is the correction mechanism required by the `invoices.status = voided` path, so shipping without it would leave that status as orphaned logic. This aligns the Finance domain count across `FINAL_DATABASE_SOURCE_OF_TRUTH.md`, this plan (§ 1, § 10.5), and the `DATABASE_PHASE1.md` Summary. No open decision remains.
 
 ---
 
@@ -1365,7 +1369,7 @@ Every discrepancy traces to one of two causes: (1) `driver_payments` counted in 
 | 3 | Subscription | `plans`, `plan_limits`, `plan_features` | 3 |
 | 4 | Fleet | `vehicle_categories`, `vehicles`, `vehicle_registrations`, `vehicle_insurances`, `vehicle_inspections`, `vehicle_vignettes`, `vehicle_maintenances`, `vehicle_mileage_logs`, `vehicle_availability_blocks` | 9 |
 | 5 | Customers | `customers`, `customer_individuals`, `customer_businesses`, `customer_contacts`, `customer_documents`, `customer_blacklist` | 6 |
-| 6 | Reservations | `reservation_sources`, `reservations`, `reservation_pricing_snapshots`, `reservation_extras`, `reservation_timeline_events` | 5 |
+| 6 | Reservations | `reservation_sources`, `reservations`, `reservation_pricing_snapshots`, `reservation_extra_definitions`, `reservation_extras`, `reservation_authorized_drivers`, `reservation_timeline_events` | 7 |
 | 7 | Contracts | `contract_templates`, `contract_template_versions`, `contracts`, `contract_inspection_items`, `contract_signatures` | 5 |
 | 8 | Finance | `invoices`, `invoice_line_items`, `payments`, `deposits`, `credit_notes`, `expense_categories`, `expenses`, **`driver_payments`** | 8 |
 | 9 | Drivers | `drivers`, `driver_pricing_rules`, `driver_documents`, `driver_reservation_assignments` | 4 |
@@ -1373,9 +1377,9 @@ Every discrepancy traces to one of two causes: (1) `driver_payments` counted in 
 | 11 | Audit | `audit_logs`, `activity_logs` | 2 |
 | 12 | Settings | `settings` | 1 |
 | 13 | Utility | `number_sequences` | 1 |
-| | **Total** | | **55** |
+| | **Total** | | **57** |
 
-**Status:** RESOLVED — final count is **55 Prisma models = 55 database tables**. `driver_payments` counted once (Finance); `contract_template_versions` included in Phase 1 (Contracts = 5) per `DATABASE_FINAL_REVIEW.md`.
+**Status:** RESOLVED — final count is **57 Prisma models = 57 database tables**. `driver_payments` counted once (Finance); `contract_template_versions` included in Phase 1 (Contracts = 5) per `DATABASE_FINAL_REVIEW.md`; reservation extras catalog and authorized-driver rows included in Reservations.
 
 ---
 

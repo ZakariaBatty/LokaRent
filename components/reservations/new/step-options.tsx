@@ -10,48 +10,27 @@ import {
   UserPlus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useWizard } from "./wizard-context"
+import { type ReservationExtraDefinitionOption, useWizard } from "./wizard-context"
 import { StepHeader } from "./step-header"
 import { AnimatedNumber } from "./animated-number"
 import { formatMAD } from "@/lib/cars-data"
 
-const ADDONS = [
-  {
-    id: "extraDriver" as const,
-    icon: UserPlus,
-    label: "Conducteur supplémentaire",
-    description: "Permis d'un second conducteur autorisé sur le contrat.",
-    price: 50,
-    tint: "from-blue-50 to-blue-100/40 text-blue-600 ring-blue-100",
-  },
-  {
-    id: "gps" as const,
-    icon: Navigation,
-    label: "GPS",
-    description: "Système de navigation embarqué (TomTom / Garmin).",
-    price: 30,
-    tint: "from-emerald-50 to-emerald-100/40 text-emerald-600 ring-emerald-100",
-  },
-  {
-    id: "babySeat" as const,
-    icon: Baby,
-    label: "Siège bébé",
-    description: "Siège auto homologué pour enfant 0-12 mois.",
-    price: 20,
-    tint: "from-amber-50 to-amber-100/40 text-amber-600 ring-amber-100",
-  },
-  {
-    id: "extraInsurance" as const,
-    icon: Shield,
-    label: "Assurance complémentaire",
-    description: "Couverture étendue tous risques zéro franchise.",
-    price: 80,
-    tint: "from-violet-50 to-violet-100/40 text-violet-600 ring-violet-100",
-  },
-]
+function optionMeta(definition: ReservationExtraDefinitionOption) {
+  const value = `${definition.key} ${definition.label}`.toLowerCase()
+  if (value.includes("driver") || value.includes("conducteur")) {
+    return { icon: UserPlus, tint: "from-blue-50 to-blue-100/40 text-blue-600 ring-blue-100", isDriver: true }
+  }
+  if (value.includes("baby") || value.includes("bébé") || value.includes("bebe") || value.includes("siège") || value.includes("siege")) {
+    return { icon: Baby, tint: "from-amber-50 to-amber-100/40 text-amber-600 ring-amber-100", isDriver: false }
+  }
+  if (value.includes("insurance") || value.includes("assurance")) {
+    return { icon: Shield, tint: "from-violet-50 to-violet-100/40 text-violet-600 ring-violet-100", isDriver: false }
+  }
+  return { icon: Navigation, tint: "from-emerald-50 to-emerald-100/40 text-emerald-600 ring-emerald-100", isDriver: false }
+}
 
 export function StepOptions() {
-  const { state, setOptions, totals } = useWizard()
+  const { state, setOptions, toggleExtraDefinition, totals, extraDefinitions } = useWizard()
 
   return (
     <div>
@@ -63,18 +42,23 @@ export function StepOptions() {
       />
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-        {ADDONS.map((a, i) => {
-          const enabled = state.options[a.id]
+        {extraDefinitions.map((definition, i) => {
+          const meta = optionMeta(definition)
+          const Icon = meta.icon
+          const enabled = state.selectedExtraDefinitionIds.includes(definition.id)
           return (
             <motion.div
-              key={a.id}
+              key={definition.id}
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.04 }}
             >
               <button
                 type="button"
-                onClick={() => setOptions({ [a.id]: !enabled })}
+                onClick={() => {
+                  toggleExtraDefinition(definition.id)
+                  if (meta.isDriver) setOptions({ extraDriver: !enabled })
+                }}
                 className={cn(
                   "group relative flex w-full items-start gap-4 overflow-hidden rounded-2xl border bg-white p-5 text-left transition-all hover:-translate-y-0.5",
                   enabled
@@ -85,24 +69,24 @@ export function StepOptions() {
                 <div
                   className={cn(
                     "grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br ring-1",
-                    a.tint,
+                    meta.tint,
                   )}
                 >
-                  <a.icon className="h-5 w-5" />
+                  <Icon className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-slate-900">
-                        {a.label}
+                        {definition.label}
                       </div>
                       <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                        {a.description}
+                        {definition.description}
                       </p>
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-bold text-slate-900">
-                        +{a.price}
+                        +{definition.price}
                         <span className="text-xs font-medium text-slate-400">
                           {" "}
                           DH/j
@@ -132,7 +116,7 @@ export function StepOptions() {
                 </div>
               </button>
 
-              {a.id === "extraDriver" && enabled && (
+              {meta.isDriver && enabled && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}

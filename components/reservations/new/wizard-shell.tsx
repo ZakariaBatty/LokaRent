@@ -73,12 +73,9 @@ export function WizardShell() {
 
     const startsAt = new Date(`${state.startDate}T${state.startTime}:00`)
     const endsAt = new Date(`${state.endDate}T${state.endTime}:00`)
-    const extras = [
-      state.options.extraDriver && { label: `Conducteur supplémentaire: ${state.options.extraDriverName}`, unitPrice: 50, quantity: totals.days },
-      state.options.gps && { label: "GPS", unitPrice: 30, quantity: totals.days },
-      state.options.babySeat && { label: "Siège bébé", unitPrice: 20, quantity: totals.days },
-      state.options.extraInsurance && { label: "Assurance complémentaire", unitPrice: 80, quantity: totals.days },
-    ].filter(Boolean)
+    const authorizedDrivers = state.options.extraDriver
+      ? [{ fullName: state.options.extraDriverName, licenseNumber: state.options.extraDriverPermit }]
+      : []
     const payload = {
       customerId,
       vehicleId: state.selectedCarId,
@@ -95,7 +92,8 @@ export function WizardShell() {
       depositAmount: state.cautionAmount,
       advanceAmount: state.avanceAmount,
       internalNotes: state.remarks,
-      extras,
+      selectedExtras: state.selectedExtraDefinitionIds.map((definitionId) => ({ definitionId, quantity: totals.days })),
+      authorizedDrivers,
     }
 
     const result =

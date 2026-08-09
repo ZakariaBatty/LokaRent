@@ -5,7 +5,10 @@ import { WizardShell } from "@/components/reservations/new/wizard-shell"
 import { listCustomersService } from "@/modules/clients/services/clients.service"
 import { mapCustomerToClient } from "@/modules/clients/mappers/client.mapper"
 import { listAvailableVehiclesService } from "@/modules/cars/services/cars.service"
-import { listReservationSourcesService } from "@/modules/reservations/services/reservations.service"
+import {
+  listReservationExtraDefinitionsService,
+  listReservationSourcesService,
+} from "@/modules/reservations/services/reservations.service"
 import {
   mapClientToReservationOption,
   mapVehicleToReservationOption,
@@ -19,7 +22,7 @@ export const metadata = {
 export default async function NewReservationPage() {
   const context = await requireCurrentAgencyContext()
   await requirePermission(PERMISSIONS.RESERVATIONS_CREATE, context)
-  const [customers, vehicles, sources] = await Promise.all([
+  const [customers, vehicles, sources, extraDefinitions] = await Promise.all([
     listCustomersService({
       companyId: context.companyId,
       agencyId: context.agencyId,
@@ -33,6 +36,10 @@ export default async function NewReservationPage() {
       agencyId: context.agencyId,
     }),
     listReservationSourcesService(),
+    listReservationExtraDefinitionsService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+    }),
   ])
 
   return (
@@ -41,6 +48,16 @@ export default async function NewReservationPage() {
         cars={vehicles.map(mapVehicleToReservationOption)}
         clients={customers.data.map(mapCustomerToClient).map(mapClientToReservationOption)}
         sources={sources.map((source) => ({ id: source.id, key: source.key, label: source.label }))}
+        extraDefinitions={extraDefinitions.map((definition) => ({
+          id: definition.id,
+          key: definition.key,
+          label: definition.label,
+          description: definition.description,
+          price: Number(definition.price),
+          currency: definition.currency,
+          sortOrder: definition.sortOrder,
+          isActive: definition.isActive,
+        }))}
       >
         <WizardShell />
       </WizardProvider>

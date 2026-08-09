@@ -8,6 +8,7 @@ import { mapCustomerToClient } from "@/modules/clients/mappers/client.mapper"
 import { listAvailableVehiclesService } from "@/modules/cars/services/cars.service"
 import {
   getReservationService,
+  listReservationExtraDefinitionsService,
   listReservationSourcesService,
 } from "@/modules/reservations/services/reservations.service"
 import {
@@ -39,7 +40,7 @@ async function EditReservationContent({ params }: { params: Promise<{ id: string
     reservationId: id,
   }).catch(() => null)
   if (!reservation) notFound()
-  const [customers, vehicles, sources] = await Promise.all([
+  const [customers, vehicles, sources, extraDefinitions] = await Promise.all([
     listCustomersService({
       companyId: context.companyId,
       agencyId: context.agencyId,
@@ -53,6 +54,11 @@ async function EditReservationContent({ params }: { params: Promise<{ id: string
       agencyId: context.agencyId,
     }),
     listReservationSourcesService(),
+    listReservationExtraDefinitionsService({
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      includeInactive: true,
+    }),
   ])
   const carOptions = vehicles.map(mapVehicleToReservationOption)
   if (!carOptions.some((car) => car.id === reservation.vehicleId)) {
@@ -80,6 +86,16 @@ async function EditReservationContent({ params }: { params: Promise<{ id: string
         cars={carOptions}
         clients={customers.data.map(mapCustomerToClient).map(mapClientToReservationOption)}
         sources={sources.map((source) => ({ id: source.id, key: source.key, label: source.label }))}
+        extraDefinitions={extraDefinitions.map((definition) => ({
+          id: definition.id,
+          key: definition.key,
+          label: definition.label,
+          description: definition.description,
+          price: Number(definition.price),
+          currency: definition.currency,
+          sortOrder: definition.sortOrder,
+          isActive: definition.isActive,
+        }))}
       >
         <WizardShell />
       </WizardProvider>

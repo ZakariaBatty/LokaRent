@@ -164,7 +164,24 @@ export default {
       deleteBlockedByStatus: 'Les réservations confirmées ou actives ne peuvent pas être supprimées.',
       confirmationActorRequired: 'Un utilisateur connecté est requis pour confirmer la réservation.',
       driverNotAssignable: 'Le chauffeur sélectionné n’est pas actif ou n’appartient pas à cette agence.',
+      extraDefinitionNotFound: 'L’option de réservation sélectionnée est indisponible.',
+      lifecycleConflict: 'Cette réservation a été modifiée par une autre action. Actualisez puis réessayez.',
+      repricingRequired: 'Les changements de prix d’une réservation confirmée doivent passer par le flux de révision tarifaire.',
+      repricingNotAllowed: 'Ce statut de réservation ne peut pas être révisé tarifairement.',
       generic: 'Impossible d’enregistrer cette action de réservation pour le moment.',
+    },
+    upload: {
+      errors: {
+        validation: 'Veuillez choisir un document de réservation valide.',
+        fileTooLarge: 'Ce fichier est trop volumineux.',
+        unsupportedFile: 'Ce type de fichier n’est pas pris en charge.',
+        providerNotConfigured: 'Le stockage des documents n’est pas configuré.',
+        generic: 'Impossible d’envoyer ce document de réservation.',
+      },
+    },
+    documents: {
+      uploaded: 'Document envoyé.',
+      uploading: 'Envoi en cours...',
     },
   },
 
@@ -514,6 +531,41 @@ export default {
     viewContract: 'Voir le contrat',
     downloadContract: 'Télécharger le contrat',
     signContract: 'Signer le contrat',
+    generate: {
+      action: 'Générer contrat',
+      generating: 'Génération...',
+      created: 'Contrat généré.',
+      pickupMileagePrompt: 'Kilométrage de départ',
+    },
+    preview: {
+      pdfUnavailable: 'La génération PDF sera intégrée séparément.',
+    },
+    errors: {
+      validation: 'Vérifiez les champs du contrat.',
+      forbidden: 'Vous n’avez pas la permission d’effectuer cette action de contrat.',
+      notFound: 'Contrat introuvable.',
+      alreadyExists: 'Cette réservation possède déjà un contrat.',
+      pricingSnapshotRequired: 'La réservation doit disposer d’un instantané tarifaire confirmé.',
+      templateRequired: 'Aucun modèle de contrat par défaut n’est configuré pour cette agence.',
+      templateVersionRequired: 'Le modèle sélectionné ne possède aucune version.',
+      reservationStatusNotAllowed: 'Le statut de cette réservation ne permet pas de générer un contrat.',
+      invalidPickupMileage: 'Le kilométrage de départ est invalide.',
+      invalidStatusTransition: 'Ce contrat ne peut pas passer à ce statut.',
+      lifecycleConflict: 'Ce contrat a été modifié par une autre action. Actualisez puis réessayez.',
+      returnMileageTooLow: 'Le kilométrage de retour ne peut pas être inférieur au kilométrage de départ.',
+      immutable: 'Ce contrat est verrouillé et ne peut plus être modifié.',
+      deleteBlocked: 'Seuls les contrats brouillons peuvent être retirés.',
+      generic: 'Impossible d’enregistrer cette action de contrat pour le moment.',
+    },
+    upload: {
+      errors: {
+        validation: 'Veuillez choisir un document de contrat valide.',
+        fileTooLarge: 'Ce fichier est trop volumineux.',
+        unsupportedFile: 'Ce type de fichier n’est pas pris en charge.',
+        providerNotConfigured: 'Le stockage des documents n’est pas configuré.',
+        generic: 'Impossible d’envoyer ce document de contrat.',
+      },
+    },
   },
 
   invoices: {
@@ -700,6 +752,25 @@ export default {
       planLimitExceeded: 'La limite de ce plan serait dépassée. Réduisez les données initiales ou changez de plan.',
       alreadyComplete: 'L’onboarding est déjà terminé.',
       generic: 'Impossible de terminer l’onboarding pour le moment.',
+    },
+  },
+
+  settings: {
+    pricing: {
+      options: {
+        columns: {
+          option: 'Option',
+          pricePerDay: 'Prix / jour',
+          active: 'Actif',
+          actions: 'Actions',
+        },
+        active: 'Actif',
+        inactive: 'Inactif',
+        add: 'Ajouter une option',
+        delete: 'Supprimer',
+        saveFailed: 'Impossible d’enregistrer les extras de réservation.',
+        deleteFailed: 'Impossible de supprimer cet extra de réservation.',
+      },
     },
   },
 

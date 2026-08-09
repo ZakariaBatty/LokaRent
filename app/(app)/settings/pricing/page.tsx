@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { motion } from "motion/react"
 import { toast } from "sonner"
 import {
@@ -21,6 +21,7 @@ import { SeasonsManager } from "@/components/settings/pricing/seasons-manager"
 import { OptionsTable } from "@/components/settings/pricing/options-table"
 import { LateReturnPolicy } from "@/components/settings/pricing/late-return-policy"
 import { LivePreviewCard } from "@/components/settings/pricing/live-preview-card"
+import { useI18n } from "@/contexts/i18n-context"
 import {
   type CategoryRow,
   type LatePolicy,
@@ -33,6 +34,30 @@ import {
   suggestedMonth,
   suggestedWeek,
 } from "@/lib/pricing-grid-data"
+import {
+  deleteReservationExtraDefinitionAction,
+  listReservationExtraDefinitionsAction,
+  upsertReservationExtraDefinitionAction,
+} from "@/modules/reservations/actions/create-reservation.action"
+
+function optionIcon(key: string): PricingOption["icon"] {
+  const value = key.toLowerCase()
+  if (value.includes("driver") || value.includes("conducteur")) return "user-plus"
+  if (value.includes("baby") || value.includes("bebe") || value.includes("seat")) return "baby"
+  if (value.includes("insurance") || value.includes("assurance")) return "shield-check"
+  if (value.includes("delivery") || value.includes("livraison")) return "truck"
+  return "navigation"
+}
+
+function keyFromName(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80) || `option_${Math.random().toString(36).slice(2, 8)}`
+}
 
 type Snapshot = {
   categories: CategoryRow[]
@@ -51,6 +76,7 @@ const initial: Snapshot = {
 }
 
 export default function PricingSettingsPage() {
+  const { t } = useI18n()
   const [state, setState] = useState<Snapshot>(initial)
   const [saved, setSaved] = useState<Snapshot>(initial)
   const [saving, setSaving] = useState(false)
@@ -58,6 +84,31 @@ export default function PricingSettingsPage() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("citadine")
 
   const dirty = useMemo(() => JSON.stringify(state) !== JSON.stringify(saved), [state, saved])
+
+  useEffect(() => {
+    let cancelled = false
+    listReservationExtraDefinitionsAction().then((result) => {
+      if (cancelled || !result.success) return
+      const options = result.definitions.map((definition) => ({
+        id: definition.id,
+        key: definition.key,
+        name: definition.label,
+        description: definition.description ?? undefined,
+        icon: optionIcon(definition.key),
+        perDay: definition.price,
+        included: definition.isActive,
+        currency: definition.currency,
+        sortOrder: definition.sortOrder,
+      }))
+      const next = { ...state, options }
+      setState(next)
+      setSaved(next)
+    })
+    return () => {
+      cancelled = true
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function patchCategory(id: string, patch: Partial<CategoryRow>) {
     setState((s) => ({
@@ -171,7 +222,14 @@ export default function PricingSettingsPage() {
     }))
   }
 
-  function deleteOption(id: string) {
+  async function deleteOption(id: string) {
+    if (!id.startsWith("opt-")) {
+      const result = await deleteReservationExtraDefinitionAction({ definitionId: id })
+      if (!result.success) {
+        toast.error(t("settings.pricing.options.deleteFailed"))
+        return
+      }
+    }
     setState((s) => ({ ...s, options: s.options.filter((o) => o.id !== id) }))
   }
 
@@ -181,7 +239,25 @@ export default function PricingSettingsPage() {
 
   async function save() {
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 700))
+    const results = await Promise.all(
+      state.options.map((option, index) =>
+        upsertReservationExtraDefinitionAction({
+          definitionId: option.id.startsWith("opt-") ? undefined : option.id,
+          key: option.key ?? keyFromName(option.name),
+          label: option.name,
+          description: option.description,
+          price: option.perDay,
+          currency: option.currency ?? "MAD",
+          isActive: option.included,
+          sortOrder: option.sortOrder ?? index,
+        }),
+      ),
+    )
+    if (results.some((result) => !result.success)) {
+      setSaving(false)
+      toast.error(t("settings.pricing.options.saveFailed"))
+      return
+    }
     setSaved(state)
     setLastSavedAt(new Date())
     setSaving(false)

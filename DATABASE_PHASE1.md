@@ -1030,11 +1030,20 @@ reservation_pricing_snapshots
   reservation_id      uuid FK → reservations NOT NULL      -- NOT unique: a reservation has a chain of snapshots
   supersedes_id       uuid FK → reservation_pricing_snapshots NULL  -- prior snapshot this one replaces; NULL for the first
   is_current          boolean NOT NULL DEFAULT true        -- exactly one true per reservation
+  pricing_rule_id     uuid FK → vehicle_pricing_rules NULL -- resolved rate source when available
+  starts_at           timestamptz NULL                     -- frozen rental start used for pricing
+  ends_at             timestamptz NULL                     -- frozen rental end used for pricing
+  duration_value      smallint NULL                        -- frozen duration basis
+  duration_unit       text NULL                            -- e.g. day
   price_per_day       numeric(14,4) NOT NULL
   days                smallint NOT NULL
   extras_total        numeric(14,4) NOT NULL
   discount_amount     numeric(14,4) NOT NULL
+  discount_reason     text NULL
   total_amount        numeric(14,4) NOT NULL
+  mileage_limit       integer NULL
+  extra_mileage_rate  numeric(14,4) NULL
+  deposit_amount      numeric(14,4) NULL
   currency            char(3) NOT NULL
   locked_at           timestamptz NOT NULL
   locked_by           uuid FK → users NOT NULL
@@ -1042,9 +1051,38 @@ reservation_pricing_snapshots
   -- Current snapshot strategy: enforced by a PARTIAL UNIQUE index
   UNIQUE(reservation_id) WHERE is_current = true
   INDEX(reservation_id, created_at)   -- fetch full chain / latest by created_at
+  INDEX(pricing_rule_id)
 ```
 
 **Current snapshot strategy:** Queries that need the active price filter `WHERE reservation_id = ? AND is_current = true`. When a price is adjusted: (1) insert the new snapshot with `supersedes_id` = old row id and `is_current = true`; (2) set the old row's `is_current = false`. Both steps run in one transaction. The partial unique index guarantees no two current snapshots can coexist for a reservation while still permitting the full historical chain. Note the immutability rule applies to financial columns; `is_current` is the single permitted state flag flip and is itself captured in the audit trail.
+
+---
+
+#### `reservation_extra_definitions`
+
+Mutable catalog of selectable reservation extras, scoped at company level (`agency_id NULL`) or agency level. Reservation writes must copy the current label/price/currency into `reservation_extras`; browser-submitted labels and prices are not authoritative.
+
+```
+reservation_extra_definitions
+  id              uuid PK
+  company_id      uuid FK NOT NULL
+  agency_id       uuid FK NULL
+  key             text NOT NULL
+  label           text NOT NULL
+  description     text
+  price           numeric(14,4) NOT NULL
+  currency        char(3) NOT NULL
+  is_active       boolean NOT NULL DEFAULT true
+  sort_order      integer NOT NULL DEFAULT 0
+  created_at      timestamptz
+  updated_at      timestamptz
+  deleted_at      timestamptz
+  deleted_by      uuid
+
+  UNIQUE(company_id, key) WHERE agency_id IS NULL AND deleted_at IS NULL
+  UNIQUE(company_id, agency_id, key) WHERE agency_id IS NOT NULL AND deleted_at IS NULL
+  INDEX(company_id, agency_id, is_active, sort_order)
+```
 
 ---
 
@@ -1055,11 +1093,40 @@ reservation_extras
   id              uuid PK
   company_id      uuid FK NOT NULL
   reservation_id  uuid FK → reservations NOT NULL
+  definition_id   uuid FK → reservation_extra_definitions NULL
   label           text NOT NULL               -- "GPS", "Siège bébé"
-  unit_price      numeric(10,2) NOT NULL
+  unit_price      numeric(14,4) NOT NULL
   quantity        smallint NOT NULL DEFAULT 1
-  total_price     numeric(10,2) NOT NULL
+  total_price     numeric(14,4) NOT NULL
+  currency        char(3) NOT NULL
   created_at      timestamptz
+```
+
+Rows are immutable price snapshots for the reservation. A definition can be edited or deleted later without changing historical reservation rows.
+
+---
+
+#### `reservation_authorized_drivers`
+
+Renter/customer authorized drivers for legal/contract purposes. This is separate from `driver_reservation_assignments`, which is only for internal agency chauffeurs/drivers.
+
+```
+reservation_authorized_drivers
+  id                  uuid PK
+  company_id          uuid FK NOT NULL
+  agency_id           uuid FK NOT NULL
+  reservation_id      uuid FK → reservations NOT NULL
+  full_name           text NOT NULL
+  license_number      text NOT NULL
+  license_issued_at   date
+  license_expires_at  date
+  document_url        text
+  created_at          timestamptz
+  updated_at          timestamptz
+  deleted_at          timestamptz
+  deleted_by          uuid
+
+  INDEX(reservation_id, deleted_at)
 ```
 
 ---
@@ -1101,6 +1168,8 @@ contract_templates
   is_active       boolean NOT NULL DEFAULT true
   created_at      timestamptz
   updated_at      timestamptz
+
+  UNIQUE(company_id, agency_id) WHERE is_default = true AND deleted_at IS NULL AND agency_id IS NOT NULL
 ```
 
 ---
@@ -1358,6 +1427,7 @@ documents
 | `contract` | `contracts.id` |
 | `contract_inspection` | `contract_inspection_items.id` |
 | `expense` | `expenses.id` |
+| `reservation` | `reservations.id` |
 
 ---
 

@@ -35,6 +35,7 @@ export type DomainEventName =
   | "DepositCollected"
   | "DepositReleased"
   | "DepositForfeited"
+  | "PricingSnapshotAdjusted"
   | "PricingSnapshotLocked"
   | "ReservationCancelled"
   | "ReservationCompleted"

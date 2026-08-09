@@ -164,7 +164,24 @@ export default {
       deleteBlockedByStatus: 'Confirmed or active reservations cannot be deleted.',
       confirmationActorRequired: 'A signed-in user is required to confirm the reservation.',
       driverNotAssignable: 'The selected driver is not active or does not belong to this agency.',
+      extraDefinitionNotFound: 'The selected reservation extra is unavailable.',
+      lifecycleConflict: 'This reservation was changed by another action. Refresh and try again.',
+      repricingRequired: 'Confirmed reservation pricing changes must use the repricing workflow.',
+      repricingNotAllowed: 'This reservation status cannot be repriced.',
       generic: 'Unable to save this reservation action right now.',
+    },
+    upload: {
+      errors: {
+        validation: 'Please choose a valid reservation document.',
+        fileTooLarge: 'This file is too large.',
+        unsupportedFile: 'This file type is not supported.',
+        providerNotConfigured: 'Document storage is not configured.',
+        generic: 'Unable to upload this reservation document.',
+      },
+    },
+    documents: {
+      uploaded: 'Document uploaded.',
+      uploading: 'Uploading...',
     },
   },
 
@@ -514,6 +531,41 @@ export default {
     viewContract: 'View Contract',
     downloadContract: 'Download Contract',
     signContract: 'Sign Contract',
+    generate: {
+      action: 'Generate contract',
+      generating: 'Generating...',
+      created: 'Contract generated.',
+      pickupMileagePrompt: 'Pickup mileage',
+    },
+    preview: {
+      pdfUnavailable: 'PDF generation will be integrated separately.',
+    },
+    errors: {
+      validation: 'Check the contract fields.',
+      forbidden: 'You do not have permission to perform this contract action.',
+      notFound: 'Contract not found.',
+      alreadyExists: 'This reservation already has a contract.',
+      pricingSnapshotRequired: 'The reservation must have a confirmed pricing snapshot.',
+      templateRequired: 'No default contract template is configured for this agency.',
+      templateVersionRequired: 'The selected template has no version.',
+      reservationStatusNotAllowed: 'This reservation status cannot generate a contract.',
+      invalidPickupMileage: 'The pickup mileage is invalid.',
+      invalidStatusTransition: 'This contract cannot transition to that status.',
+      lifecycleConflict: 'This contract was changed by another action. Refresh and try again.',
+      returnMileageTooLow: 'Return mileage cannot be lower than pickup mileage.',
+      immutable: 'This contract is locked and can no longer be modified.',
+      deleteBlocked: 'Only draft contracts can be removed.',
+      generic: 'Unable to save this contract action right now.',
+    },
+    upload: {
+      errors: {
+        validation: 'Choose a valid contract document.',
+        fileTooLarge: 'This file is too large.',
+        unsupportedFile: 'This file type is not supported.',
+        providerNotConfigured: 'Document storage is not configured.',
+        generic: 'Unable to upload this contract document.',
+      },
+    },
   },
 
   invoices: {
@@ -700,6 +752,25 @@ export default {
       planLimitExceeded: 'This plan limit would be exceeded. Reduce the starter data or upgrade the plan.',
       alreadyComplete: 'Onboarding is already complete.',
       generic: 'Unable to complete onboarding right now.',
+    },
+  },
+
+  settings: {
+    pricing: {
+      options: {
+        columns: {
+          option: 'Option',
+          pricePerDay: 'Price / day',
+          active: 'Active',
+          actions: 'Actions',
+        },
+        active: 'Active',
+        inactive: 'Inactive',
+        add: 'Add an option',
+        delete: 'Delete',
+        saveFailed: 'Unable to save reservation extras.',
+        deleteFailed: 'Unable to delete this reservation extra.',
+      },
     },
   },
 

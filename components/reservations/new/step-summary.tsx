@@ -42,7 +42,7 @@ function formatDateTime(date: string, time: string) {
 }
 
 export function StepSummary() {
-  const { state, setState, setEtat, totals, cars, clients } = useWizard()
+  const { state, setState, setEtat, totals, cars, clients, extraDefinitions } = useWizard()
 
   const car = cars.find((c) => c.id === state.selectedCarId)
   const client =
@@ -58,16 +58,20 @@ export function StepSummary() {
       ? state.selectedClient?.phone ?? "—"
       : state.newClient.phone
 
-  const activeOptions = [
-    state.options.extraDriver && { icon: UserPlus, label: "Conducteur supp.", price: 50 },
-    state.options.gps && { icon: Navigation, label: "GPS", price: 30 },
-    state.options.babySeat && { icon: Baby, label: "Siège bébé", price: 20 },
-    state.options.extraInsurance && {
-      icon: Shield,
-      label: "Assurance complémentaire",
-      price: 80,
-    },
-  ].filter(Boolean) as { icon: typeof Shield; label: string; price: number }[]
+  const activeOptions = extraDefinitions
+    .filter((definition) => state.selectedExtraDefinitionIds.includes(definition.id))
+    .map((definition) => {
+      const value = `${definition.key} ${definition.label}`.toLowerCase()
+      const icon =
+        value.includes("driver") || value.includes("conducteur")
+          ? UserPlus
+          : value.includes("baby") || value.includes("bébé") || value.includes("bebe")
+            ? Baby
+            : value.includes("insurance") || value.includes("assurance")
+              ? Shield
+              : Navigation
+      return { icon, label: definition.label, price: definition.price }
+    })
 
   return (
     <div>

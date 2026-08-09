@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { motion } from "motion/react"
 import {
   Check,
@@ -13,8 +13,14 @@ import {
   Lock,
 } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import { type Reservation, type ContractChecklistItem } from "@/lib/reservations-data"
 import { cn } from "@/lib/utils"
+import {
+  listReservationDocumentsAction,
+  uploadReservationDocumentAction,
+} from "@/modules/reservations/actions/create-reservation.action"
+import { generateContractAction } from "@/modules/contracts/actions/create-contract.action"
 
 function ChecklistRow({ item }: { item: ContractChecklistItem }) {
   return (
@@ -33,7 +39,57 @@ function ChecklistRow({ item }: { item: ContractChecklistItem }) {
 }
 
 export function ContractTab({ reservation }: { reservation: Reservation }) {
+  const { t } = useI18n()
   const [dragOver, setDragOver] = useState<"departure" | "return" | null>(null)
+  const [documents, setDocuments] = useState<{ id: string; filename: string; storageUrl: string }[]>([])
+  const [uploadingZone, setUploadingZone] = useState<"departure" | "return" | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const selectedZoneRef = useRef<"departure" | "return">("departure")
+
+  useEffect(() => {
+    let cancelled = false
+    listReservationDocumentsAction({ reservationId: reservation.id }).then((result) => {
+      if (!cancelled && result.success) setDocuments(result.documents)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [reservation.id])
+
+  async function uploadFile(file: File, zone: "departure" | "return") {
+    setUploadingZone(zone)
+    const formData = new FormData()
+    formData.set("reservationId", reservation.id)
+    formData.set("file", file)
+    const result = await uploadReservationDocumentAction(formData)
+    setUploadingZone(null)
+    if (!result.success) {
+      toast.error(t(result.messageKey))
+      return
+    }
+    const refreshed = await listReservationDocumentsAction({ reservationId: reservation.id })
+    if (refreshed.success) setDocuments(refreshed.documents)
+    toast.success(t("reservations.documents.uploaded"))
+  }
+
+  async function generateContract() {
+    const mileage = window.prompt(t("contracts.generate.pickupMileagePrompt"))
+    if (!mileage) return
+    const pickupMileage = Number(mileage)
+    if (!Number.isInteger(pickupMileage) || pickupMileage < 0) {
+      toast.error(t("contracts.errors.invalidPickupMileage"))
+      return
+    }
+    setGenerating(true)
+    const result = await generateContractAction({ reservationId: reservation.id, pickupMileage })
+    setGenerating(false)
+    if (!result.success) {
+      toast.error(t(result.messageKey))
+      return
+    }
+    toast.success(t("contracts.generate.created"))
+  }
 
   const departureProgress =
     (reservation.contract.departureChecklist.filter((i) => i.ok).length /
@@ -62,15 +118,28 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             Les modifications du contrat sont auditées et requièrent les droits superviseur.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => toast.success("Contrat PDF téléchargé")}
-          className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
-        >
-          <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-          <Download className="relative h-3.5 w-3.5" />
-          <span className="relative">Télécharger PDF</span>
-        </button>
+        {reservation.contract.signed ? (
+          <button
+            type="button"
+            onClick={() => toast.success(t("contracts.preview.pdfUnavailable"))}
+            className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
+          >
+            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+            <Download className="relative h-3.5 w-3.5" />
+            <span className="relative">{t("contracts.downloadContract")}</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={generating}
+            onClick={generateContract}
+            className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)] disabled:opacity-60"
+          >
+            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+            <FileText className="relative h-3.5 w-3.5" />
+            <span className="relative">{generating ? t("contracts.generate.generating") : t("contracts.generate.action")}</span>
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -180,10 +249,20 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             <h4 className="text-sm font-semibold text-slate-900">Photos & justificatifs</h4>
           </div>
           <span className="text-[11px] font-bold text-slate-500">
-            {reservation.contract.photos} fichier{reservation.contract.photos > 1 ? "s" : ""}
+            {documents.length} fichier{documents.length > 1 ? "s" : ""}
           </span>
         </div>
 
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ""
+            if (file) void uploadFile(file, selectedZoneRef.current)
+          }}
+        />
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {(["departure", "return"] as const).map((zone) => (
             <button
@@ -197,9 +276,13 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               onDrop={(e) => {
                 e.preventDefault()
                 setDragOver(null)
-                toast.success("Photo ajoutée au dossier")
+                const file = e.dataTransfer.files[0]
+                if (file) void uploadFile(file, zone)
               }}
-              onClick={() => toast.info("Ouvrir le sélecteur de fichiers")}
+              onClick={() => {
+                selectedZoneRef.current = zone
+                fileInputRef.current?.click()
+              }}
               className={cn(
                 "flex h-32 flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed text-xs font-medium transition-colors",
                 dragOver === zone
@@ -212,9 +295,29 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
                 {zone === "departure" ? "Photos départ" : "Photos retour"}
               </span>
               <span className="text-[10px] text-slate-400">Glisser-déposer ou cliquer</span>
+              {uploadingZone === zone && (
+                <span className="text-[10px] font-semibold text-blue-600">{t("reservations.documents.uploading")}</span>
+              )}
             </button>
           ))}
         </div>
+        {documents.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {documents.map((document) => (
+              <a
+                key={document.id}
+                href={document.storageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center gap-2 rounded-lg border border-slate-100 px-3 py-2 text-xs font-medium text-slate-600 transition hover:border-blue-200 hover:bg-blue-50/40 hover:text-blue-700"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span className="min-w-0 flex-1 truncate">{document.filename}</span>
+                <Download className="h-3.5 w-3.5" />
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   )
