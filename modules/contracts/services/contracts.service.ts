@@ -76,22 +76,113 @@ function customerIdentity(customer: NonNullable<Awaited<ReturnType<typeof findRe
   return customer.customer.individual?.cinNumber ?? customer.customer.code;
 }
 
+function customerLicense(customer: NonNullable<Awaited<ReturnType<typeof findReservationById>>>) {
+  return customer.customer.individual?.drivingLicenseNumber ?? "";
+}
+
+function buildDefaultContractTemplateBody() {
+  return {
+    showLogo: true,
+    showPhone: true,
+    showEmail: true,
+    showRC: false,
+    showICE: false,
+    title: "CONTRAT DE LOCATION DE VEHICULE SANS CHAUFFEUR",
+    titleSize: "medium",
+    clauses: [
+      {
+        id: "parties",
+        number: 1,
+        title: "Parties et reservation",
+        enabled: true,
+        content:
+          "Le present contrat {{contract.code}} est etabli entre {{agency.name}} et {{customer.name}} pour la reservation {{reservation.code}}.",
+      },
+      {
+        id: "vehicule",
+        number: 2,
+        title: "Vehicule",
+        enabled: true,
+        content:
+          "Le vehicule loue est {{vehicle.label}}, immatricule {{vehicle.plate}}, categorie {{vehicle.category}}.",
+      },
+      {
+        id: "duree",
+        number: 3,
+        title: "Duree et lieux",
+        enabled: true,
+        content:
+          "La location commence le {{pickup.date}} et se termine le {{return.date}}. Retrait: {{pickup.location}}. Retour: {{return.location}}.",
+      },
+      {
+        id: "tarification",
+        number: 4,
+        title: "Tarification",
+        enabled: true,
+        content:
+          "Prix journalier: {{pricing.pricePerDay}} {{pricing.currency}}. Total options: {{pricing.extrasTotal}} {{pricing.currency}}. Remise: {{pricing.discountAmount}} {{pricing.currency}}. Total: {{pricing.total}} {{pricing.currency}}.",
+      },
+      {
+        id: "caution-kilometrage",
+        number: 5,
+        title: "Caution et kilometrage",
+        enabled: true,
+        content:
+          "Caution: {{pricing.depositAmount}} {{pricing.currency}}. Kilometrage inclus: {{pricing.mileageLimit}}. Kilometre supplementaire: {{pricing.extraMileageRate}} {{pricing.currency}}.",
+      },
+      {
+        id: "conducteurs",
+        number: 6,
+        title: "Conducteurs",
+        enabled: true,
+        content:
+          "Conducteur additionnel autorise: {{authorizedDriver.name}}. Chauffeur interne assigne: {{internalDriver.name}}.",
+      },
+      {
+        id: "responsabilite",
+        number: 7,
+        title: "Responsabilite du locataire",
+        enabled: true,
+        content:
+          "Le locataire reconnait avoir recu le vehicule en bon etat de marche et s'engage a respecter le code de la route. Toute infraction commise pendant la duree de location reste a sa charge.",
+      },
+      {
+        id: "signatures",
+        number: 8,
+        title: "Signatures",
+        enabled: true,
+        content:
+          "Signature agence: ____________________. Signature client: ____________________.",
+      },
+    ],
+    showClientSignature: true,
+    showAgencySignature: true,
+    footerText: "{{agency.name}} - {{agency.phone}} - {{agency.email}}",
+    showPageNumber: true,
+    language: "fr",
+  };
+}
+
+function replaceTemplateVariables(value: string, variables: Record<string, string>) {
+  return value.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, key: string) => variables[key] ?? "");
+}
+
 function renderTemplate(body: unknown, variables: Record<string, string>) {
   const raw =
     typeof body === "string"
       ? body
       : typeof body === "object" && body && "title" in body
-        ? defaultTemplateHtml(body as { title?: string; clauses?: { title: string; content: string; enabled: boolean }[]; footerText?: string })
+        ? defaultTemplateHtml(body as { title?: string; clauses?: { title: string; content: string; enabled: boolean }[]; footerText?: string }, variables)
         : String(body ?? "");
-  return raw.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_match, key: string) => variables[key] ?? "");
+  return replaceTemplateVariables(raw, variables);
 }
 
-function defaultTemplateHtml(template: { title?: string; clauses?: { title: string; content: string; enabled: boolean }[]; footerText?: string }) {
+function defaultTemplateHtml(template: { title?: string; clauses?: { title: string; content: string; enabled: boolean }[]; footerText?: string }, variables: Record<string, string>) {
   const clauses = (template.clauses ?? [])
     .filter((clause) => clause.enabled)
-    .map((clause, index) => `<h3>${index + 1}. ${escapeHtml(clause.title)}</h3><p>${escapeHtml(clause.content)}</p>`)
+    .map((clause, index) => `<h3>${index + 1}. ${escapeHtml(replaceTemplateVariables(clause.title, variables))}</h3><p>${escapeHtml(replaceTemplateVariables(clause.content, variables))}</p>`)
     .join("");
-  return `<article><h1>${escapeHtml(template.title ?? "Contract")}</h1>{{contract.summary}}${clauses}<footer>${escapeHtml(template.footerText ?? "")}</footer></article>`;
+  return `<article><h1>${escapeHtml(replaceTemplateVariables(template.title ?? "Contract", variables))}</h1>{{contract.summary}}${clauses}<footer>${escapeHtml(replaceTemplateVariables(template.footerText ?? "", variables))}</footer></article>`;
 }
 
 function escapeHtml(value: string) {
@@ -136,6 +227,11 @@ function buildSnapshot(input: {
     totalPrice: extra.totalPrice.toString(),
     currency: extra.currency,
   }));
+  const primaryAuthorizedDriver = additionalDrivers[0];
+  const primaryInternalDriver = internalDrivers[0];
+  const extrasLabel = extras.length
+    ? extras.map((extra) => `${extra.label} x${extra.quantity}: ${extra.totalPrice} ${extra.currency}`).join(", ")
+    : "";
   const snapshot = {
     contract: {
       code: input.code,
@@ -187,6 +283,7 @@ function buildSnapshot(input: {
       id: reservation.customerId,
       name: customerName(reservation),
       identity: customerIdentity(reservation),
+      licenseNumber: customerLicense(reservation),
       phone: reservation.customer.phone,
       email: reservation.customer.email,
       city: reservation.customer.city,
@@ -220,21 +317,56 @@ function buildSnapshot(input: {
   };
   const variables = {
     "contract.code": input.code,
+    "contract.notes": input.notes ?? "",
     "reservation.code": reservation.code,
     "customer.name": snapshot.customer.name,
     "customer.identity": snapshot.customer.identity,
+    "customer.license": snapshot.customer.licenseNumber,
     "customer.phone": reservation.customer.phone ?? "",
+    "customer.email": reservation.customer.email ?? "",
+    "customer.city": reservation.customer.city ?? "",
     "vehicle.label": `${reservation.vehicle.brand} ${reservation.vehicle.model}`,
     "vehicle.plate": reservation.vehicle.plate,
+    "vehicle.category": reservation.vehicle.category?.name ?? "",
+    "vehicle.vin": reservation.vehicle.vin ?? "",
+    "vehicle.year": reservation.vehicle.year ? String(reservation.vehicle.year) : "",
     "pickup.date": snapshot.reservation.startsAt,
+    "pickup.location": reservation.pickupLocation ?? "",
     "return.date": snapshot.reservation.endsAt,
+    "return.location": reservation.returnLocation ?? "",
+    "pricing.pricePerDay": pricing.pricePerDay.toString(),
+    "pricing.days": String(pricing.days),
+    "pricing.extrasTotal": pricing.extrasTotal.toString(),
+    "pricing.discountAmount": pricing.discountAmount.toString(),
     "pricing.total": pricing.totalAmount.toString(),
+    "pricing.depositAmount": pricing.depositAmount?.toString() ?? reservation.depositAmount.toString(),
+    "pricing.mileageLimit": pricing.mileageLimit === null ? "" : String(pricing.mileageLimit),
+    "pricing.extraMileageRate": pricing.extraMileageRate?.toString() ?? "",
+    "pricing.extras": extrasLabel,
     "pricing.currency": pricing.currency,
     "company.name": snapshot.company?.name ?? "",
     "agency.name": snapshot.agency?.name ?? "",
     "agency.phone": snapshot.agency?.phone ?? "",
     "agency.email": snapshot.agency?.email ?? "",
-    "contract.summary": `<section><p>${escapeHtml(snapshot.customer.name)} - ${escapeHtml(reservation.vehicle.plate)} - ${escapeHtml(pricing.totalAmount.toString())} ${escapeHtml(pricing.currency)}</p></section>`,
+    "authorizedDriver.name": primaryAuthorizedDriver?.fullName ?? "",
+    "authorizedDriver.license": primaryAuthorizedDriver?.licenseNumber ?? "",
+    "internalDriver.name": primaryInternalDriver?.fullName ?? "",
+    "internalDriver.phone": primaryInternalDriver?.phone ?? "",
+    "contract.summary": [
+      `<section>`,
+      `<h2>Conditions particulieres</h2>`,
+      `<p><strong>${escapeHtml(snapshot.agency?.name ?? snapshot.company?.name ?? "")}</strong></p>`,
+      `<p>Reservation ${escapeHtml(reservation.code)} - Contrat ${escapeHtml(input.code)}</p>`,
+      `<p>Client: ${escapeHtml(snapshot.customer.name)} - Identite: ${escapeHtml(snapshot.customer.identity)} - Permis: ${escapeHtml(snapshot.customer.licenseNumber)}</p>`,
+      `<p>Contact: ${escapeHtml(reservation.customer.phone ?? "")} ${escapeHtml(reservation.customer.email ?? "")}</p>`,
+      `<p>Vehicule: ${escapeHtml(reservation.vehicle.brand)} ${escapeHtml(reservation.vehicle.model)} - ${escapeHtml(reservation.vehicle.plate)}</p>`,
+      `<p>Periode: ${escapeHtml(snapshot.reservation.startsAt)} au ${escapeHtml(snapshot.reservation.endsAt)} (${escapeHtml(String(snapshot.reservation.durationValue))} ${escapeHtml(snapshot.reservation.durationUnit)})</p>`,
+      `<p>Lieux: ${escapeHtml(reservation.pickupLocation ?? "")} / ${escapeHtml(reservation.returnLocation ?? "")}</p>`,
+      `<p>Prix: ${escapeHtml(pricing.pricePerDay.toString())} ${escapeHtml(pricing.currency)} x ${escapeHtml(String(pricing.days))}. Extras: ${escapeHtml(extrasLabel)}. Remise: ${escapeHtml(pricing.discountAmount.toString())}. Total: ${escapeHtml(pricing.totalAmount.toString())} ${escapeHtml(pricing.currency)}.</p>`,
+      `<p>Caution: ${escapeHtml(pricing.depositAmount?.toString() ?? reservation.depositAmount.toString())} ${escapeHtml(pricing.currency)}. Kilometrage inclus: ${escapeHtml(pricing.mileageLimit === null ? "" : String(pricing.mileageLimit))}. Kilometre supplementaire: ${escapeHtml(pricing.extraMileageRate?.toString() ?? "")} ${escapeHtml(pricing.currency)}.</p>`,
+      `<p>Conducteur additionnel: ${escapeHtml(primaryAuthorizedDriver?.fullName ?? "")}. Chauffeur interne: ${escapeHtml(primaryInternalDriver?.fullName ?? "")}.</p>`,
+      `</section>`,
+    ].join(""),
   };
   const renderedHtml = renderTemplate(input.version.body, variables);
   return { snapshot: snapshot as Prisma.InputJsonValue, renderedHtml };
@@ -329,6 +461,92 @@ export async function getDefaultContractTemplateService(input: {
   const template = await findDefaultContractTemplate(input);
   if (!template) throw createNotFoundError("Default contract template", input);
   return template;
+}
+
+export async function ensureDefaultContractTemplateService(input: {
+  context: ContractServiceContext;
+}) {
+  return runInTransaction(async (tx) => {
+    const templates = await listContractTemplates({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      includeInactive: true,
+    }, tx);
+    const currentDefault = templates.find((template) => template.isDefault && template.isActive);
+    if (currentDefault) {
+      if (currentDefault.versions.length > 0) return currentDefault;
+      await createContractTemplateVersion({
+        id: createId(),
+        companyId: input.context.companyId,
+        templateId: currentDefault.id,
+        versionNumber: currentDefault.version || 1,
+        body: buildDefaultContractTemplateBody() as Prisma.InputJsonValue,
+        createdBy: input.context.userId ?? null,
+      }, tx);
+      return findDefaultContractTemplate(input.context, tx);
+    }
+
+    const activeTemplate = templates.find((template) => template.isActive);
+    if (activeTemplate) {
+      await clearDefaultContractTemplates({
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        excludeTemplateId: activeTemplate.id,
+      }, tx);
+      await updateContractTemplate({
+        companyId: input.context.companyId,
+        templateId: activeTemplate.id,
+        data: { isDefault: true },
+      }, tx);
+      if (activeTemplate.versions.length === 0) {
+        await createContractTemplateVersion({
+          id: createId(),
+          companyId: input.context.companyId,
+          templateId: activeTemplate.id,
+          versionNumber: activeTemplate.version || 1,
+          body: activeTemplate.content || buildDefaultContractTemplateBody() as Prisma.InputJsonValue,
+          createdBy: input.context.userId ?? null,
+        }, tx);
+      }
+      await writeContractLogs({
+        context: input.context,
+        contractId: activeTemplate.id,
+        action: "ContractTemplateDefaultEnsured",
+        verb: "ContractTemplateDefaultEnsured",
+        changes: { templateId: activeTemplate.id },
+      }, tx);
+      return findDefaultContractTemplate(input.context, tx);
+    }
+
+    const body = buildDefaultContractTemplateBody();
+    const templateId = createId();
+    const template = await createContractTemplate({
+      id: templateId,
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      name: "LokaRent Default Contract Template",
+      content: JSON.stringify(body),
+      version: 1,
+      isDefault: true,
+      isActive: true,
+    }, tx);
+    const version = await createContractTemplateVersion({
+      id: createId(),
+      companyId: input.context.companyId,
+      templateId,
+      versionNumber: 1,
+      body: body as Prisma.InputJsonValue,
+      createdBy: input.context.userId ?? null,
+    }, tx);
+    await writeContractLogs({
+      context: input.context,
+      contractId: templateId,
+      action: "ContractTemplateDefaultCreated",
+      verb: "ContractTemplateDefaultCreated",
+      changes: { templateId, versionId: version.id },
+    }, tx);
+    return { ...template, versions: [version] };
+  });
 }
 
 export async function createContractTemplateService(input: {
@@ -918,6 +1136,7 @@ export const contractsService = {
   getContractByReservationService,
   listContractsService,
   getDefaultContractTemplateService,
+  ensureDefaultContractTemplateService,
   listContractTemplatesService,
   listContractTemplateVersionsService,
   createContractTemplateService,

@@ -11,6 +11,7 @@ import {
   DEFAULT_TEMPLATE,
 } from "@/lib/contract-template-data"
 import {
+  ensureDefaultContractTemplateAction,
   listContractTemplatesAction,
   upsertContractTemplateAction,
 } from "@/modules/contracts/actions/create-contract.action"
@@ -45,15 +46,24 @@ export default function ContractTemplatePage() {
 
   useEffect(() => {
     let cancelled = false
-    listContractTemplatesAction().then((result) => {
-      if (cancelled || !result.success) return
-      const defaultTemplate = result.templates.find((item) => item.isDefault) ?? result.templates[0]
+    const applyPersistedTemplate = (defaultTemplate: { id: string; versions: { body: unknown }[] }) => {
       const latestVersion = defaultTemplate?.versions[0]
       if (!defaultTemplate || !latestVersion || typeof latestVersion.body !== "object" || latestVersion.body === null) return
       const body = latestVersion.body as ContractTemplate
       setTemplateId(defaultTemplate.id)
       setTemplate(body)
       setBaseline(body)
+    }
+    listContractTemplatesAction().then(async (result) => {
+      if (cancelled || !result.success) return
+      const defaultTemplate = result.templates.find((item) => item.isDefault) ?? result.templates[0]
+      if (defaultTemplate) {
+        applyPersistedTemplate(defaultTemplate)
+        return
+      }
+      const ensured = await ensureDefaultContractTemplateAction()
+      if (cancelled || !ensured.success || !ensured.template) return
+      applyPersistedTemplate(ensured.template)
     })
     return () => {
       cancelled = true

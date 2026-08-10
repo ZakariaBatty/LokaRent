@@ -51,14 +51,16 @@ The following phases are COMPLETE and MUST NOT be recreated unless explicitly re
 
 ✅ Drivers CRUD
 
+✅ Reservations CRUD
+
+✅ Contracts CRUD
+
 Current implementation phase:
 
-➡ Reservations CRUD
+➡ Finances CRUD
 
 Upcoming phases:
 
-- Contracts CRUD
-- Finances CRUD
 - Workspace / Settings integration
 - Alerts / Calendar / Reports integration
 - Dashboard
@@ -1066,15 +1068,15 @@ Completed:
 ✅ Vehicle Pricing Rules  
 ✅ Vehicle Photos  
 ✅ Drivers CRUD
+✅ Reservations CRUD
+✅ Contracts CRUD
 
 Current:
 
-➡ Reservations CRUD
+➡ Finances CRUD
 
 Next:
 
-⬜ Contracts CRUD  
-⬜ Finances CRUD  
 ⬜ Workspace / Settings integration  
 ⬜ Alerts / Calendar / Reports integration  
 ⬜ Dashboard  

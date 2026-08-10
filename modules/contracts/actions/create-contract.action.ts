@@ -22,6 +22,7 @@ import {
   createContractSignatureService,
   createInspectionItemService,
   deleteContractService,
+  ensureDefaultContractTemplateService,
   generateContractFromReservationService,
   getContractByReservationService,
   getContractService,
@@ -177,6 +178,17 @@ export async function listContractTemplatesAction() {
     const context = await getActionContext(PERMISSIONS.SETTINGS_CONTRACT_TEMPLATE_MANAGE);
     const templates = await listContractTemplatesService({ ...context, includeInactive: true });
     return { success: true as const, templates };
+  } catch (error) {
+    return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function ensureDefaultContractTemplateAction() {
+  try {
+    const context = await getActionContext(PERMISSIONS.SETTINGS_CONTRACT_TEMPLATE_MANAGE);
+    const template = await ensureDefaultContractTemplateService({ context });
+    revalidateContractPaths();
+    return { success: true as const, template };
   } catch (error) {
     return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }
