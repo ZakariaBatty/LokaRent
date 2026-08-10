@@ -20,6 +20,7 @@ import {
   createContractTemplateVersion,
   findContractById,
   findContractByReservation,
+  findContractOrganizationSnapshot,
   findCurrentContractTemplateVersion,
   findDefaultContractTemplate,
   listContractTemplates,
@@ -107,6 +108,7 @@ function buildSnapshot(input: {
   pricingSnapshot: NonNullable<Awaited<ReturnType<typeof findCurrentPricingSnapshot>>>;
   template: NonNullable<Awaited<ReturnType<typeof findDefaultContractTemplate>>>;
   version: NonNullable<Awaited<ReturnType<typeof findCurrentContractTemplateVersion>>>;
+  organization: Awaited<ReturnType<typeof findContractOrganizationSnapshot>>;
   code: string;
   pickupMileage: number;
   pickupFuelLevel?: number | null;
@@ -149,6 +151,28 @@ function buildSnapshot(input: {
       versionNumber: input.version.versionNumber,
       body: jsonClone(input.version.body),
     },
+    company: input.organization.company
+      ? {
+          id: input.organization.company.id,
+          name: input.organization.company.name,
+          countryCode: input.organization.company.countryCode,
+          timezone: input.organization.company.timezone,
+          currency: input.organization.company.currency,
+        }
+      : null,
+    agency: input.organization.agency
+      ? {
+          id: input.organization.agency.id,
+          name: input.organization.agency.name,
+          code: input.organization.agency.code,
+          phone: input.organization.agency.phone,
+          email: input.organization.agency.email,
+          address: jsonClone(input.organization.agency.address),
+          countryCode: input.organization.agency.countryCode,
+          timezone: input.organization.agency.timezone,
+          currency: input.organization.agency.currency,
+        }
+      : null,
     reservation: {
       id: reservation.id,
       code: reservation.code,
@@ -206,6 +230,10 @@ function buildSnapshot(input: {
     "return.date": snapshot.reservation.endsAt,
     "pricing.total": pricing.totalAmount.toString(),
     "pricing.currency": pricing.currency,
+    "company.name": snapshot.company?.name ?? "",
+    "agency.name": snapshot.agency?.name ?? "",
+    "agency.phone": snapshot.agency?.phone ?? "",
+    "agency.email": snapshot.agency?.email ?? "",
     "contract.summary": `<section><p>${escapeHtml(snapshot.customer.name)} - ${escapeHtml(reservation.vehicle.plate)} - ${escapeHtml(pricing.totalAmount.toString())} ${escapeHtml(pricing.currency)}</p></section>`,
   };
   const renderedHtml = renderTemplate(input.version.body, variables);
@@ -465,17 +493,18 @@ export async function generateContractFromReservationService(input: {
     await lockReservationRow(scope, tx);
     const reservation = await findReservationById(scope, tx);
     if (!reservation) throw createNotFoundError("Reservation", scope);
-    if (!contractGenerationStatuses.includes(reservation.status)) throw createValidationError("CONTRACT_RESERVATION_STATUS_NOT_ALLOWED");
+    if (!contractGenerationStatuses.includes(reservation.status)) throw createValidationError("CONTRACT_GENERATION_NOT_ALLOWED");
     const existing = await findContractByReservation(scope, tx);
     if (existing) throw createValidationError("CONTRACT_ALREADY_EXISTS");
     const pricingSnapshot = await findCurrentPricingSnapshot({ companyId: input.context.companyId, reservationId: input.reservationId }, tx);
-    if (!pricingSnapshot) throw createValidationError("CONTRACT_PRICING_SNAPSHOT_REQUIRED");
+    if (!pricingSnapshot) throw createValidationError("CONTRACT_PRICING_SNAPSHOT_MISSING");
     const template = input.templateId
       ? await listContractTemplates({ companyId: input.context.companyId, agencyId: input.context.agencyId, includeInactive: false }, tx).then((items) => items.find((item) => item.id === input.templateId) ?? null)
       : await findDefaultContractTemplate(input.context, tx);
-    if (!template) throw createValidationError("CONTRACT_TEMPLATE_REQUIRED");
+    if (!template) throw createValidationError(input.templateId ? "CONTRACT_TEMPLATE_NOT_FOUND" : "CONTRACT_DEFAULT_TEMPLATE_NOT_CONFIGURED");
     const version = await findCurrentContractTemplateVersion({ companyId: input.context.companyId, templateId: template.id }, tx);
-    if (!version) throw createValidationError("CONTRACT_TEMPLATE_VERSION_REQUIRED");
+    if (!version) throw createValidationError("CONTRACT_TEMPLATE_VERSION_NOT_FOUND");
+    const organization = await findContractOrganizationSnapshot(input.context, tx);
     const sequence = await generateContractCode(input.context, tx);
     contractCode = sequence.formatted;
     const pickupAt = input.pickupAt ?? new Date();
@@ -484,6 +513,7 @@ export async function generateContractFromReservationService(input: {
       pricingSnapshot,
       template,
       version,
+      organization,
       code: contractCode,
       pickupMileage: input.pickupMileage,
       pickupFuelLevel: input.pickupFuelLevel,

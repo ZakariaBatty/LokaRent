@@ -89,6 +89,7 @@ function history(contract: ContractPayload): HistoryEvent[] {
 export function mapContractToUi(contract: ContractPayload): Contract {
   const currentSnapshot = contract.reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? contract.reservation.pricingSnapshots[0];
   const additionalDriver = contract.reservation.authorizedDrivers[0];
+  const assignedDriver = contract.reservation.driverAssignments[0];
   const signedByClient = contract.signatures.some((signature) => signature.signerType === SignerType.customer);
   const signedByAgency = contract.signatures.some((signature) => signature.signerType === SignerType.agent);
   const returnItems = contract.inspectionItems.filter((item) => item.event === InspectionEvent.return);
@@ -106,6 +107,14 @@ export function mapContractToUi(contract: ContractPayload): Contract {
     status: mapContractStatusToUi(contract.status),
     createdAt: contract.createdAt.toISOString(),
     createdBy: contract.signatures.find((signature) => signature.signerType === SignerType.agent)?.signerName ?? "System",
+    reservationCode: contract.reservation.code,
+    renderedHtml: contract.renderedHtml,
+    contentHash: contract.contentHash,
+    template: {
+      id: contract.template?.id,
+      name: contract.template?.name,
+      versionNumber: contract.templateVersion?.versionNumber,
+    },
     client: {
       fullName: customerName(contract),
       cinMasked: customerCin(contract),
@@ -117,6 +126,13 @@ export function mapContractToUi(contract: ContractPayload): Contract {
           fullName: additionalDriver.fullName,
           cinMasked: "",
           permis: additionalDriver.licenseNumber,
+        }
+      : undefined,
+    assignedDriver: assignedDriver
+      ? {
+          fullName: `${assignedDriver.driver.firstName} ${assignedDriver.driver.lastName}`,
+          phone: assignedDriver.driver.phone,
+          role: assignedDriver.role,
         }
       : undefined,
     car: {
@@ -141,6 +157,9 @@ export function mapContractToUi(contract: ContractPayload): Contract {
       discount: Number(currentSnapshot?.discountAmount ?? contract.reservation.discountAmount),
       options: contract.reservation.extras.map((extra) => ({ label: extra.label, amount: Number(extra.totalPrice) })),
       total: Number(currentSnapshot?.totalAmount ?? contract.reservation.totalAmount),
+      currency: currentSnapshot?.currency ?? contract.reservation.currency,
+      mileageLimit: currentSnapshot?.mileageLimit ?? null,
+      extraMileageRate: currentSnapshot?.extraMileageRate ? Number(currentSnapshot.extraMileageRate) : null,
     },
     caution: {
       amount: Number(currentSnapshot?.depositAmount ?? contract.reservation.depositAmount),

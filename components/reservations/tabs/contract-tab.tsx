@@ -15,12 +15,17 @@ import {
 import { toast } from "sonner"
 import { useI18n } from "@/contexts/i18n-context"
 import { type Reservation, type ContractChecklistItem } from "@/lib/reservations-data"
+import { type Contract } from "@/lib/contracts-data"
 import { cn } from "@/lib/utils"
 import {
   listReservationDocumentsAction,
   uploadReservationDocumentAction,
 } from "@/modules/reservations/actions/create-reservation.action"
-import { generateContractAction } from "@/modules/contracts/actions/create-contract.action"
+import {
+  generateContractAction,
+  getContractByReservationAction,
+  listContractDocumentsAction,
+} from "@/modules/contracts/actions/create-contract.action"
 
 function ChecklistRow({ item }: { item: ContractChecklistItem }) {
   return (
@@ -42,6 +47,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   const { t } = useI18n()
   const [dragOver, setDragOver] = useState<"departure" | "return" | null>(null)
   const [documents, setDocuments] = useState<{ id: string; filename: string; storageUrl: string }[]>([])
+  const [contract, setContract] = useState<Contract | null>(null)
   const [uploadingZone, setUploadingZone] = useState<"departure" | "return" | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -49,13 +55,32 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
 
   useEffect(() => {
     let cancelled = false
-    listReservationDocumentsAction({ reservationId: reservation.id }).then((result) => {
-      if (!cancelled && result.success) setDocuments(result.documents)
-    })
+    async function loadContractContext() {
+      const contractResult = await getContractByReservationAction({ reservationId: reservation.id })
+      if (cancelled) return
+      if (contractResult.success) {
+        setContract(contractResult.contract)
+        const documentResult = await listContractDocumentsAction({ contractId: contractResult.contract.id })
+        if (!cancelled && documentResult.success) setDocuments(documentResult.documents)
+        return
+      }
+      setContract(null)
+      const reservationDocuments = await listReservationDocumentsAction({ reservationId: reservation.id })
+      if (!cancelled && reservationDocuments.success) setDocuments(reservationDocuments.documents)
+    }
+    void loadContractContext()
     return () => {
       cancelled = true
     }
   }, [reservation.id])
+
+  async function refreshContractContext() {
+    const contractResult = await getContractByReservationAction({ reservationId: reservation.id })
+    if (!contractResult.success) return
+    setContract(contractResult.contract)
+    const documentResult = await listContractDocumentsAction({ contractId: contractResult.contract.id })
+    if (documentResult.success) setDocuments(documentResult.documents)
+  }
 
   async function uploadFile(file: File, zone: "departure" | "return") {
     setUploadingZone(zone)
@@ -73,6 +98,20 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
     toast.success(t("reservations.documents.uploaded"))
   }
 
+  function downloadFrozenContract() {
+    if (!contract?.renderedHtml) {
+      toast.error(t("contracts.errors.downloadUnavailable"))
+      return
+    }
+    const blob = new Blob([contract.renderedHtml], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${contract.code}.html`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function generateContract() {
     const mileage = window.prompt(t("contracts.generate.pickupMileagePrompt"))
     if (!mileage) return
@@ -88,6 +127,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
       toast.error(t(result.messageKey))
       return
     }
+    await refreshContractContext()
     toast.success(t("contracts.generate.created"))
   }
 
@@ -118,10 +158,10 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             Les modifications du contrat sont auditées et requièrent les droits superviseur.
           </p>
         </div>
-        {reservation.contract.signed ? (
+        {contract ? (
           <button
             type="button"
-            onClick={() => toast.success(t("contracts.preview.pdfUnavailable"))}
+            onClick={downloadFrozenContract}
             className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
           >
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
@@ -141,6 +181,65 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
           </button>
         )}
       </div>
+
+      {contract && (
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-semibold text-slate-900">{contract.code}</h4>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {contract.template?.name ?? t("contracts.details.template")} - v{contract.template?.versionNumber ?? 1}
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold uppercase text-slate-600">
+              {t(`contracts.statuses.${contract.status}`)}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <p className="text-slate-400">{t("contracts.client")}</p>
+              <p className="font-semibold text-slate-800">{contract.client.fullName}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.vehicle")}</p>
+              <p className="font-semibold text-slate-800">
+                {contract.car.brand} {contract.car.model} - {contract.car.plate}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.assignedDriver")}</p>
+              <p className="font-semibold text-slate-800">{contract.assignedDriver?.fullName ?? "-"}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.authorizedDriver")}</p>
+              <p className="font-semibold text-slate-800">{contract.additionalDriver?.fullName ?? "-"}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.startDate")}</p>
+              <p className="font-semibold text-slate-800">{new Date(contract.period.start).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.endDate")}</p>
+              <p className="font-semibold text-slate-800">{new Date(contract.period.end).toLocaleDateString()}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.mileageTerms")}</p>
+              <p className="font-semibold text-slate-800">
+                {contract.pricing.mileageLimit ?? "-"} / {contract.pricing.extraMileageRate ?? "-"}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.deposit")}</p>
+              <p className="font-semibold text-slate-800">{contract.caution.amount} {contract.pricing.currency ?? "MAD"}</p>
+            </div>
+          </div>
+          {contract.renderedHtml && (
+            <div className="mt-4 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="contract-preview text-xs text-slate-700" dangerouslySetInnerHTML={{ __html: contract.renderedHtml }} />
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Départ */}

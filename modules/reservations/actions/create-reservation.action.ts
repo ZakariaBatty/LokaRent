@@ -85,6 +85,7 @@ function messageKeyForError(error: unknown) {
     if (error.message === "RESERVATION_VEHICLE_NOT_FOUND") return "reservations.errors.vehicleNotFound";
     if (error.message === "RESERVATION_SOURCE_NOT_FOUND") return "reservations.errors.sourceNotFound";
     if (error.message === "RESERVATION_VEHICLE_NOT_AVAILABLE") return "reservations.errors.vehicleNotAvailable";
+    if (error.message === "RESERVATION_VEHICLE_STATUS_INVALID") return "reservations.errors.vehicleStatusInvalid";
     if (error.message === "RESERVATION_VEHICLE_UNAVAILABLE") return "reservations.errors.vehicleUnavailable";
     if (error.message === "RESERVATION_CUSTOMER_BLACKLISTED") return "reservations.errors.customerBlacklisted";
     if (error.message === "RESERVATION_INVALID_STATUS_TRANSITION") return "reservations.errors.invalidStatusTransition";

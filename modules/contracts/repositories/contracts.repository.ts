@@ -151,6 +151,23 @@ export async function findCurrentContractTemplateVersion(
   });
 }
 
+export async function findContractOrganizationSnapshot(
+  input: { companyId: string; agencyId: string },
+  db: DatabaseClient = prisma,
+) {
+  const [company, agency] = await Promise.all([
+    db.company.findFirst({
+      where: { id: input.companyId, deletedAt: null },
+      select: { id: true, name: true, countryCode: true, timezone: true, currency: true },
+    }),
+    db.agency.findFirst({
+      where: { id: input.agencyId, companyId: input.companyId, deletedAt: null },
+      select: { id: true, name: true, code: true, phone: true, email: true, address: true, countryCode: true, timezone: true, currency: true },
+    }),
+  ]);
+  return { company, agency };
+}
+
 export async function listContractTemplateVersions(
   input: { companyId: string; templateId: string },
   db: DatabaseClient = prisma,

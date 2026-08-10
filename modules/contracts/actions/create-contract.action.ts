@@ -31,6 +31,7 @@ import {
   updateInspectionItemService,
   type ContractServiceContext,
 } from "../services/contracts.service";
+import { mapContractToUi } from "../mappers/contract.mapper";
 
 export type ContractActionResult =
   | { success: true; contractId?: string }
@@ -47,9 +48,15 @@ function messageKeyForError(error: unknown) {
   if (error.code === "VALIDATION_ERROR") {
     if (error.message === "CONTRACT_ALREADY_EXISTS") return "contracts.errors.alreadyExists";
     if (error.message === "CONTRACT_PRICING_SNAPSHOT_REQUIRED") return "contracts.errors.pricingSnapshotRequired";
+    if (error.message === "CONTRACT_PRICING_SNAPSHOT_MISSING") return "contracts.errors.pricingSnapshotRequired";
     if (error.message === "CONTRACT_TEMPLATE_REQUIRED") return "contracts.errors.templateRequired";
+    if (error.message === "CONTRACT_DEFAULT_TEMPLATE_NOT_CONFIGURED") return "contracts.errors.defaultTemplateNotConfigured";
+    if (error.message === "CONTRACT_TEMPLATE_NOT_FOUND") return "contracts.errors.templateNotFound";
     if (error.message === "CONTRACT_TEMPLATE_VERSION_REQUIRED") return "contracts.errors.templateVersionRequired";
+    if (error.message === "CONTRACT_TEMPLATE_VERSION_NOT_FOUND") return "contracts.errors.templateVersionNotFound";
     if (error.message === "CONTRACT_RESERVATION_STATUS_NOT_ALLOWED") return "contracts.errors.reservationStatusNotAllowed";
+    if (error.message === "CONTRACT_RESERVATION_NOT_CONFIRMED") return "contracts.errors.reservationNotConfirmed";
+    if (error.message === "CONTRACT_GENERATION_NOT_ALLOWED") return "contracts.errors.generationNotAllowed";
     if (error.message === "CONTRACT_INVALID_PICKUP_MILEAGE") return "contracts.errors.invalidPickupMileage";
     if (error.message === "CONTRACT_INVALID_STATUS_TRANSITION") return "contracts.errors.invalidStatusTransition";
     if (error.message === "CONTRACT_LIFECYCLE_CONFLICT") return "contracts.errors.lifecycleConflict";
@@ -115,7 +122,7 @@ export async function getContractByReservationAction(input: unknown) {
   try {
     const context = await getActionContext(PERMISSIONS.CONTRACTS_VIEW);
     const contract = await getContractByReservationService({ ...context, reservationId: parsed.data.reservationId });
-    return { success: true as const, contract };
+    return { success: true as const, contract: mapContractToUi(contract) };
   } catch (error) {
     return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }
@@ -127,7 +134,7 @@ export async function getContractAction(input: unknown) {
   try {
     const context = await getActionContext(PERMISSIONS.CONTRACTS_VIEW);
     const contract = await getContractService({ ...context, contractId: parsed.data.contractId });
-    return { success: true as const, contract };
+    return { success: true as const, contract: mapContractToUi(contract) };
   } catch (error) {
     return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }

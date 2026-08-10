@@ -151,6 +151,19 @@ function hasPricingRelevantUpdate(data: ReservationUpdateData, selectedExtras?: 
   return pricingRelevantUpdateFields.some((field) => data[field] !== undefined) || selectedExtras !== undefined || legacyExtras !== undefined;
 }
 
+function hasAvailabilityRelevantUpdate(input: {
+  reservation: Awaited<ReturnType<typeof getReservationService>>;
+  vehicleId: string;
+  startsAt: Date;
+  endsAt: Date;
+}) {
+  return (
+    input.vehicleId !== input.reservation.vehicleId ||
+    input.startsAt.getTime() !== input.reservation.startsAt.getTime() ||
+    input.endsAt.getTime() !== input.reservation.endsAt.getTime()
+  );
+}
+
 async function buildPricingSnapshotData(input: {
   context: ReservationServiceContext;
   reservation: Awaited<ReturnType<typeof getReservationService>>;
@@ -285,7 +298,7 @@ async function assertVehicleAvailable(input: {
     findOverlappingReservations(input, db),
     findVehicleAvailabilityOverlaps(input, db),
   ]);
-  if (!vehicle) throw createValidationError("RESERVATION_VEHICLE_NOT_AVAILABLE");
+  if (!vehicle) throw createValidationError("RESERVATION_VEHICLE_STATUS_INVALID");
   if (reservations.length > 0 || fleet.blocks.length > 0) {
     throw createValidationError("RESERVATION_VEHICLE_UNAVAILABLE", { reservations, blocks: fleet.blocks });
   }
@@ -651,10 +664,13 @@ export async function updateReservationService(input: {
   const endsAt = input.data.endsAt ? toDate(input.data.endsAt) : reservation.endsAt;
   assertDateRange(startsAt, endsAt);
   await assertReservationScope({ ...input.context, customerId: nextCustomerId, vehicleId: nextVehicleId, sourceId: nextSourceId });
+  const availabilityChanged = hasAvailabilityRelevantUpdate({ reservation, vehicleId: nextVehicleId, startsAt, endsAt });
 
   await runInTransaction(async (tx) => {
-    await lockReservationVehicle({ ...input.context, vehicleId: nextVehicleId }, tx);
-    await assertVehicleAvailable({ ...input.context, vehicleId: nextVehicleId, startsAt, endsAt, excludeReservationId: input.reservationId }, tx);
+    if (availabilityChanged) {
+      await lockReservationVehicle({ ...input.context, vehicleId: nextVehicleId }, tx);
+      await assertVehicleAvailable({ ...input.context, vehicleId: nextVehicleId, startsAt, endsAt, excludeReservationId: input.reservationId }, tx);
+    }
     const days = input.data.days ?? calculateDays(startsAt, endsAt);
     const pricePerDay = input.data.pricePerDay ?? reservation.pricePerDay;
     const extraSnapshots = await buildExtraSnapshots({

@@ -3,12 +3,28 @@
 import { motion } from "motion/react"
 import { Download, Printer, FileText } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import { type Contract, formatMAD, formatDate, formatDateLong, remainingBalance, totalPaid } from "@/lib/contracts-data"
 
 export function ContractPdfTab({ contract }: { contract: Contract }) {
+  const { t } = useI18n()
   const optionsTotal = contract.pricing.options.reduce((acc, o) => acc + o.amount, 0)
   const paid = totalPaid(contract)
   const remaining = remainingBalance(contract)
+
+  function downloadFrozenContract() {
+    if (!contract.renderedHtml) {
+      toast.error(t("contracts.errors.downloadUnavailable"))
+      return
+    }
+    const blob = new Blob([contract.renderedHtml], { type: "text/html;charset=utf-8" })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+    link.href = url
+    link.download = `${contract.code}.html`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <motion.div
@@ -30,16 +46,24 @@ export function ContractPdfTab({ contract }: { contract: Contract }) {
             Imprimer
           </button>
           <button
-            onClick={() => toast.success("Téléchargement PDF lancé")}
+            onClick={downloadFrozenContract}
             className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-slate-800"
           >
             <Download className="h-3.5 w-3.5" />
-            Télécharger PDF
+            {t("contracts.downloadContract")}
           </button>
         </div>
       </div>
 
       <div className="rounded-2xl border border-slate-200/70 bg-slate-100/60 p-6 shadow-sm">
+        {contract.renderedHtml ? (
+          <div
+            className="mx-auto max-w-[720px] rounded-md bg-white p-10 text-[12px] leading-relaxed text-slate-700 shadow-[0_8px_30px_rgba(15,23,42,0.08)]"
+            style={{ aspectRatio: "1 / 1.414" }}
+          >
+            <div dangerouslySetInnerHTML={{ __html: contract.renderedHtml }} />
+          </div>
+        ) : (
         <div
           className="mx-auto max-w-[720px] rounded-md bg-white p-10 text-[12px] leading-relaxed text-slate-700 shadow-[0_8px_30px_rgba(15,23,42,0.08)]"
           style={{ aspectRatio: "1 / 1.414" }}
@@ -257,6 +281,7 @@ export function ContractPdfTab({ contract }: { contract: Contract }) {
             </div>
           </div>
         </div>
+        )}
       </div>
     </motion.div>
   )

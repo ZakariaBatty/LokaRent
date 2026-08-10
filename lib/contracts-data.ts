@@ -33,6 +33,14 @@ export type Contract = {
   status: ContractStatus;
   createdAt: string;
   createdBy: string;
+  reservationCode?: string;
+  renderedHtml?: string;
+  contentHash?: string;
+  template?: {
+    id?: string;
+    name?: string;
+    versionNumber?: number;
+  };
 
   client: {
     fullName: string;
@@ -44,6 +52,11 @@ export type Contract = {
     fullName: string;
     cinMasked: string;
     permis: string;
+  };
+  assignedDriver?: {
+    fullName: string;
+    phone?: string | null;
+    role?: string;
   };
 
   car: {
@@ -74,6 +87,9 @@ export type Contract = {
     discount: number;
     options: { label: string; amount: number }[];
     total: number;
+    currency?: string;
+    mileageLimit?: number | null;
+    extraMileageRate?: number | null;
   };
 
   caution: {
