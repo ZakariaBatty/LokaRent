@@ -56,6 +56,12 @@ type InspectionItemCreateData = Omit<Parameters<typeof createContractInspectionI
 
 const contractGenerationStatuses: ReservationStatus[] = [ReservationStatus.confirmed, ReservationStatus.active];
 const mutableContractStatuses: ContractStatus[] = [ContractStatus.draft, ContractStatus.active, ContractStatus.disputed];
+const contractRelevantReservationEventTypes = new Set([
+  "pricing_adjusted",
+  "driver_assigned",
+  "driver_unassigned",
+  "contract_details_updated",
+]);
 
 function jsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -398,6 +404,15 @@ function buildSnapshot(input: {
   };
   const renderedHtml = renderTemplate(input.version.body, variables);
   return { snapshot: snapshot as Prisma.InputJsonValue, renderedHtml };
+}
+
+function hasContractRelevantReservationEventAfterContract(input: {
+  reservation: NonNullable<Awaited<ReturnType<typeof findReservationById>>>;
+  contract: NonNullable<Awaited<ReturnType<typeof findContractByReservation>>>;
+}) {
+  return input.reservation.timelineEvents.some(
+    (event) => contractRelevantReservationEventTypes.has(event.eventType) && event.createdAt.getTime() > input.contract.createdAt.getTime(),
+  );
 }
 
 async function writeContractLogs(input: {
@@ -753,7 +768,11 @@ export async function generateContractFromReservationService(input: {
     const existing = contractHistory.find((contract) => contract.isCurrent) ?? null;
     const pricingSnapshot = await findCurrentPricingSnapshot({ companyId: input.context.companyId, reservationId: input.reservationId }, tx);
     if (!pricingSnapshot) throw createValidationError("CONTRACT_PRICING_SNAPSHOT_MISSING");
-    if (existing && existing.pricingSnapshotId === pricingSnapshot.id) {
+    if (
+      existing &&
+      existing.pricingSnapshotId === pricingSnapshot.id &&
+      !hasContractRelevantReservationEventAfterContract({ reservation, contract: existing })
+    ) {
       throw createValidationError("CONTRACT_AMENDMENT_NOT_REQUIRED");
     }
     const template = input.templateId
@@ -833,7 +852,7 @@ export async function generateContractFromReservationService(input: {
       id: createId(),
       companyId: input.context.companyId,
       reservationId: reservation.id,
-      eventType: "contract_generated",
+      eventType: previousContract ? "contract_amended" : "contract_generated",
       description: contractCode,
       performedBy: input.context.userId ?? null,
     }, tx);

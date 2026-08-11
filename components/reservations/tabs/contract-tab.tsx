@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   Lock,
+  Eye,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useI18n } from "@/contexts/i18n-context"
@@ -23,7 +24,6 @@ import {
 } from "@/modules/reservations/actions/create-reservation.action"
 import {
   generateContractAction,
-  getContractByReservationAction,
   listContractsByReservationAction,
   listContractDocumentsAction,
 } from "@/modules/contracts/actions/create-contract.action"
@@ -44,12 +44,20 @@ function ChecklistRow({ item }: { item: ContractChecklistItem }) {
   )
 }
 
+const contractRelevantTimelineEventTypes = new Set([
+  "pricing_adjusted",
+  "driver_assigned",
+  "driver_unassigned",
+  "contract_details_updated",
+])
+
 export function ContractTab({ reservation }: { reservation: Reservation }) {
   const { t } = useI18n()
   const [dragOver, setDragOver] = useState<"departure" | "return" | null>(null)
   const [documents, setDocuments] = useState<{ id: string; filename: string; storageUrl: string }[]>([])
   const [contract, setContract] = useState<Contract | null>(null)
   const [contractVersions, setContractVersions] = useState<Contract[]>([])
+  const [loadingContractContext, setLoadingContractContext] = useState(true)
   const [uploadingZone, setUploadingZone] = useState<"departure" | "return" | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -58,22 +66,24 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   useEffect(() => {
     let cancelled = false
     async function loadContractContext() {
-      const contractResult = await getContractByReservationAction({ reservationId: reservation.id })
+      setLoadingContractContext(true)
+      const historyResult = await listContractsByReservationAction({ reservationId: reservation.id })
       if (cancelled) return
-      if (contractResult.success) {
-        const historyResult = await listContractsByReservationAction({ reservationId: reservation.id })
-        const versions = historyResult.success ? historyResult.contracts : [contractResult.contract]
-        const current = versions.find((item) => item.isCurrent) ?? contractResult.contract
+      if (historyResult.success && historyResult.contracts.length > 0) {
+        const versions = historyResult.contracts
+        const current = versions.find((item) => item.isCurrent) ?? versions[0]
         setContract(current)
         setContractVersions(versions)
         const documentResult = await listContractDocumentsAction({ contractId: current.id })
         if (!cancelled && documentResult.success) setDocuments(documentResult.documents)
+        if (!cancelled) setLoadingContractContext(false)
         return
       }
       setContract(null)
       setContractVersions([])
       const reservationDocuments = await listReservationDocumentsAction({ reservationId: reservation.id })
       if (!cancelled && reservationDocuments.success) setDocuments(reservationDocuments.documents)
+      if (!cancelled) setLoadingContractContext(false)
     }
     void loadContractContext()
     return () => {
@@ -84,6 +94,11 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   async function refreshContractContext() {
     const historyResult = await listContractsByReservationAction({ reservationId: reservation.id })
     if (!historyResult.success) return
+    if (historyResult.contracts.length === 0) {
+      setContractVersions([])
+      setContract(null)
+      return
+    }
     const current = historyResult.contracts.find((item) => item.isCurrent) ?? historyResult.contracts[0]
     setContractVersions(historyResult.contracts)
     setContract(current)
@@ -113,16 +128,16 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
     toast.success(t("reservations.documents.uploaded"))
   }
 
-  function downloadFrozenContract() {
-    if (!contract?.renderedHtml) {
+  function downloadFrozenContract(targetContract = contract) {
+    if (!targetContract?.renderedHtml) {
       toast.error(t("contracts.errors.downloadUnavailable"))
       return
     }
-    const blob = new Blob([contract.renderedHtml], { type: "text/html;charset=utf-8" })
+    const blob = new Blob([targetContract.renderedHtml], { type: "text/html;charset=utf-8" })
     const url = URL.createObjectURL(blob)
     const link = document.createElement("a")
     link.href = url
-    link.download = `${contract.code}.html`
+    link.download = `${targetContract.code}.html`
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -137,10 +152,11 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
       return
     }
     setGenerating(true)
+    const currentContract = contractVersions.find((item) => item.isCurrent) ?? contract
     const result = await generateContractAction({
       reservationId: reservation.id,
       pickupMileage,
-      pickupFuelLevel: contract?.pickupFuelLevel ?? undefined,
+      pickupFuelLevel: currentContract?.pickupFuelLevel ?? undefined,
     })
     setGenerating(false)
     if (!result.success) {
@@ -149,6 +165,29 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
     }
     await refreshContractContext()
     toast.success(contract ? t("contracts.generate.amendmentCreated") : t("contracts.generate.created"))
+  }
+
+  const currentContract = contractVersions.find((item) => item.isCurrent) ?? contract
+  const generationAllowed = reservation.status === "confirmee" || reservation.status === "en_cours"
+  const pricingSnapshotAmendmentRequired = Boolean(
+    currentContract?.pricingSnapshotId &&
+    reservation.currentPricingSnapshotId &&
+    currentContract.pricingSnapshotId !== reservation.currentPricingSnapshotId,
+  )
+  const contractDetailsAmendmentRequired = Boolean(
+    currentContract &&
+    reservation.timeline.some(
+      (event) =>
+        contractRelevantTimelineEventTypes.has(event.label) &&
+        new Date(event.timestamp).getTime() > new Date(currentContract.createdAt).getTime(),
+    ),
+  )
+  const amendmentRequired = pricingSnapshotAmendmentRequired || contractDetailsAmendmentRequired
+  const canGenerateInitialContract = !loadingContractContext && !currentContract && generationAllowed
+  const canGenerateAmendment = !loadingContractContext && Boolean(currentContract) && amendmentRequired && generationAllowed
+  const contractVersionLabel = (item: Contract) => {
+    if (amendmentRequired && item.id === currentContract?.id) return t("contracts.details.outdated")
+    return item.isCurrent ? t("contracts.details.current") : t("contracts.details.previous")
   }
 
   const departureChecklist = contract
@@ -191,20 +230,31 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             Les modifications du contrat sont auditées et requièrent les droits superviseur.
           </p>
         </div>
-        {contract ? (
+        {loadingContractContext ? (
+          <button
+            type="button"
+            disabled
+            className="inline-flex h-9 items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-700 opacity-70"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>{t("common.loading")}</span>
+          </button>
+        ) : currentContract ? (
           <div className="flex flex-wrap items-center justify-end gap-2">
+            {canGenerateAmendment && (
+              <button
+                type="button"
+                disabled={generating}
+                onClick={generateContract}
+                className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-700 shadow-sm disabled:opacity-60"
+              >
+                <FileText className="relative h-3.5 w-3.5" />
+                <span className="relative">{generating ? t("contracts.generate.generating") : t("contracts.generate.amendmentAction")}</span>
+              </button>
+            )}
             <button
               type="button"
-              disabled={generating}
-              onClick={generateContract}
-              className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-700 shadow-sm disabled:opacity-60"
-            >
-              <FileText className="relative h-3.5 w-3.5" />
-              <span className="relative">{generating ? t("contracts.generate.generating") : t("contracts.generate.amendmentAction")}</span>
-            </button>
-            <button
-              type="button"
-              onClick={downloadFrozenContract}
+              onClick={() => downloadFrozenContract(contract)}
               className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
             >
               <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
@@ -212,7 +262,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               <span className="relative">{t("contracts.downloadContract")}</span>
             </button>
           </div>
-        ) : (
+        ) : canGenerateInitialContract ? (
           <button
             type="button"
             disabled={generating}
@@ -223,8 +273,67 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             <FileText className="relative h-3.5 w-3.5" />
             <span className="relative">{generating ? t("contracts.generate.generating") : t("contracts.generate.action")}</span>
           </button>
-        )}
+        ) : null}
       </div>
+
+      {!loadingContractContext && !currentContract && (
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-sm text-slate-600">
+          <p className="font-semibold text-slate-900">{t("contracts.details.emptyTitle")}</p>
+          <p className="mt-1 text-xs text-slate-500">{t("contracts.details.emptyDescription")}</p>
+        </div>
+      )}
+
+      {currentContract && amendmentRequired && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          <p className="font-semibold">{t("contracts.details.amendmentRequired")}</p>
+          <p className="mt-1">{t("contracts.details.amendmentRequiredDescription")}</p>
+        </div>
+      )}
+
+      {currentContract && !amendmentRequired && contract?.id === currentContract.id && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-800">
+          <p className="font-semibold">{t("contracts.details.agreementCurrent")}</p>
+        </div>
+      )}
+
+      {contractVersions.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+          <h4 className="mb-3 text-sm font-semibold text-slate-900">{t("contracts.details.versionHistory")}</h4>
+          <div className="space-y-2">
+            {contractVersions.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2 text-xs">
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold text-slate-900">
+                    {t("contracts.details.version")} {item.versionNumber ?? 1}
+                    <span className="ml-2 rounded-full bg-white px-2 py-0.5 text-[10px] uppercase text-slate-500">
+                      {contractVersionLabel(item)}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-slate-500">
+                    {new Date(item.createdAt).toLocaleDateString()} - {item.pricing.total} {item.pricing.currency ?? "MAD"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void selectContractVersion(item)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  <span>{t("contracts.viewContract")}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadFrozenContract(item)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{t("contracts.downloadContract")}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {contract && (
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
@@ -236,7 +345,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold uppercase text-slate-600">
-              {contract.isCurrent ? t("contracts.details.current") : t("contracts.details.historical")} - {t(`contracts.statuses.${contract.status}`)}
+              {contractVersionLabel(contract)} - {t(`contracts.statuses.${contract.status}`)}
             </span>
           </div>
           {contractVersions.length > 1 && (
@@ -254,7 +363,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
                   )}
                 >
                   {t("contracts.details.version")} {item.versionNumber ?? 1}
-                  {item.isCurrent ? ` - ${t("contracts.details.current")}` : ""}
+                  {item.isCurrent || item.id === currentContract?.id ? ` - ${contractVersionLabel(item)}` : ""}
                 </button>
               ))}
             </div>

@@ -87,6 +87,7 @@ export type Reservation = {
   discountAmount?: number
   discountReason?: string | null
   total: number
+  currentPricingSnapshotId?: string | null
   caution: number
   advance: number
   remaining: number

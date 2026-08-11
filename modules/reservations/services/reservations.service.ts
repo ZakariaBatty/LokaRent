@@ -162,6 +162,43 @@ function sameSelectedExtras(
   );
 }
 
+function normalizeOptionalText(value: unknown) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function normalizeOptionalDate(value: Date | string | null | undefined) {
+  if (!value) return null;
+  return toDate(value).toISOString();
+}
+
+function sameAuthorizedDrivers(
+  nextDrivers: ReservationAuthorizedDriverData[] | undefined,
+  reservation: Awaited<ReturnType<typeof getReservationService>>,
+) {
+  if (nextDrivers === undefined) return true;
+  const normalize = (driver: ReservationAuthorizedDriverData | Awaited<ReturnType<typeof getReservationService>>["authorizedDrivers"][number]) => ({
+    fullName: normalizeOptionalText(driver.fullName),
+    licenseNumber: normalizeOptionalText(driver.licenseNumber),
+    licenseIssuedAt: normalizeOptionalDate(driver.licenseIssuedAt),
+    licenseExpiresAt: normalizeOptionalDate(driver.licenseExpiresAt),
+    documentUrl: normalizeOptionalText(driver.documentUrl),
+  });
+  const current = reservation.authorizedDrivers.map(normalize).sort((a, b) => `${a.fullName}:${a.licenseNumber}`.localeCompare(`${b.fullName}:${b.licenseNumber}`));
+  const next = nextDrivers.map(normalize).sort((a, b) => `${a.fullName}:${a.licenseNumber}`.localeCompare(`${b.fullName}:${b.licenseNumber}`));
+  return current.length === next.length && current.every((driver, index) => JSON.stringify(driver) === JSON.stringify(next[index]));
+}
+
+function hasContractDetailsUpdate(input: {
+  data: ReservationUpdateData;
+  authorizedDrivers?: ReservationAuthorizedDriverData[];
+  reservation: Awaited<ReturnType<typeof getReservationService>>;
+}) {
+  const { data, reservation } = input;
+  if (data.pickupLocation !== undefined && normalizeOptionalText(data.pickupLocation) !== normalizeOptionalText(reservation.pickupLocation)) return true;
+  if (data.returnLocation !== undefined && normalizeOptionalText(data.returnLocation) !== normalizeOptionalText(reservation.returnLocation)) return true;
+  return !sameAuthorizedDrivers(input.authorizedDrivers, reservation);
+}
+
 function hasMeaningfulPricingRelevantUpdate(input: {
   data: ReservationUpdateData;
   selectedExtras?: ReservationSelectedExtraData[];
@@ -718,6 +755,11 @@ export async function updateReservationService(input: {
     legacyExtras: input.extras,
     reservation,
   });
+  const contractDetailsUpdate = hasContractDetailsUpdate({
+    data: input.data,
+    authorizedDrivers: input.authorizedDrivers,
+    reservation,
+  });
   if (
     (reservation.status === ReservationStatus.confirmed || reservation.status === ReservationStatus.active) &&
     meaningfulPricingUpdate
@@ -809,6 +851,15 @@ export async function updateReservationService(input: {
       description: "reservation_updated",
       performedBy: input.context.userId ?? null,
     }, tx);
+    if (contractDetailsUpdate) {
+      await appendTimeline({
+        companyId: input.context.companyId,
+        reservationId: input.reservationId,
+        eventType: "contract_details_updated",
+        description: "reservation_contract_details_updated",
+        performedBy: input.context.userId ?? null,
+      }, tx);
+    }
     await writeReservationLogs({
       context: input.context,
       reservationId: input.reservationId,

@@ -100,6 +100,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
   const total = Number(reservation.totalAmount);
   const advance = Number(reservation.advanceAmount);
   const authorizedDriver = reservation.authorizedDrivers[0];
+  const currentPricingSnapshot = reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? null;
   const currentContract = reservation.contracts[0];
   return {
     id: reservation.id,
@@ -155,6 +156,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
     discountAmount: Number(reservation.discountAmount),
     discountReason: reservation.discountReason,
     total,
+    currentPricingSnapshotId: currentPricingSnapshot?.id ?? null,
     caution: Number(reservation.depositAmount),
     advance,
     remaining: Math.max(0, total - advance),

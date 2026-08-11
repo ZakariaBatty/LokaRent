@@ -47,6 +47,8 @@ type FrozenContractSnapshot = {
     currency?: string;
     extras?: { label?: string; totalPrice?: string }[];
   };
+  authorizedDrivers?: { fullName?: string; licenseNumber?: string }[];
+  internalDrivers?: { fullName?: string; phone?: string | null; role?: string }[];
 };
 
 function customerName(contract: ContractPayload) {
@@ -148,6 +150,8 @@ export function mapContractToUi(contract: ContractPayload): Contract {
   const frozen = frozenSnapshot(contract);
   const additionalDriver = contract.reservation.authorizedDrivers[0];
   const assignedDriver = contract.reservation.driverAssignments[0];
+  const frozenAdditionalDriver = frozen.authorizedDrivers?.[0];
+  const frozenAssignedDriver = frozen.internalDrivers?.[0];
   const signedByClient = contract.signatures.some((signature) => signature.signerType === SignerType.customer);
   const signedByAgency = contract.signatures.some((signature) => signature.signerType === SignerType.agent);
   const returnItems = contract.inspectionItems.filter((item) => item.event === InspectionEvent.return);
@@ -195,14 +199,26 @@ export function mapContractToUi(contract: ContractPayload): Contract {
       permis: customerLicense(contract),
       phone: contract.customer.phone ?? "",
     },
-    additionalDriver: additionalDriver
+    additionalDriver: frozenAdditionalDriver
+      ? {
+          fullName: frozenAdditionalDriver.fullName ?? "",
+          cinMasked: "",
+          permis: frozenAdditionalDriver.licenseNumber ?? "",
+        }
+      : additionalDriver
       ? {
           fullName: additionalDriver.fullName,
           cinMasked: "",
           permis: additionalDriver.licenseNumber,
         }
       : undefined,
-    assignedDriver: assignedDriver
+    assignedDriver: frozenAssignedDriver
+      ? {
+          fullName: frozenAssignedDriver.fullName ?? "",
+          phone: frozenAssignedDriver.phone,
+          role: frozenAssignedDriver.role,
+        }
+      : assignedDriver
       ? {
           fullName: `${assignedDriver.driver.firstName} ${assignedDriver.driver.lastName}`,
           phone: assignedDriver.driver.phone,
