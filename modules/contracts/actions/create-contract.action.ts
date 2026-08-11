@@ -26,6 +26,7 @@ import {
   generateContractFromReservationService,
   getContractByReservationService,
   getContractService,
+  listContractsByReservationService,
   listContractTemplatesService,
   updateContractTemplateService,
   createContractTemplateService,
@@ -48,6 +49,7 @@ function messageKeyForError(error: unknown) {
   if (error.code === "NOT_FOUND") return "contracts.errors.notFound";
   if (error.code === "VALIDATION_ERROR") {
     if (error.message === "CONTRACT_ALREADY_EXISTS") return "contracts.errors.alreadyExists";
+    if (error.message === "CONTRACT_AMENDMENT_NOT_REQUIRED") return "contracts.errors.amendmentNotRequired";
     if (error.message === "CONTRACT_PRICING_SNAPSHOT_REQUIRED") return "contracts.errors.pricingSnapshotRequired";
     if (error.message === "CONTRACT_PRICING_SNAPSHOT_MISSING") return "contracts.errors.pricingSnapshotRequired";
     if (error.message === "CONTRACT_TEMPLATE_REQUIRED") return "contracts.errors.templateRequired";
@@ -124,6 +126,18 @@ export async function getContractByReservationAction(input: unknown) {
     const context = await getActionContext(PERMISSIONS.CONTRACTS_VIEW);
     const contract = await getContractByReservationService({ ...context, reservationId: parsed.data.reservationId });
     return { success: true as const, contract: mapContractToUi(contract) };
+  } catch (error) {
+    return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
+}
+
+export async function listContractsByReservationAction(input: unknown) {
+  const parsed = contractByReservationSchema.safeParse(input);
+  if (!parsed.success) return { success: false as const, messageKey: "contracts.errors.validation" };
+  try {
+    const context = await getActionContext(PERMISSIONS.CONTRACTS_VIEW);
+    const contracts = await listContractsByReservationService({ ...context, reservationId: parsed.data.reservationId });
+    return { success: true as const, contracts: contracts.map(mapContractToUi) };
   } catch (error) {
     return { success: false as const, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
   }

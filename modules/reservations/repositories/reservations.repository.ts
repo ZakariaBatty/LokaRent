@@ -70,7 +70,7 @@ export async function findReservationById(
       extras: { include: { definition: true }, orderBy: { createdAt: "asc" } },
       authorizedDrivers: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
       timelineEvents: { orderBy: { createdAt: "desc" } },
-      contract: true,
+      contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
       invoice: true,
       driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
     },
@@ -94,7 +94,7 @@ export async function paginateReservations(input: ReservationListInput, db: Data
         authorizedDrivers: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
         timelineEvents: { orderBy: { createdAt: "desc" }, take: 5 },
         driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
-        contract: true,
+        contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
       },
       orderBy: [{ [orderField]: direction }, { id: "asc" }],
       skip: pagination.skip,
@@ -185,7 +185,10 @@ export async function countBlockingReservations(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
-      OR: [{ status: { in: [ReservationStatus.confirmed, ReservationStatus.active] } }, { contract: { isNot: null } }],
+      OR: [
+        { status: { in: [ReservationStatus.confirmed, ReservationStatus.active] } },
+        { contracts: { some: { deletedAt: null } } },
+      ],
     },
   });
 }

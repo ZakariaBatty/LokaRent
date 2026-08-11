@@ -101,22 +101,6 @@ type ReservationUpdateData = Partial<
 
 const reservingStatuses: ReservationStatus[] = [ReservationStatus.confirmed, ReservationStatus.active];
 const cancellableStatuses: ReservationStatus[] = [ReservationStatus.enquiry, ReservationStatus.confirmed];
-const pricingRelevantUpdateFields: (keyof ReservationUpdateData)[] = [
-  "customerId",
-  "vehicleId",
-  "sourceId",
-  "startsAt",
-  "endsAt",
-  "days",
-  "pricePerDay",
-  "extrasTotal",
-  "discountAmount",
-  "discountReason",
-  "totalAmount",
-  "currency",
-  "depositAmount",
-];
-
 function toDate(value: Date | string) {
   return value instanceof Date ? value : new Date(value);
 }
@@ -147,8 +131,76 @@ function calculateTotals(input: {
   return { extras, discount, total: Prisma.Decimal.max(base.plus(extras).minus(discount), 0) };
 }
 
-function hasPricingRelevantUpdate(data: ReservationUpdateData, selectedExtras?: ReservationSelectedExtraData[], legacyExtras?: ReservationExtraCreateData[]) {
-  return pricingRelevantUpdateFields.some((field) => data[field] !== undefined) || selectedExtras !== undefined || legacyExtras !== undefined;
+function sameDecimal(left: unknown, right: unknown) {
+  return decimal(left ?? 0).eq(decimal(right ?? 0));
+}
+
+function sameNullableText(left: unknown, right: unknown) {
+  const normalize = (value: unknown) => (typeof value === "string" && value.trim().length > 0 ? value.trim() : null);
+  return normalize(left) === normalize(right);
+}
+
+function sameDateTime(left: Date | string | undefined, right: Date) {
+  return left === undefined || toDate(left).getTime() === right.getTime();
+}
+
+function sameSelectedExtras(
+  selectedExtras: ReservationSelectedExtraData[] | undefined,
+  reservation: Awaited<ReturnType<typeof getReservationService>>,
+) {
+  if (selectedExtras === undefined) return true;
+  const current = reservation.extras
+    .map((extra) => ({ definitionId: extra.definitionId, quantity: extra.quantity }))
+    .filter((extra): extra is { definitionId: string; quantity: number } => Boolean(extra.definitionId))
+    .sort((a, b) => a.definitionId.localeCompare(b.definitionId));
+  const next = selectedExtras
+    .map((extra) => ({ definitionId: extra.definitionId, quantity: extra.quantity ?? reservation.days }))
+    .sort((a, b) => a.definitionId.localeCompare(b.definitionId));
+  return (
+    current.length === next.length &&
+    current.every((extra, index) => extra.definitionId === next[index]?.definitionId && extra.quantity === next[index]?.quantity)
+  );
+}
+
+function hasMeaningfulPricingRelevantUpdate(input: {
+  data: ReservationUpdateData;
+  selectedExtras?: ReservationSelectedExtraData[];
+  legacyExtras?: ReservationExtraCreateData[];
+  reservation: Awaited<ReturnType<typeof getReservationService>>;
+}) {
+  const { data, reservation } = input;
+  if (data.customerId !== undefined && data.customerId !== reservation.customerId) return true;
+  if (data.vehicleId !== undefined && data.vehicleId !== reservation.vehicleId) return true;
+  if (!sameDateTime(data.startsAt, reservation.startsAt)) return true;
+  if (!sameDateTime(data.endsAt, reservation.endsAt)) return true;
+  if (data.days !== undefined && data.days !== reservation.days) return true;
+  if (data.pricePerDay !== undefined && !sameDecimal(data.pricePerDay, reservation.pricePerDay)) return true;
+  if (data.extrasTotal !== undefined && !sameDecimal(data.extrasTotal, reservation.extrasTotal)) return true;
+  if (data.discountAmount !== undefined && !sameDecimal(data.discountAmount, reservation.discountAmount)) return true;
+  if (data.discountReason !== undefined && !sameNullableText(data.discountReason, reservation.discountReason)) return true;
+  if (data.totalAmount !== undefined && !sameDecimal(data.totalAmount, reservation.totalAmount)) return true;
+  if (data.currency !== undefined && data.currency !== reservation.currency) return true;
+  if (data.depositAmount !== undefined && !sameDecimal(data.depositAmount, reservation.depositAmount)) return true;
+  if (input.legacyExtras !== undefined) return true;
+  return !sameSelectedExtras(input.selectedExtras, reservation);
+}
+
+function assertActiveExtensionAllowed(input: {
+  reservation: Awaited<ReturnType<typeof getReservationService>>;
+  nextCustomerId: string;
+  nextVehicleId: string;
+  startsAt: Date;
+  endsAt: Date;
+}) {
+  if (input.reservation.status !== ReservationStatus.active) return;
+  if (
+    input.nextCustomerId !== input.reservation.customerId ||
+    input.nextVehicleId !== input.reservation.vehicleId ||
+    input.startsAt.getTime() !== input.reservation.startsAt.getTime() ||
+    input.endsAt.getTime() < input.reservation.endsAt.getTime()
+  ) {
+    throw createValidationError("RESERVATION_EXTENSION_CONFLICT");
+  }
 }
 
 function hasAvailabilityRelevantUpdate(input: {
@@ -653,8 +705,23 @@ export async function updateReservationService(input: {
 }) {
   const scope = { companyId: input.context.companyId, agencyId: input.context.agencyId, reservationId: input.reservationId };
   const reservation = await getReservationService(scope);
-  if (!["enquiry", "confirmed"].includes(reservation.status)) throw createValidationError("RESERVATION_EDIT_BLOCKED_BY_STATUS");
-  if (reservation.status === ReservationStatus.confirmed && hasPricingRelevantUpdate(input.data, input.selectedExtras, input.extras)) {
+  if (
+    reservation.status !== ReservationStatus.enquiry &&
+    reservation.status !== ReservationStatus.confirmed &&
+    reservation.status !== ReservationStatus.active
+  ) {
+    throw createValidationError("RESERVATION_EDIT_BLOCKED_BY_STATUS");
+  }
+  const meaningfulPricingUpdate = hasMeaningfulPricingRelevantUpdate({
+    data: input.data,
+    selectedExtras: input.selectedExtras,
+    legacyExtras: input.extras,
+    reservation,
+  });
+  if (
+    (reservation.status === ReservationStatus.confirmed || reservation.status === ReservationStatus.active) &&
+    meaningfulPricingUpdate
+  ) {
     throw createValidationError("RESERVATION_REPRICING_REQUIRED");
   }
   const nextCustomerId = input.data.customerId ?? reservation.customerId;
@@ -685,11 +752,8 @@ export async function updateReservationService(input: {
       extrasTotal: input.selectedExtras || input.extras ? extraSnapshots.extrasTotal : reservation.extrasTotal,
       discountAmount: input.data.discountAmount ?? reservation.discountAmount,
     });
-    const result = await updateReservationStatusConditionally(
-      {
-        ...scope,
-        expectedStatuses: [reservation.status],
-        data: {
+    const updateData: Prisma.ReservationUncheckedUpdateInput = meaningfulPricingUpdate
+      ? {
           ...input.data,
           customerId: nextCustomerId,
           vehicleId: nextVehicleId,
@@ -701,12 +765,25 @@ export async function updateReservationService(input: {
           extrasTotal: totals.extras,
           discountAmount: totals.discount,
           totalAmount: totals.total,
-        },
+        }
+      : {
+          sourceId: input.data.sourceId,
+          assignedAgentId: input.data.assignedAgentId,
+          pickupLocation: input.data.pickupLocation,
+          returnLocation: input.data.returnLocation,
+          internalNotes: input.data.internalNotes,
+          advanceAmount: input.data.advanceAmount,
+        };
+    const result = await updateReservationStatusConditionally(
+      {
+        ...scope,
+        expectedStatuses: [reservation.status],
+        data: updateData,
       },
       tx,
     );
     if (result.count !== 1) throw createValidationError("RESERVATION_LIFECYCLE_CONFLICT");
-    if (input.selectedExtras || input.extras) {
+    if (meaningfulPricingUpdate && (input.selectedExtras || input.extras)) {
       await deleteReservationExtras({ companyId: input.context.companyId, reservationId: input.reservationId }, tx);
       for (const extra of extraSnapshots.snapshots) {
         await createReservationExtra(
@@ -756,7 +833,9 @@ export async function repriceReservationService(input: {
   await runInTransaction(async (tx) => {
     await lockReservationRow(scope, tx);
     const reservation = await getReservationService(scope, tx);
-    if (reservation.status !== ReservationStatus.confirmed) throw createValidationError("RESERVATION_REPRICING_NOT_ALLOWED");
+    if (reservation.status !== ReservationStatus.confirmed && reservation.status !== ReservationStatus.active) {
+      throw createValidationError("RESERVATION_REPRICING_NOT_ALLOWED");
+    }
 
     const nextCustomerId = input.data.customerId ?? reservation.customerId;
     const nextVehicleId = input.data.vehicleId ?? reservation.vehicleId;
@@ -764,6 +843,7 @@ export async function repriceReservationService(input: {
     const startsAt = input.data.startsAt ? toDate(input.data.startsAt) : reservation.startsAt;
     const endsAt = input.data.endsAt ? toDate(input.data.endsAt) : reservation.endsAt;
     assertDateRange(startsAt, endsAt);
+    assertActiveExtensionAllowed({ reservation, nextCustomerId, nextVehicleId, startsAt, endsAt });
     await assertReservationScope({ ...input.context, customerId: nextCustomerId, vehicleId: nextVehicleId, sourceId: nextSourceId }, tx);
     await lockReservationVehicle({ ...input.context, vehicleId: nextVehicleId }, tx);
     await assertVehicleAvailable({ ...input.context, vehicleId: nextVehicleId, startsAt, endsAt, excludeReservationId: input.reservationId }, tx);
@@ -784,7 +864,7 @@ export async function repriceReservationService(input: {
     });
     const result = await updateReservationStatusConditionally({
       ...scope,
-      expectedStatuses: [ReservationStatus.confirmed],
+      expectedStatuses: [reservation.status],
       data: {
         ...input.data,
         customerId: nextCustomerId,

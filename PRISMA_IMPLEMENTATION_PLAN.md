@@ -96,7 +96,7 @@
 |---|---|---|---|
 | 34 | `ContractTemplate` | `contract_templates` | Reusable templates per agency. |
 | 35 | `ContractTemplateVersion` | `contract_template_versions` | Immutable versioned snapshot of a template's body. A contract references the exact version in force at signing (legal integrity). Phase 1 per `DATABASE_FINAL_REVIEW.md`. |
-| 36 | `Contract` | `contracts` | One contract per reservation. Created at pickup. References `template_version_id`. |
+| 36 | `Contract` | `contracts` | Versioned contract/amendment rows per reservation. Each row references `template_version_id` and the exact `pricing_snapshot_id`; one non-deleted row is current. |
 | 37 | `ContractInspectionItem` | `contract_inspection_items` | Vehicle condition checklist at pickup and return. |
 | 38 | `ContractSignature` | `contract_signatures` | One row per signer per event. Legal record. |
 

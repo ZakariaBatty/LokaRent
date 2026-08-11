@@ -188,6 +188,9 @@ const contractInclude = {
       timelineEvents: { orderBy: { createdAt: "desc" } },
     },
   },
+  pricingSnapshot: true,
+  supersedesContract: true,
+  supersededBy: { where: { deletedAt: null }, orderBy: { versionNumber: "asc" } },
   customer: { include: { individual: true, business: true } },
   vehicle: { include: { category: true } },
   inspectionItems: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
@@ -238,9 +241,27 @@ export async function findContractByReservation(
       companyId: input.companyId,
       agencyId: input.agencyId,
       reservationId: input.reservationId,
+      isCurrent: true,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
     include: contractInclude,
+    orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
+  });
+}
+
+export async function listContractsByReservation(
+  input: { companyId: string; agencyId: string; reservationId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.contract.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      reservationId: input.reservationId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    include: contractInclude,
+    orderBy: [{ versionNumber: "desc" }, { createdAt: "desc" }],
   });
 }
 
@@ -256,6 +277,37 @@ export async function lockContractRow(
       AND agency_id = ${input.agencyId}::uuid
     FOR UPDATE
   `;
+}
+
+export async function lockContractsByReservation(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  await db.$queryRaw`
+    SELECT id
+    FROM contracts
+    WHERE reservation_id = ${input.reservationId}::uuid
+      AND company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+    ORDER BY version_number DESC, created_at DESC
+    FOR UPDATE
+  `;
+}
+
+export async function markCurrentContractsNotCurrent(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.contract.updateMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      reservationId: input.reservationId,
+      isCurrent: true,
+      deletedAt: null,
+    },
+    data: { isCurrent: false },
+  });
 }
 
 export async function updateContractStatusConditionally(
@@ -395,7 +447,10 @@ export const contractsRepository = {
   paginateContracts,
   findContractById,
   findContractByReservation,
+  listContractsByReservation,
   lockContractRow,
+  lockContractsByReservation,
+  markCurrentContractsNotCurrent,
   createContract,
   updateContract,
   updateContractStatusConditionally,

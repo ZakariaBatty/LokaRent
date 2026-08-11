@@ -169,6 +169,7 @@ export default {
       lifecycleConflict: 'This reservation was changed by another action. Refresh and try again.',
       repricingRequired: 'Confirmed reservation pricing changes must use the repricing workflow.',
       repricingNotAllowed: 'This reservation status cannot be repriced.',
+      extensionConflict: 'Active reservations can only be extended without changing the customer, vehicle, pickup time, or shortening the return time.',
       generic: 'Unable to save this reservation action right now.',
     },
     upload: {
@@ -183,6 +184,13 @@ export default {
     documents: {
       uploaded: 'Document uploaded.',
       uploading: 'Uploading...',
+    },
+    inspection: {
+      frontBody: 'Front body',
+      rearBody: 'Rear body',
+      sideBody: 'Side body',
+      interior: 'Interior',
+      equipment: 'Equipment',
     },
   },
 
@@ -540,14 +548,22 @@ export default {
       authorizedDriver: 'Authorized driver',
       mileageTerms: 'Mileage terms',
       deposit: 'Deposit',
+      discountReason: 'Discount reason',
+      pickupMileage: 'Pickup mileage',
+      pickupFuel: 'Pickup fuel',
+      version: 'Version',
+      current: 'Current',
+      historical: 'Historical',
     },
     viewContract: 'View Contract',
     downloadContract: 'Download Contract',
     signContract: 'Sign Contract',
     generate: {
       action: 'Generate contract',
+      amendmentAction: 'Generate amendment',
       generating: 'Generating...',
       created: 'Contract generated.',
+      amendmentCreated: 'Contract amendment generated.',
       pickupMileagePrompt: 'Pickup mileage',
     },
     preview: {
@@ -558,6 +574,7 @@ export default {
       forbidden: 'You do not have permission to perform this contract action.',
       notFound: 'Contract not found.',
       alreadyExists: 'This reservation already has a contract.',
+      amendmentNotRequired: 'No contract amendment is required for the current reservation pricing.',
       pricingSnapshotRequired: 'The reservation must have a confirmed pricing snapshot.',
       templateRequired: 'No default contract template is configured for this agency.',
       defaultTemplateNotConfigured: 'No default contract template is configured for this agency.',

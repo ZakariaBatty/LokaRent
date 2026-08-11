@@ -23,11 +23,14 @@ import {
   findContractOrganizationSnapshot,
   findCurrentContractTemplateVersion,
   findDefaultContractTemplate,
+  listContractsByReservation,
   listContractTemplates,
   listContractTemplateVersions,
   listContractInspectionItems,
   listContractSignatures,
+  lockContractsByReservation,
   lockContractRow,
+  markCurrentContractsNotCurrent,
   paginateContracts,
   softDeleteContract,
   updateContract,
@@ -56,10 +59,6 @@ const mutableContractStatuses: ContractStatus[] = [ContractStatus.draft, Contrac
 
 function jsonClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function stableJson(value: unknown) {
-  return JSON.stringify(value, Object.keys(value as Record<string, unknown>).sort());
 }
 
 function contentHash(content: string, snapshot: Prisma.InputJsonValue) {
@@ -120,7 +119,7 @@ function buildDefaultContractTemplateBody() {
         title: "Tarification",
         enabled: true,
         content:
-          "Prix journalier: {{pricing.pricePerDay}} {{pricing.currency}}. Total options: {{pricing.extrasTotal}} {{pricing.currency}}. Remise: {{pricing.discountAmount}} {{pricing.currency}}. Total: {{pricing.total}} {{pricing.currency}}.",
+          "Prix journalier: {{pricing.pricePerDay}} {{pricing.currency}}. Total options: {{pricing.extrasTotal}} {{pricing.currency}}. Remise: {{pricing.discountAmount}} {{pricing.currency}}. Motif: {{pricing.discountReason}}. Total: {{pricing.total}} {{pricing.currency}}.",
       },
       {
         id: "caution-kilometrage",
@@ -128,11 +127,18 @@ function buildDefaultContractTemplateBody() {
         title: "Caution et kilometrage",
         enabled: true,
         content:
-          "Caution: {{pricing.depositAmount}} {{pricing.currency}}. Kilometrage inclus: {{pricing.mileageLimit}}. Kilometre supplementaire: {{pricing.extraMileageRate}} {{pricing.currency}}.",
+          "Caution: {{pricing.depositAmount}} {{pricing.currency}}. Kilometrage inclus: {{pricing.mileageLimit}}. Kilometre supplementaire: {{pricing.extraMileageRate}} {{pricing.currency}}. Depart: {{contract.pickupMileage}} km. Carburant: {{contract.pickupFuelLevel}}/8.",
+      },
+      {
+        id: "etat-depart",
+        number: 6,
+        title: "Etat des lieux depart",
+        enabled: true,
+        content: "{{contract.pickupInspection}}",
       },
       {
         id: "conducteurs",
-        number: 6,
+        number: 7,
         title: "Conducteurs",
         enabled: true,
         content:
@@ -140,7 +146,7 @@ function buildDefaultContractTemplateBody() {
       },
       {
         id: "responsabilite",
-        number: 7,
+        number: 8,
         title: "Responsabilite du locataire",
         enabled: true,
         content:
@@ -148,7 +154,7 @@ function buildDefaultContractTemplateBody() {
       },
       {
         id: "signatures",
-        number: 8,
+        number: 9,
         title: "Signatures",
         enabled: true,
         content:
@@ -201,10 +207,13 @@ function buildSnapshot(input: {
   version: NonNullable<Awaited<ReturnType<typeof findCurrentContractTemplateVersion>>>;
   organization: Awaited<ReturnType<typeof findContractOrganizationSnapshot>>;
   code: string;
+  versionNumber: number;
+  supersedesContractId?: string | null;
   pickupMileage: number;
   pickupFuelLevel?: number | null;
   pickupAt: Date;
   notes?: string | null;
+  inspectionItems?: InspectionItemCreateData[];
 }) {
   const reservation = input.reservation;
   const pricing = input.pricingSnapshot;
@@ -232,13 +241,27 @@ function buildSnapshot(input: {
   const extrasLabel = extras.length
     ? extras.map((extra) => `${extra.label} x${extra.quantity}: ${extra.totalPrice} ${extra.currency}`).join(", ")
     : "";
+  const pickupInspectionItems = (input.inspectionItems ?? [])
+    .filter((item) => item.event === "pickup")
+    .map((item) => ({
+      zone: item.zone,
+      condition: item.condition,
+      notes: item.notes ?? null,
+      photoUrl: item.photoUrl ?? null,
+    }));
+  const pickupInspectionLabel = pickupInspectionItems.length
+    ? pickupInspectionItems.map((item) => `${item.zone}: ${item.condition}${item.notes ? ` (${item.notes})` : ""}`).join(", ")
+    : "";
   const snapshot = {
     contract: {
       code: input.code,
+      versionNumber: input.versionNumber,
+      supersedesContractId: input.supersedesContractId ?? null,
       pickupMileage: input.pickupMileage,
       pickupFuelLevel: input.pickupFuelLevel ?? null,
       pickupAt: input.pickupAt.toISOString(),
       notes: input.notes ?? null,
+      pickupInspectionItems,
     },
     template: {
       id: input.template.id,
@@ -318,6 +341,9 @@ function buildSnapshot(input: {
   const variables = {
     "contract.code": input.code,
     "contract.notes": input.notes ?? "",
+    "contract.pickupMileage": String(input.pickupMileage),
+    "contract.pickupFuelLevel": input.pickupFuelLevel === null || input.pickupFuelLevel === undefined ? "" : String(input.pickupFuelLevel),
+    "contract.pickupInspection": pickupInspectionLabel,
     "reservation.code": reservation.code,
     "customer.name": snapshot.customer.name,
     "customer.identity": snapshot.customer.identity,
@@ -338,6 +364,7 @@ function buildSnapshot(input: {
     "pricing.days": String(pricing.days),
     "pricing.extrasTotal": pricing.extrasTotal.toString(),
     "pricing.discountAmount": pricing.discountAmount.toString(),
+    "pricing.discountReason": pricing.discountReason ?? "",
     "pricing.total": pricing.totalAmount.toString(),
     "pricing.depositAmount": pricing.depositAmount?.toString() ?? reservation.depositAmount.toString(),
     "pricing.mileageLimit": pricing.mileageLimit === null ? "" : String(pricing.mileageLimit),
@@ -362,8 +389,9 @@ function buildSnapshot(input: {
       `<p>Vehicule: ${escapeHtml(reservation.vehicle.brand)} ${escapeHtml(reservation.vehicle.model)} - ${escapeHtml(reservation.vehicle.plate)}</p>`,
       `<p>Periode: ${escapeHtml(snapshot.reservation.startsAt)} au ${escapeHtml(snapshot.reservation.endsAt)} (${escapeHtml(String(snapshot.reservation.durationValue))} ${escapeHtml(snapshot.reservation.durationUnit)})</p>`,
       `<p>Lieux: ${escapeHtml(reservation.pickupLocation ?? "")} / ${escapeHtml(reservation.returnLocation ?? "")}</p>`,
-      `<p>Prix: ${escapeHtml(pricing.pricePerDay.toString())} ${escapeHtml(pricing.currency)} x ${escapeHtml(String(pricing.days))}. Extras: ${escapeHtml(extrasLabel)}. Remise: ${escapeHtml(pricing.discountAmount.toString())}. Total: ${escapeHtml(pricing.totalAmount.toString())} ${escapeHtml(pricing.currency)}.</p>`,
+      `<p>Prix: ${escapeHtml(pricing.pricePerDay.toString())} ${escapeHtml(pricing.currency)} x ${escapeHtml(String(pricing.days))}. Extras: ${escapeHtml(extrasLabel)}. Remise: ${escapeHtml(pricing.discountAmount.toString())}. Motif: ${escapeHtml(pricing.discountReason ?? "")}. Total: ${escapeHtml(pricing.totalAmount.toString())} ${escapeHtml(pricing.currency)}.</p>`,
       `<p>Caution: ${escapeHtml(pricing.depositAmount?.toString() ?? reservation.depositAmount.toString())} ${escapeHtml(pricing.currency)}. Kilometrage inclus: ${escapeHtml(pricing.mileageLimit === null ? "" : String(pricing.mileageLimit))}. Kilometre supplementaire: ${escapeHtml(pricing.extraMileageRate?.toString() ?? "")} ${escapeHtml(pricing.currency)}.</p>`,
+      `<p>Depart: ${escapeHtml(String(input.pickupMileage))} km. Carburant: ${escapeHtml(input.pickupFuelLevel === null || input.pickupFuelLevel === undefined ? "" : String(input.pickupFuelLevel))}/8. Etat des lieux: ${escapeHtml(pickupInspectionLabel)}.</p>`,
       `<p>Conducteur additionnel: ${escapeHtml(primaryAuthorizedDriver?.fullName ?? "")}. Chauffeur interne: ${escapeHtml(primaryInternalDriver?.fullName ?? "")}.</p>`,
       `</section>`,
     ].join(""),
@@ -433,6 +461,14 @@ export async function getContractByReservationService(input: {
   const contract = await findContractByReservation(input, db);
   if (!contract) throw createNotFoundError("Contract", input);
   return contract;
+}
+
+export async function listContractsByReservationService(input: {
+  companyId: string;
+  agencyId: string;
+  reservationId: string;
+}, db?: Parameters<typeof listContractsByReservation>[1]) {
+  return listContractsByReservation(input, db);
 }
 
 export async function listContractsService(input: ContractListInput) {
@@ -671,7 +707,7 @@ export async function createContractService(input: {
     agencyId: input.context.agencyId,
     reservationId: input.data.reservationId,
   });
-  if (existing) throw createValidationError("Reservation already has a contract");
+  if (existing) throw createValidationError("CONTRACT_ALREADY_EXISTS");
   const contract = await createContract({
     ...input.data,
     id: createId(),
@@ -712,10 +748,14 @@ export async function generateContractFromReservationService(input: {
     const reservation = await findReservationById(scope, tx);
     if (!reservation) throw createNotFoundError("Reservation", scope);
     if (!contractGenerationStatuses.includes(reservation.status)) throw createValidationError("CONTRACT_GENERATION_NOT_ALLOWED");
-    const existing = await findContractByReservation(scope, tx);
-    if (existing) throw createValidationError("CONTRACT_ALREADY_EXISTS");
+    await lockContractsByReservation(scope, tx);
+    const contractHistory = await listContractsByReservation(scope, tx);
+    const existing = contractHistory.find((contract) => contract.isCurrent) ?? null;
     const pricingSnapshot = await findCurrentPricingSnapshot({ companyId: input.context.companyId, reservationId: input.reservationId }, tx);
     if (!pricingSnapshot) throw createValidationError("CONTRACT_PRICING_SNAPSHOT_MISSING");
+    if (existing && existing.pricingSnapshotId === pricingSnapshot.id) {
+      throw createValidationError("CONTRACT_AMENDMENT_NOT_REQUIRED");
+    }
     const template = input.templateId
       ? await listContractTemplates({ companyId: input.context.companyId, agencyId: input.context.agencyId, includeInactive: false }, tx).then((items) => items.find((item) => item.id === input.templateId) ?? null)
       : await findDefaultContractTemplate(input.context, tx);
@@ -726,6 +766,8 @@ export async function generateContractFromReservationService(input: {
     const sequence = await generateContractCode(input.context, tx);
     contractCode = sequence.formatted;
     const pickupAt = input.pickupAt ?? new Date();
+    const previousContract = existing ?? contractHistory[0] ?? null;
+    const versionNumber = previousContract ? previousContract.versionNumber + 1 : 1;
     const frozen = buildSnapshot({
       reservation,
       pricingSnapshot,
@@ -733,19 +775,29 @@ export async function generateContractFromReservationService(input: {
       version,
       organization,
       code: contractCode,
+      versionNumber,
+      supersedesContractId: previousContract?.id ?? null,
       pickupMileage: input.pickupMileage,
       pickupFuelLevel: input.pickupFuelLevel,
       pickupAt,
       notes: input.notes,
+      inspectionItems: input.inspectionItems,
     });
     createdContractId = createId();
     const hash = contentHash(frozen.renderedHtml, frozen.snapshot);
+    if (existing) {
+      await markCurrentContractsNotCurrent(scope, tx);
+    }
     await createContract({
       id: createdContractId,
       companyId: input.context.companyId,
       agencyId: input.context.agencyId,
       code: contractCode,
       reservationId: reservation.id,
+      pricingSnapshotId: pricingSnapshot.id,
+      supersedesContractId: previousContract?.id ?? null,
+      versionNumber,
+      isCurrent: true,
       customerId: reservation.customerId,
       vehicleId: reservation.vehicleId,
       templateId: template.id,
@@ -790,7 +842,14 @@ export async function generateContractFromReservationService(input: {
       contractId: createdContractId,
       action: "ContractGenerated",
       verb: "ContractGenerated",
-      changes: { reservationId: reservation.id, templateVersionId: version.id, contentHash: hash },
+      changes: {
+        reservationId: reservation.id,
+        templateVersionId: version.id,
+        pricingSnapshotId: pricingSnapshot.id,
+        supersedesContractId: previousContract?.id ?? null,
+        versionNumber,
+        contentHash: hash,
+      },
     }, tx);
   });
 
@@ -1134,6 +1193,7 @@ export async function deleteContractService(input: ContractServiceContext & { co
 export const contractsService = {
   getContractService,
   getContractByReservationService,
+  listContractsByReservationService,
   listContractsService,
   getDefaultContractTemplateService,
   ensureDefaultContractTemplateService,

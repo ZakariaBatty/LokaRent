@@ -24,6 +24,7 @@ import {
 import {
   generateContractAction,
   getContractByReservationAction,
+  listContractsByReservationAction,
   listContractDocumentsAction,
 } from "@/modules/contracts/actions/create-contract.action"
 
@@ -48,6 +49,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   const [dragOver, setDragOver] = useState<"departure" | "return" | null>(null)
   const [documents, setDocuments] = useState<{ id: string; filename: string; storageUrl: string }[]>([])
   const [contract, setContract] = useState<Contract | null>(null)
+  const [contractVersions, setContractVersions] = useState<Contract[]>([])
   const [uploadingZone, setUploadingZone] = useState<"departure" | "return" | null>(null)
   const [generating, setGenerating] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -59,12 +61,17 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
       const contractResult = await getContractByReservationAction({ reservationId: reservation.id })
       if (cancelled) return
       if (contractResult.success) {
-        setContract(contractResult.contract)
-        const documentResult = await listContractDocumentsAction({ contractId: contractResult.contract.id })
+        const historyResult = await listContractsByReservationAction({ reservationId: reservation.id })
+        const versions = historyResult.success ? historyResult.contracts : [contractResult.contract]
+        const current = versions.find((item) => item.isCurrent) ?? contractResult.contract
+        setContract(current)
+        setContractVersions(versions)
+        const documentResult = await listContractDocumentsAction({ contractId: current.id })
         if (!cancelled && documentResult.success) setDocuments(documentResult.documents)
         return
       }
       setContract(null)
+      setContractVersions([])
       const reservationDocuments = await listReservationDocumentsAction({ reservationId: reservation.id })
       if (!cancelled && reservationDocuments.success) setDocuments(reservationDocuments.documents)
     }
@@ -75,10 +82,18 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   }, [reservation.id])
 
   async function refreshContractContext() {
-    const contractResult = await getContractByReservationAction({ reservationId: reservation.id })
-    if (!contractResult.success) return
-    setContract(contractResult.contract)
-    const documentResult = await listContractDocumentsAction({ contractId: contractResult.contract.id })
+    const historyResult = await listContractsByReservationAction({ reservationId: reservation.id })
+    if (!historyResult.success) return
+    const current = historyResult.contracts.find((item) => item.isCurrent) ?? historyResult.contracts[0]
+    setContractVersions(historyResult.contracts)
+    setContract(current)
+    const documentResult = await listContractDocumentsAction({ contractId: current.id })
+    if (documentResult.success) setDocuments(documentResult.documents)
+  }
+
+  async function selectContractVersion(nextContract: Contract) {
+    setContract(nextContract)
+    const documentResult = await listContractDocumentsAction({ contractId: nextContract.id })
     if (documentResult.success) setDocuments(documentResult.documents)
   }
 
@@ -113,7 +128,8 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
   }
 
   async function generateContract() {
-    const mileage = window.prompt(t("contracts.generate.pickupMileagePrompt"))
+    const persistedMileage = reservation.startKm
+    const mileage = persistedMileage === null ? window.prompt(t("contracts.generate.pickupMileagePrompt")) : String(persistedMileage)
     if (!mileage) return
     const pickupMileage = Number(mileage)
     if (!Number.isInteger(pickupMileage) || pickupMileage < 0) {
@@ -121,23 +137,40 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
       return
     }
     setGenerating(true)
-    const result = await generateContractAction({ reservationId: reservation.id, pickupMileage })
+    const result = await generateContractAction({
+      reservationId: reservation.id,
+      pickupMileage,
+      pickupFuelLevel: contract?.pickupFuelLevel ?? undefined,
+    })
     setGenerating(false)
     if (!result.success) {
       toast.error(t(result.messageKey))
       return
     }
     await refreshContractContext()
-    toast.success(t("contracts.generate.created"))
+    toast.success(contract ? t("contracts.generate.amendmentCreated") : t("contracts.generate.created"))
   }
 
+  const departureChecklist = contract
+    ? [
+        ...contract.etat.depart.carrosserie,
+        ...contract.etat.depart.interieur,
+        ...contract.etat.depart.equipements,
+      ]
+    : reservation.contract.departureChecklist
+  const returnChecklist = contract?.etat.retour
+    ? [
+        ...contract.etat.retour.carrosserie,
+        ...contract.etat.retour.interieur,
+        ...contract.etat.retour.equipements,
+      ]
+    : reservation.contract.returnChecklist
+  const damages = contract?.etat.retour?.damages ?? reservation.contract.damages
   const departureProgress =
-    (reservation.contract.departureChecklist.filter((i) => i.ok).length /
-      reservation.contract.departureChecklist.length) *
+    departureChecklist.length === 0 ? 0 : (departureChecklist.filter((i) => i.ok).length / departureChecklist.length) *
     100
   const returnProgress =
-    (reservation.contract.returnChecklist.filter((i) => i.ok).length /
-      reservation.contract.returnChecklist.length) *
+    returnChecklist.length === 0 ? 0 : (returnChecklist.filter((i) => i.ok).length / returnChecklist.length) *
     100
 
   return (
@@ -159,15 +192,26 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
           </p>
         </div>
         {contract ? (
-          <button
-            type="button"
-            onClick={downloadFrozenContract}
-            className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
-          >
-            <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-            <Download className="relative h-3.5 w-3.5" />
-            <span className="relative">{t("contracts.downloadContract")}</span>
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={generating}
+              onClick={generateContract}
+              className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-700 shadow-sm disabled:opacity-60"
+            >
+              <FileText className="relative h-3.5 w-3.5" />
+              <span className="relative">{generating ? t("contracts.generate.generating") : t("contracts.generate.amendmentAction")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={downloadFrozenContract}
+              className="group relative inline-flex h-9 items-center gap-2 overflow-hidden rounded-lg bg-gradient-to-b from-amber-500 to-amber-600 px-3 text-xs font-semibold text-white shadow-[0_4px_14px_rgba(217,119,6,0.3)]"
+            >
+              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
+              <Download className="relative h-3.5 w-3.5" />
+              <span className="relative">{t("contracts.downloadContract")}</span>
+            </button>
+          </div>
         ) : (
           <button
             type="button"
@@ -188,13 +232,33 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
             <div>
               <h4 className="text-sm font-semibold text-slate-900">{contract.code}</h4>
               <p className="mt-0.5 text-xs text-slate-500">
-                {contract.template?.name ?? t("contracts.details.template")} - v{contract.template?.versionNumber ?? 1}
+                {contract.template?.name ?? t("contracts.details.template")} - {t("contracts.details.version")} {contract.versionNumber ?? 1}
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold uppercase text-slate-600">
-              {t(`contracts.statuses.${contract.status}`)}
+              {contract.isCurrent ? t("contracts.details.current") : t("contracts.details.historical")} - {t(`contracts.statuses.${contract.status}`)}
             </span>
           </div>
+          {contractVersions.length > 1 && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {contractVersions.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => void selectContractVersion(item)}
+                  className={cn(
+                    "rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition",
+                    item.id === contract.id
+                      ? "border-amber-300 bg-amber-50 text-amber-700"
+                      : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  {t("contracts.details.version")} {item.versionNumber ?? 1}
+                  {item.isCurrent ? ` - ${t("contracts.details.current")}` : ""}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <p className="text-slate-400">{t("contracts.client")}</p>
@@ -232,6 +296,18 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               <p className="text-slate-400">{t("contracts.details.deposit")}</p>
               <p className="font-semibold text-slate-800">{contract.caution.amount} {contract.pricing.currency ?? "MAD"}</p>
             </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.discountReason")}</p>
+              <p className="font-semibold text-slate-800">{contract.pricing.discountReason ?? "-"}</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.pickupMileage")}</p>
+              <p className="font-semibold text-slate-800">{contract.pickupMileage ?? "-"} km</p>
+            </div>
+            <div>
+              <p className="text-slate-400">{t("contracts.details.pickupFuel")}</p>
+              <p className="font-semibold text-slate-800">{contract.pickupFuelLevel ?? "-"} / 8</p>
+            </div>
           </div>
           {contract.renderedHtml && (
             <div className="mt-4 max-h-80 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -261,7 +337,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               transition={{ duration: 0.6, ease: "easeOut" }}
             />
           </div>
-          {reservation.contract.departureChecklist.map((item) => (
+          {departureChecklist.map((item) => (
             <ChecklistRow key={item.label} item={item} />
           ))}
         </div>
@@ -285,7 +361,7 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.1 }}
             />
           </div>
-          {reservation.contract.returnChecklist.map((item) => (
+          {returnChecklist.map((item) => (
             <ChecklistRow key={item.label} item={item} />
           ))}
         </div>
@@ -299,17 +375,17 @@ export function ContractTab({ reservation }: { reservation: Reservation }) {
           </div>
           <h4 className="text-sm font-semibold text-slate-900">Suivi des dommages</h4>
           <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-600">
-            {reservation.contract.damages.length}
+            {damages.length}
           </span>
         </div>
-        {reservation.contract.damages.length === 0 ? (
+        {damages.length === 0 ? (
           <div className="flex items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-3 text-xs text-slate-500">
             <Check className="h-3.5 w-3.5 text-emerald-500" />
             Aucun dommage signalé sur cette réservation.
           </div>
         ) : (
           <div className="space-y-2">
-            {reservation.contract.damages.map((d, i) => (
+            {damages.map((d, i) => (
               <div key={i} className="flex items-start gap-3 rounded-xl border border-rose-100 bg-rose-50/40 p-3">
                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-white">
                   <AlertTriangle className="h-3.5 w-3.5 text-rose-600" />

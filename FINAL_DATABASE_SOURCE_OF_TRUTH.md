@@ -140,6 +140,16 @@ Affected models: `Reservation`, `ReservationPricingSnapshot`, `ReservationExtraD
 - PostgreSQL enforces the invariant with a partial unique index on `(company_id, agency_id)` where `is_default = true`, `deleted_at IS NULL`, and `agency_id IS NOT NULL`.
 - Template edits create immutable `ContractTemplateVersion` rows; old versions referenced by generated contracts are never mutated.
 
+## 5.2 Canonical Contract Amendment History
+
+**`Reservation` → `Contract` is 1:N (amendment/version chain), NOT 1:1.**
+
+- Each generated contract row is a frozen legal artifact tied to the exact `reservation_pricing_snapshots.id` used at generation through `contracts.pricing_snapshot_id`.
+- Contract amendments create a new `contracts` row with an incremented `version_number` and `supersedes_contract_id` pointing at the prior contract.
+- Exactly one non-deleted contract per reservation has `is_current = true`, enforced by a PostgreSQL partial unique index.
+- Historical contracts retain their own rendered HTML, content snapshot, hash, template version, signatures, inspections, and documents.
+- Any document showing "one contract per reservation" is stale and superseded by this file.
+
 ---
 
 ## 6. Canonical Role-Scope Enforcement

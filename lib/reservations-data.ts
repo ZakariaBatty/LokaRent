@@ -52,6 +52,7 @@ export type TimelineEvent = {
 export type Reservation = {
   id: string
   code: string // e.g. RES-2024-0012
+  sourceId?: string
   status: ReservationStatus
   urgency: "low" | "medium" | "high" // for overdue, expiring etc.
 
@@ -83,6 +84,8 @@ export type Reservation = {
   returnKm: number | null
 
   pricePerDay: number
+  discountAmount?: number
+  discountReason?: string | null
   total: number
   caution: number
   advance: number

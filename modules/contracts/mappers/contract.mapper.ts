@@ -13,6 +13,9 @@ type ContractPayload = Prisma.ContractGetPayload<{
         timelineEvents: true;
       };
     };
+    pricingSnapshot: true;
+    supersedesContract: true;
+    supersededBy: true;
     customer: { include: { individual: true; business: true } };
     vehicle: { include: { category: true } };
     inspectionItems: true;
@@ -21,6 +24,30 @@ type ContractPayload = Prisma.ContractGetPayload<{
     templateVersion: true;
   };
 }>;
+
+type FrozenContractSnapshot = {
+  contract?: {
+    pickupMileage?: number;
+    pickupFuelLevel?: number | null;
+    pickupInspectionItems?: { zone?: string; condition?: string; notes?: string | null }[];
+  };
+  reservation?: {
+    startsAt?: string;
+    endsAt?: string;
+    durationValue?: number;
+  };
+  pricing?: {
+    pricePerDay?: string;
+    discountAmount?: string;
+    discountReason?: string | null;
+    totalAmount?: string;
+    mileageLimit?: number | null;
+    extraMileageRate?: string | null;
+    depositAmount?: string | null;
+    currency?: string;
+    extras?: { label?: string; totalPrice?: string }[];
+  };
+};
 
 function customerName(contract: ContractPayload) {
   if (contract.customer.type === "company") return contract.customer.business?.companyName ?? contract.customer.email ?? contract.customer.code;
@@ -46,7 +73,25 @@ function conditionOk(condition: InspectionCondition) {
   return condition === InspectionCondition.ok;
 }
 
-function groupInspection(items: ContractPayload["inspectionItems"], event: InspectionEvent, pickupMileage: number, fuel?: number | null): EtatBlock {
+function frozenSnapshot(contract: ContractPayload) {
+  return contract.contentSnapshot && typeof contract.contentSnapshot === "object"
+    ? (contract.contentSnapshot as FrozenContractSnapshot)
+    : {};
+}
+
+function numberFromSnapshot(value: string | number | null | undefined, fallback: number) {
+  if (value === null || value === undefined || value === "") return fallback;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function dateFromSnapshot(value: string | undefined, fallback: Date) {
+  if (!value) return fallback.toISOString();
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback.toISOString() : date.toISOString();
+}
+
+function groupInspection(items: ContractPayload["inspectionItems"], event: InspectionEvent, mileage: number, fuel?: number | null): EtatBlock {
   const filtered = items.filter((item) => item.event === event);
   const section = (terms: string[]) =>
     filtered
@@ -58,7 +103,18 @@ function groupInspection(items: ContractPayload["inspectionItems"], event: Inspe
     interieur: section(["interior", "seat", "dashboard", "intérieur", "interieur"]),
     equipements: section(["equipment", "spare", "triangle", "gilet", "équipement", "equipement"]),
     fuel: fuel && fuel >= 6 ? 4 : fuel && fuel >= 4 ? 3 : fuel && fuel >= 2 ? 2 : 1,
-    km: event === InspectionEvent.return ? pickupMileage : pickupMileage,
+    km: mileage,
+  };
+}
+
+function groupFrozenPickupInspection(snapshot: FrozenContractSnapshot, fallback: EtatBlock): EtatBlock {
+  const items = snapshot.contract?.pickupInspectionItems ?? [];
+  if (items.length === 0) return fallback;
+  return {
+    ...fallback,
+    carrosserie: items.map((item) => ({ label: item.zone ?? "", ok: item.condition === "ok" })),
+    interieur: [],
+    equipements: [],
   };
 }
 
@@ -87,7 +143,9 @@ function history(contract: ContractPayload): HistoryEvent[] {
 }
 
 export function mapContractToUi(contract: ContractPayload): Contract {
-  const currentSnapshot = contract.reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? contract.reservation.pricingSnapshots[0];
+  const contractSnapshot = contract.pricingSnapshot ?? contract.reservation.pricingSnapshots.find((snapshot) => snapshot.id === contract.pricingSnapshotId);
+  const currentSnapshot = contractSnapshot ?? contract.reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? contract.reservation.pricingSnapshots[0];
+  const frozen = frozenSnapshot(contract);
   const additionalDriver = contract.reservation.authorizedDrivers[0];
   const assignedDriver = contract.reservation.driverAssignments[0];
   const signedByClient = contract.signatures.some((signature) => signature.signerType === SignerType.customer);
@@ -101,9 +159,25 @@ export function mapContractToUi(contract: ContractPayload): Contract {
       severity: item.condition === InspectionCondition.broken || item.condition === InspectionCondition.missing ? "grave" as const : "moyen" as const,
     }));
 
+  const pickupMileage = numberFromSnapshot(frozen.contract?.pickupMileage, contract.pickupMileage);
+  const pickupFuelLevel = frozen.contract?.pickupFuelLevel ?? contract.pickupFuelLevel;
+  const frozenPricing = frozen.pricing ?? {};
+  const pricePerDay = numberFromSnapshot(frozenPricing.pricePerDay, Number(currentSnapshot?.pricePerDay ?? contract.reservation.pricePerDay));
+  const discount = numberFromSnapshot(frozenPricing.discountAmount, Number(currentSnapshot?.discountAmount ?? contract.reservation.discountAmount));
+  const total = numberFromSnapshot(frozenPricing.totalAmount, Number(currentSnapshot?.totalAmount ?? contract.reservation.totalAmount));
+  const deposit = numberFromSnapshot(frozenPricing.depositAmount, Number(currentSnapshot?.depositAmount ?? contract.reservation.depositAmount));
+  const departureInspection = groupFrozenPickupInspection(
+    frozen,
+    groupInspection(contract.inspectionItems, InspectionEvent.pickup, pickupMileage, pickupFuelLevel),
+  );
+
   return {
     id: contract.id,
     code: contract.code,
+    versionNumber: contract.versionNumber,
+    isCurrent: contract.isCurrent,
+    supersedesContractId: contract.supersedesContractId,
+    pricingSnapshotId: contract.pricingSnapshotId,
     status: mapContractStatusToUi(contract.status),
     createdAt: contract.createdAt.toISOString(),
     createdBy: contract.signatures.find((signature) => signature.signerType === SignerType.agent)?.signerName ?? "System",
@@ -144,32 +218,38 @@ export function mapContractToUi(contract: ContractPayload): Contract {
         : mapCategoryName(contract.vehicle.category?.name ?? "Compact").toLowerCase() as Contract["car"]["category"],
     },
     period: {
-      start: (currentSnapshot?.startsAt ?? contract.reservation.startsAt).toISOString(),
-      end: (currentSnapshot?.endsAt ?? contract.reservation.endsAt).toISOString(),
-      days: currentSnapshot?.durationValue ?? currentSnapshot?.days ?? contract.reservation.days,
+      start: dateFromSnapshot(frozen.reservation?.startsAt, currentSnapshot?.startsAt ?? contract.reservation.startsAt),
+      end: dateFromSnapshot(frozen.reservation?.endsAt, currentSnapshot?.endsAt ?? contract.reservation.endsAt),
+      days: frozen.reservation?.durationValue ?? currentSnapshot?.durationValue ?? currentSnapshot?.days ?? contract.reservation.days,
     },
     locations: {
       pickup: contract.reservation.pickupLocation ?? "",
       dropoff: contract.reservation.returnLocation ?? "",
     },
     pricing: {
-      pricePerDay: Number(currentSnapshot?.pricePerDay ?? contract.reservation.pricePerDay),
-      discount: Number(currentSnapshot?.discountAmount ?? contract.reservation.discountAmount),
-      options: contract.reservation.extras.map((extra) => ({ label: extra.label, amount: Number(extra.totalPrice) })),
-      total: Number(currentSnapshot?.totalAmount ?? contract.reservation.totalAmount),
-      currency: currentSnapshot?.currency ?? contract.reservation.currency,
-      mileageLimit: currentSnapshot?.mileageLimit ?? null,
-      extraMileageRate: currentSnapshot?.extraMileageRate ? Number(currentSnapshot.extraMileageRate) : null,
+      pricePerDay,
+      discount,
+      discountReason: frozenPricing.discountReason ?? currentSnapshot?.discountReason ?? contract.reservation.discountReason,
+      options: frozenPricing.extras?.map((extra) => ({ label: extra.label ?? "", amount: numberFromSnapshot(extra.totalPrice, 0) })) ??
+        contract.reservation.extras.map((extra) => ({ label: extra.label, amount: Number(extra.totalPrice) })),
+      total,
+      currency: frozenPricing.currency ?? currentSnapshot?.currency ?? contract.reservation.currency,
+      mileageLimit: frozenPricing.mileageLimit ?? currentSnapshot?.mileageLimit ?? null,
+      extraMileageRate: frozenPricing.extraMileageRate
+        ? Number(frozenPricing.extraMileageRate)
+        : currentSnapshot?.extraMileageRate
+          ? Number(currentSnapshot.extraMileageRate)
+          : null,
     },
     caution: {
-      amount: Number(currentSnapshot?.depositAmount ?? contract.reservation.depositAmount),
+      amount: deposit,
       type: "Cash",
       status: contract.status === DbContractStatus.completed ? "restituee" : "en_attente",
     },
     payments: [],
     balance: Number(contract.reservation.advanceAmount) >= Number(contract.reservation.totalAmount) ? "paid" : Number(contract.reservation.advanceAmount) > 0 ? "partial" : "unpaid",
     etat: {
-      depart: groupInspection(contract.inspectionItems, InspectionEvent.pickup, contract.pickupMileage, contract.pickupFuelLevel),
+      depart: departureInspection,
       retour: contract.returnMileage
         ? {
             ...groupInspection(contract.inspectionItems, InspectionEvent.return, contract.returnMileage, contract.returnFuelLevel),
@@ -180,6 +260,8 @@ export function mapContractToUi(contract: ContractPayload): Contract {
     },
     signedByClient,
     signedByAgency,
+    pickupMileage,
+    pickupFuelLevel,
     history: history(contract),
   };
 }

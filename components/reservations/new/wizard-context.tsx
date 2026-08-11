@@ -121,6 +121,7 @@ export type WizardState = {
   clientMode: "existing" | "new"
   selectedClient: SelectedClient | null
   newClient: NewClientDraft
+  sourceId: string | null
   // Step 2
   startDate: string
   startTime: string
@@ -159,6 +160,7 @@ const inDays = (n: number) => {
 const initialState: WizardState = {
   clientMode: "existing",
   selectedClient: null,
+  sourceId: null,
   newClient: {
     firstName: "",
     lastName: "",
@@ -263,8 +265,8 @@ function reservationToInitialState(reservation?: Reservation): WizardState {
   const end = splitDateTime(reservation.endDate)
   const baseSubtotal = reservation.pricePerDay * reservation.days
   const discountPct =
-    baseSubtotal > 0 && reservation.total < baseSubtotal
-      ? Math.round(((baseSubtotal - reservation.total) / baseSubtotal) * 100)
+    baseSubtotal > 0
+      ? Math.round(((reservation.discountAmount ?? 0) / baseSubtotal) * 100)
       : 0
 
   const authorizedDriver = reservation.authorizedDrivers?.[0]
@@ -278,6 +280,7 @@ function reservationToInitialState(reservation?: Reservation): WizardState {
       idType: "CIN",
       idNumber: "",
     },
+    sourceId: reservation.sourceId ?? null,
     startDate: start.date,
     startTime: start.time,
     endDate: end.date,
@@ -287,6 +290,7 @@ function reservationToInitialState(reservation?: Reservation): WizardState {
     returnLocation: toLocation(reservation.returnLocation),
     pricePerDayOverride: reservation.pricePerDay,
     discountPct: Math.max(0, Math.min(50, Number.isFinite(discountPct) ? discountPct : 0)),
+    discountReason: reservation.discountReason ?? "",
     cautionAmount: reservation.caution,
     avanceAmount: reservation.advance,
     options: {

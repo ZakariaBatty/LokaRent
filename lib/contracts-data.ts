@@ -30,6 +30,10 @@ export type EtatBlock = {
 export type Contract = {
   id: string;
   code: string; // LR-2026-0045
+  versionNumber?: number;
+  isCurrent?: boolean;
+  supersedesContractId?: string | null;
+  pricingSnapshotId?: string;
   status: ContractStatus;
   createdAt: string;
   createdBy: string;
@@ -85,6 +89,7 @@ export type Contract = {
   pricing: {
     pricePerDay: number;
     discount: number;
+    discountReason?: string | null;
     options: { label: string; amount: number }[];
     total: number;
     currency?: string;
@@ -105,6 +110,9 @@ export type Contract = {
     depart: EtatBlock;
     retour?: EtatBlock & { damages: Damage[]; notes?: string };
   };
+
+  pickupMileage?: number;
+  pickupFuelLevel?: number | null;
 
   signedByClient?: boolean; // ISO date
   signedByAgency?: boolean; // ISO date

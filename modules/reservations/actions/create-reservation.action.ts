@@ -98,6 +98,7 @@ function messageKeyForError(error: unknown) {
     if (error.message === "RESERVATION_LIFECYCLE_CONFLICT") return "reservations.errors.lifecycleConflict";
     if (error.message === "RESERVATION_REPRICING_REQUIRED") return "reservations.errors.repricingRequired";
     if (error.message === "RESERVATION_REPRICING_NOT_ALLOWED") return "reservations.errors.repricingNotAllowed";
+    if (error.message === "RESERVATION_EXTENSION_CONFLICT") return "reservations.errors.extensionConflict";
     return "reservations.errors.validation";
   }
   return "reservations.errors.generic";

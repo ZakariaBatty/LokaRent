@@ -13,7 +13,7 @@ type ReservationPayload = Prisma.ReservationGetPayload<{
     extras: { include: { definition: true } };
     authorizedDrivers: true;
     timelineEvents: true;
-    contract: true;
+    contracts: true;
     driverAssignments: { include: { driver: true } };
   };
 }>;
@@ -100,9 +100,11 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
   const total = Number(reservation.totalAmount);
   const advance = Number(reservation.advanceAmount);
   const authorizedDriver = reservation.authorizedDrivers[0];
+  const currentContract = reservation.contracts[0];
   return {
     id: reservation.id,
     code: reservation.code,
+    sourceId: reservation.sourceId,
     status: mapReservationStatusToUi(reservation.status),
     urgency: reservation.status === "active" ? "medium" : "low",
     client: {
@@ -147,9 +149,11 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
       licenseExpiresAt: driver.licenseExpiresAt?.toISOString() ?? null,
       documentUrl: driver.documentUrl,
     })),
-    startKm: null,
+    startKm: currentContract?.pickupMileage ?? null,
     returnKm: null,
     pricePerDay: Number(reservation.pricePerDay),
+    discountAmount: Number(reservation.discountAmount),
+    discountReason: reservation.discountReason,
     total,
     caution: Number(reservation.depositAmount),
     advance,
@@ -160,7 +164,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
       departureChecklist: [],
       returnChecklist: [],
       damages: [],
-      signed: Boolean(reservation.contract),
+      signed: Boolean(currentContract),
       photos: 0,
     },
     timeline: reservation.timelineEvents.map(mapTimeline),

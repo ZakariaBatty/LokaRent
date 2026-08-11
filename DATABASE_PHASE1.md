@@ -111,7 +111,7 @@ Thirteen domains.
 |---|---|
 | `contract_templates` | Reusable templates. One default per agency is enough for Phase 1. |
 | `contract_template_versions` | Immutable versioned snapshot of a template body. A contract references the exact version in force at signing. **Phase 1 blocking dependency** per `DATABASE_FINAL_REVIEW.md` — required for legal integrity, cannot be backfilled later. |
-| `contracts` | One contract per reservation. Created at pickup. References `template_version_id`. |
+| `contracts` | Contract versions/amendments for a reservation. Each row references the exact `template_version_id` and `pricing_snapshot_id` used at generation. |
 | `contract_inspection_items` | Vehicle condition checklist at pickup and return. |
 | `contract_signatures` | One row per signing party per event. |
 
@@ -199,7 +199,7 @@ reservations
   ├── reservation_pricing_snapshots   (1:n chain; one is_current=true, rest superseded)
   ├── reservation_extras              (1:n)
   ├── reservation_timeline_events     (1:n, append-only)
-  └── contracts (1:1)
+  └── contracts (1:n version chain; one is_current=true)
         ├── contract_inspection_items (1:n)
         ├── contract_signatures       (1:n)
         └── documents (polymorphic, entity_type = 'contract')
@@ -1176,7 +1176,7 @@ contract_templates
 
 #### `contracts`
 
-One contract per reservation. Created when the reservation transitions to `active` (vehicle handover).
+Contract version generated from a reservation. A reservation may have multiple historical contract versions/amendments; exactly one non-deleted contract is current.
 
 ```
 contracts
@@ -1184,7 +1184,11 @@ contracts
   company_id          uuid FK NOT NULL
   agency_id           uuid FK NOT NULL
   code                text NOT NULL           -- "CTR-2025-00142"
-  reservation_id      uuid FK → reservations UNIQUE NOT NULL
+  reservation_id      uuid FK → reservations NOT NULL
+  pricing_snapshot_id uuid FK → reservation_pricing_snapshots NOT NULL
+  supersedes_contract_id uuid FK → contracts
+  version_number      smallint NOT NULL DEFAULT 1
+  is_current          boolean NOT NULL DEFAULT true
   customer_id         uuid FK → customers NOT NULL
   vehicle_id          uuid FK → vehicles NOT NULL
   template_id         uuid FK → contract_templates
@@ -1202,6 +1206,8 @@ contracts
   deleted_by          uuid
 
   UNIQUE(company_id, code)
+  UNIQUE(reservation_id, version_number)
+  UNIQUE(reservation_id) WHERE is_current = true AND deleted_at IS NULL
 ```
 
 ---

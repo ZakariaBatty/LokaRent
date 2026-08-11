@@ -441,7 +441,7 @@ reservations
  ├── reservation_pricing_snapshots     (1:N) — supersession chain; exactly one is_current=true
  ├── reservation_extras                (1:N) — add-ons selected
  ├── reservation_timeline_events       (1:N) — append-only status log
- ├── contracts                         (1:1) — created at pickup
+ ├── contracts                         (1:N) — version/amendment chain; one is_current=true
  ├── invoices                          (1:1) — issued on confirmation/pickup
  └── deposits                          (1:1, nullable)
 
@@ -475,6 +475,8 @@ contract_template_versions
 
 contracts
  ├── reservations                      (N:1)
+ ├── reservation_pricing_snapshots      (N:1) — exact pricing snapshot used at generation
+ ├── contracts                         (N:1, self — supersedes_contract_id for amendments)
  ├── contract_template_versions        (N:1) — exact version used at generation
  ├── contract_inspection_items         (1:N) — pickup and return checklists
  ├── contract_signatures               (1:N) — one per signing party per event
@@ -1202,7 +1204,10 @@ Without writing SQL. Every field below must have an index, and the type and reas
 | Table | Column(s) | Index Type | Reason |
 |---|---|---|---|
 | `contracts` | `number` | Unique B-tree (per company) | Contract number search. |
-| `contracts` | `reservation_id` | Unique B-tree | One contract per reservation. |
+| `contracts` | `(reservation_id, version_number)` | Unique B-tree | One contract version number per reservation. |
+| `contracts` | `reservation_id WHERE is_current = true AND deleted_at IS NULL` | Partial Unique B-tree | Exactly one current non-deleted contract per reservation. |
+| `contracts` | `pricing_snapshot_id` | B-tree | Reconstruct the exact pricing snapshot used by a contract version. |
+| `contracts` | `supersedes_contract_id` | B-tree | Traverse amendment history. |
 | `contracts` | `status` | B-tree | Filter contracts by state. |
 | `contract_signatures` | `(contract_id, signer_type)` | B-tree | Find whether customer/agent has signed. |
 

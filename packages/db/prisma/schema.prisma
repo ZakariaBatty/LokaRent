@@ -1198,7 +1198,7 @@ model Reservation {
   source             ReservationSource             @relation(fields: [sourceId], references: [id], onDelete: NoAction)
   assignedAgent      User?                         @relation("ReservationAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: NoAction)
   cancelledByUser    User?                         @relation("ReservationCancelledBy", fields: [cancelledBy], references: [id], onDelete: NoAction)
-  contract           Contract?
+  contracts          Contract[]
   invoice            Invoice?
   payments           Payment[]
   deposits           Deposit[]
@@ -1257,6 +1257,7 @@ model ReservationPricingSnapshot {
   supersededBy ReservationPricingSnapshot[] @relation("PricingSnapshotSupersession")
   pricingRule  VehiclePricingRule?          @relation(fields: [pricingRuleId], references: [id], onDelete: NoAction)
   lockedByUser User                         @relation("PricingSnapshotLockedBy", fields: [lockedBy], references: [id], onDelete: NoAction)
+  contracts    Contract[]
 
   @@index([reservationId, createdAt])
   @@index([pricingRuleId])
@@ -1417,47 +1418,59 @@ model ContractTemplateVersion {
 }
 
 model Contract {
-  id                String         @id @db.Uuid
-  companyId         String         @map("company_id") @db.Uuid
-  agencyId          String         @map("agency_id") @db.Uuid
-  code              String
-  reservationId     String         @unique @map("reservation_id") @db.Uuid
-  customerId        String         @map("customer_id") @db.Uuid
-  vehicleId         String         @map("vehicle_id") @db.Uuid
-  templateId        String?        @map("template_id") @db.Uuid
-  templateVersionId String?        @map("template_version_id") @db.Uuid
-  status            ContractStatus @default(draft)
-  pickupMileage     Int            @map("pickup_mileage")
-  returnMileage     Int?           @map("return_mileage")
-  pickupFuelLevel   Int?           @map("pickup_fuel_level") @db.SmallInt
-  returnFuelLevel   Int?           @map("return_fuel_level") @db.SmallInt
-  pickupAt          DateTime       @map("pickup_at") @db.Timestamptz()
-  returnedAt        DateTime?      @map("returned_at") @db.Timestamptz()
-  notes             String?
-  renderedHtml      String         @map("rendered_html")
-  renderedPdfUrl    String?        @map("rendered_pdf_url")
-  contentSnapshot   Json           @map("content_snapshot") @db.JsonB
-  contentHash       String         @map("content_hash")
-  signedAt          DateTime?      @map("signed_at") @db.Timestamptz()
-  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz()
-  deletedBy         String?        @map("deleted_by") @db.Uuid
+  id                   String         @id @db.Uuid
+  companyId            String         @map("company_id") @db.Uuid
+  agencyId             String         @map("agency_id") @db.Uuid
+  code                 String
+  reservationId        String         @map("reservation_id") @db.Uuid
+  pricingSnapshotId    String         @map("pricing_snapshot_id") @db.Uuid
+  supersedesContractId String?        @map("supersedes_contract_id") @db.Uuid
+  versionNumber        Int            @default(1) @map("version_number") @db.SmallInt
+  isCurrent            Boolean        @default(true) @map("is_current")
+  customerId           String         @map("customer_id") @db.Uuid
+  vehicleId            String         @map("vehicle_id") @db.Uuid
+  templateId           String?        @map("template_id") @db.Uuid
+  templateVersionId    String?        @map("template_version_id") @db.Uuid
+  status               ContractStatus @default(draft)
+  pickupMileage        Int            @map("pickup_mileage")
+  returnMileage        Int?           @map("return_mileage")
+  pickupFuelLevel      Int?           @map("pickup_fuel_level") @db.SmallInt
+  returnFuelLevel      Int?           @map("return_fuel_level") @db.SmallInt
+  pickupAt             DateTime       @map("pickup_at") @db.Timestamptz()
+  returnedAt           DateTime?      @map("returned_at") @db.Timestamptz()
+  notes                String?
+  renderedHtml         String         @map("rendered_html")
+  renderedPdfUrl       String?        @map("rendered_pdf_url")
+  contentSnapshot      Json           @map("content_snapshot") @db.JsonB
+  contentHash          String         @map("content_hash")
+  signedAt             DateTime?      @map("signed_at") @db.Timestamptz()
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt            DateTime?      @map("deleted_at") @db.Timestamptz()
+  deletedBy            String?        @map("deleted_by") @db.Uuid
 
   // Legal-integrity provenance columns per DATABASE_FINAL_REVIEW.md § 2 (rendered_html + content_snapshot + content_hash frozen at signing).
+  // Contract amendment history is 1:N per reservation. Prior versions remain immutable; only isCurrent changes.
 
-  company         Company                  @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agency          Agency                   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation     Reservation              @relation(fields: [reservationId], references: [id], onDelete: NoAction)
-  customer        Customer                 @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  vehicle         Vehicle                  @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
-  template        ContractTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  templateVersion ContractTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
-  inspectionItems ContractInspectionItem[]
-  signatures      ContractSignature[]
+  company            Company                    @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency             Agency                     @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation        Reservation                @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  pricingSnapshot    ReservationPricingSnapshot @relation(fields: [pricingSnapshotId], references: [id], onDelete: NoAction)
+  supersedesContract Contract?                  @relation("ContractSupersession", fields: [supersedesContractId], references: [id], onDelete: NoAction)
+  supersededBy       Contract[]                 @relation("ContractSupersession")
+  customer           Customer                   @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  vehicle            Vehicle                    @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+  template           ContractTemplate?          @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateVersion    ContractTemplateVersion?   @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  inspectionItems    ContractInspectionItem[]
+  signatures         ContractSignature[]
 
   @@unique([companyId, code])
+  @@unique([reservationId, versionNumber], map: "contracts_reservation_version_number_key")
   @@index([status])
+  @@index([reservationId, createdAt])
+  @@index([pricingSnapshotId])
+  @@index([supersedesContractId])
   @@index([templateVersionId])
   @@index([companyId])
   @@index([agencyId])

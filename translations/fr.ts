@@ -169,6 +169,7 @@ export default {
       lifecycleConflict: 'Cette réservation a été modifiée par une autre action. Actualisez puis réessayez.',
       repricingRequired: 'Les changements de prix d’une réservation confirmée doivent passer par le flux de révision tarifaire.',
       repricingNotAllowed: 'Ce statut de réservation ne peut pas être révisé tarifairement.',
+      extensionConflict: 'Une réservation active peut uniquement être prolongée sans changer le client, le véhicule, l’heure de départ ni raccourcir le retour.',
       generic: 'Impossible d’enregistrer cette action de réservation pour le moment.',
     },
     upload: {
@@ -183,6 +184,13 @@ export default {
     documents: {
       uploaded: 'Document envoyé.',
       uploading: 'Envoi en cours...',
+    },
+    inspection: {
+      frontBody: 'Carrosserie avant',
+      rearBody: 'Carrosserie arrière',
+      sideBody: 'Carrosserie côtés',
+      interior: 'Intérieur',
+      equipment: 'Équipements',
     },
   },
 
@@ -540,14 +548,22 @@ export default {
       authorizedDriver: 'Conducteur autorisé',
       mileageTerms: 'Conditions kilométriques',
       deposit: 'Caution',
+      discountReason: 'Motif de remise',
+      pickupMileage: 'Kilométrage départ',
+      pickupFuel: 'Carburant départ',
+      version: 'Version',
+      current: 'Actuel',
+      historical: 'Historique',
     },
     viewContract: 'Voir le contrat',
     downloadContract: 'Télécharger le contrat',
     signContract: 'Signer le contrat',
     generate: {
       action: 'Générer contrat',
+      amendmentAction: 'Générer avenant',
       generating: 'Génération...',
       created: 'Contrat généré.',
+      amendmentCreated: 'Avenant de contrat généré.',
       pickupMileagePrompt: 'Kilométrage de départ',
     },
     preview: {
@@ -558,6 +574,7 @@ export default {
       forbidden: 'Vous n’avez pas la permission d’effectuer cette action de contrat.',
       notFound: 'Contrat introuvable.',
       alreadyExists: 'Cette réservation possède déjà un contrat.',
+      amendmentNotRequired: 'Aucun avenant de contrat n’est requis pour la tarification actuelle de la réservation.',
       pricingSnapshotRequired: 'La réservation doit disposer d’un instantané tarifaire confirmé.',
       templateRequired: 'Aucun modèle de contrat par défaut n’est configuré pour cette agence.',
       defaultTemplateNotConfigured: 'Aucun modèle de contrat par défaut n’est configuré pour cette agence.',

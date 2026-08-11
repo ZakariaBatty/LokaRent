@@ -12,8 +12,10 @@ import { createClientAction } from "@/modules/clients/actions/create-client.acti
 import {
   confirmReservationAction,
   createReservationAction,
+  repriceReservationAction,
   updateReservationAction,
 } from "@/modules/reservations/actions/create-reservation.action"
+import { generateContractAction } from "@/modules/contracts/actions/create-contract.action"
 import { useWizard, STEP_ORDER } from "./wizard-context"
 import { WizardProgress } from "./wizard-progress"
 import { StepClient } from "./step-client"
@@ -21,6 +23,14 @@ import { StepVehicle } from "./step-vehicle"
 import { StepPricing } from "./step-pricing"
 import { StepOptions } from "./step-options"
 import { StepSummary } from "./step-summary"
+
+const pickupInspectionZones = [
+  { id: "carrosserieAvant", labelKey: "reservations.inspection.frontBody" },
+  { id: "carrosserieArriere", labelKey: "reservations.inspection.rearBody" },
+  { id: "carrosserieCotes", labelKey: "reservations.inspection.sideBody" },
+  { id: "interieur", labelKey: "reservations.inspection.interior" },
+  { id: "equipements", labelKey: "reservations.inspection.equipment" },
+] as const
 
 export function WizardShell() {
   const router = useRouter()
@@ -42,7 +52,7 @@ export function WizardShell() {
   const handleConfirm = async () => {
     setSubmitting(true)
     const selectedCar = cars.find((car) => car.id === state.selectedCarId)
-    const sourceId = sources[0]?.id
+    const sourceId = mode === "edit" && state.sourceId ? state.sourceId : sources[0]?.id
     let customerId = state.selectedClient?.id
 
     if (state.clientMode === "new") {
@@ -96,10 +106,14 @@ export function WizardShell() {
       authorizedDrivers,
     }
 
-    const result =
+    let result =
       mode === "edit" && reservationId
         ? await updateReservationAction({ reservationId, ...payload })
         : await createReservationAction(payload)
+
+    if (!result.success && mode === "edit" && reservationId && result.messageKey === "reservations.errors.repricingRequired") {
+      result = await repriceReservationAction({ reservationId, ...payload })
+    }
 
     if (!result.success || !result.reservationId) {
       setSubmitting(false)
@@ -114,6 +128,24 @@ export function WizardShell() {
         toast.error(t("reservations.form.confirmAfterCreateFailed"))
         router.push(`/reservations/${result.reservationId}/edit`)
         return
+      }
+      const pickupMileage = Number(state.etatDesLieux.kmDepart)
+      if (Number.isInteger(pickupMileage) && pickupMileage >= 0) {
+        const contractResult = await generateContractAction({
+          reservationId: result.reservationId,
+          pickupMileage,
+          pickupFuelLevel: state.etatDesLieux.fuelLevel,
+          notes: state.remarks,
+          inspectionItems: pickupInspectionZones.map((item) => ({
+            event: "pickup",
+            zone: t(item.labelKey),
+            condition: state.etatDesLieux[item.id] ? "ok" : "scratched",
+            notes: state.etatDesLieux[item.id] ? undefined : state.remarks,
+          })),
+        })
+        if (!contractResult.success) {
+          toast.error(t(contractResult.messageKey))
+        }
       }
     }
 
