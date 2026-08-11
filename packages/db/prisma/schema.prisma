@@ -183,6 +183,11 @@ enum InvoiceStatus {
   voided
 }
 
+enum InvoiceType {
+  rental
+  manual
+}
+
 enum PaymentMethod {
   cash
   bank_transfer
@@ -1559,7 +1564,8 @@ model Invoice {
   companyId          String        @map("company_id") @db.Uuid
   agencyId           String        @map("agency_id") @db.Uuid
   code               String
-  reservationId      String        @unique @map("reservation_id") @db.Uuid
+  type               InvoiceType   @default(rental)
+  reservationId      String?       @unique @map("reservation_id") @db.Uuid
   customerId         String        @map("customer_id") @db.Uuid
   customerBusinessId String?       @map("customer_business_id") @db.Uuid
   status             InvoiceStatus
@@ -1580,7 +1586,7 @@ model Invoice {
 
   company                  Company           @relation(fields: [companyId], references: [id], onDelete: NoAction)
   agency                   Agency            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation              Reservation       @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  reservation              Reservation?      @relation(fields: [reservationId], references: [id], onDelete: NoAction)
   customer                 Customer          @relation(fields: [customerId], references: [id], onDelete: NoAction)
   customerBusiness         CustomerBusiness? @relation(fields: [customerBusinessId], references: [id], onDelete: NoAction)
   lineItems                InvoiceLineItem[]

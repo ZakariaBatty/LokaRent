@@ -1256,7 +1256,7 @@ contract_signatures
 
 #### `invoices`
 
-One invoice per reservation. Generated at confirmation or completion.
+Invoices support two Phase-1 modes: rental invoices linked to one reservation, and manual invoices independent from reservations.
 
 ```
 invoices
@@ -1264,7 +1264,8 @@ invoices
   company_id      uuid FK NOT NULL
   agency_id       uuid FK NOT NULL
   code            text NOT NULL               -- "INV-{AGENCY_CODE}-2025-00142"
-  reservation_id  uuid FK → reservations NOT NULL
+  type            enum(rental, manual) NOT NULL DEFAULT rental
+  reservation_id  uuid FK → reservations       -- required for rental, NULL for manual
   customer_id     uuid FK → customers NOT NULL
   status          enum(draft, issued, paid, partially_paid, voided) NOT NULL
   subtotal        numeric(14,4) NOT NULL
@@ -1281,6 +1282,8 @@ invoices
   updated_at      timestamptz
 
   UNIQUE(company_id, code)
+  UNIQUE(reservation_id)                       -- PostgreSQL permits many NULL manual invoices
+  CHECK ((type = 'rental' AND reservation_id IS NOT NULL) OR (type = 'manual' AND reservation_id IS NULL))
 ```
 
 ---

@@ -9,7 +9,7 @@ import {
   listAssignableDrivers,
   softDeleteReservationDriverAssignments,
 } from "@/modules/drivers/repositories/drivers.repository";
-import { incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
+import { findSettingResolutionRows, incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
 import {
   countBlockingReservations,
   createReservation,
@@ -264,6 +264,12 @@ async function buildPricingSnapshotData(input: {
     agencyId: input.context.agencyId,
     vehicleId: input.reservation.vehicleId,
   }, db);
+  const taxSetting = await findSettingResolutionRows({
+    companyId: input.context.companyId,
+    agencyId: input.context.agencyId,
+    key: "tax_rate",
+  }, db);
+  const taxRate = taxSetting[0]?.value != null ? new Prisma.Decimal(taxSetting[0].value) : null;
   return {
     id: input.snapshotId,
     companyId: input.context.companyId,
@@ -284,6 +290,7 @@ async function buildPricingSnapshotData(input: {
     mileageLimit: pricingRule?.mileageLimit ?? null,
     extraMileageRate: pricingRule?.extraMileageRate ?? null,
     depositAmount: input.reservation.depositAmount,
+    taxRate,
     currency: input.reservation.currency,
     lockedAt: new Date(),
     lockedBy: input.context.userId as string,

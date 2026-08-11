@@ -14,6 +14,7 @@ export type InvoiceLineItem = {
   taxRate: number // percentage, e.g. 20
   subtotal: number // quantity * unitPrice before tax
   total: number   // subtotal + tax
+  source?: "system" | "manual"
 }
 
 export type InvoicePayment = {

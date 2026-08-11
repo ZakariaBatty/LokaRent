@@ -4,9 +4,11 @@ import { useMemo, useState, useTransition } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { toast } from "sonner";
 import type { Invoice } from "@/lib/invoices-data";
-import type { InvoiceableReservationOption } from "@/modules/finances/mappers/invoice.mapper";
+import type { InvoiceCustomerOption, InvoiceableReservationOption } from "@/modules/finances/mappers/invoice.mapper";
 import { generateInvoiceAction } from "@/modules/finances/actions/invoice.actions";
+import { createClientAction } from "@/modules/clients/actions/create-client.action";
 import { useI18n } from "@/contexts/i18n-context";
+import { ClientFormDialog, type ClientFormValues } from "@/components/clients/client-form-dialog";
 import { InvoicesKpiBar } from "@/components/invoices/invoices-kpi-bar";
 import {
   InvoicesFilters,
@@ -21,13 +23,18 @@ type PanelMode = { kind: "detail"; invoice: Invoice } | { kind: "form"; invoice:
 export function InvoicesPageClient({
   initialInvoices,
   invoiceableReservations,
+  customerOptions,
 }: {
   initialInvoices: Invoice[];
   invoiceableReservations: InvoiceableReservationOption[];
+  customerOptions: InvoiceCustomerOption[];
 }) {
   const { t } = useI18n();
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  const [customers, setCustomers] = useState<InvoiceCustomerOption[]>(customerOptions);
+  const [createdCustomer, setCreatedCustomer] = useState<InvoiceCustomerOption | null>(null);
   const [panel, setPanel] = useState<PanelMode>(null);
+  const [clientFormOpen, setClientFormOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [filters, setFilters] = useState<InvoicesFiltersState>({
     search: "",
@@ -63,19 +70,46 @@ export function InvoicesPageClient({
   const openDetail = (invoice: Invoice) => setPanel({ kind: "detail", invoice });
   const openForm = (invoice: Invoice | null = null) => setPanel({ kind: "form", invoice });
   const closePanel = () => setPanel(null);
+  const openClientForm = () => setClientFormOpen(true);
+
+  const submitClientForm = async (values: ClientFormValues) => {
+    console.log("step one")
+    const result = await createClientAction(values);
+    console.log('result', result)
+    if (!result.success || !result.customerId) {
+      toast.error(t(result.success ? "clients.errors.generic" : result.messageKey));
+      return false;
+    }
+    const customer: InvoiceCustomerOption = {
+      id: result.customerId,
+      name: values.type === "company" ? values.companyName ?? "" : values.fullName ?? "",
+      type: values.type,
+      phone: values.phone,
+      email: values.email,
+    };
+    setCustomers((current) => [customer, ...current.filter((item) => item.id !== customer.id)]);
+    setCreatedCustomer(customer);
+    toast.success(t("invoices.actions.customerCreated"));
+    return true;
+  };
 
   const handleDelete = () => {
     toast.error(t("invoices.actions.deleteBlocked"));
   };
 
   const handleSave = (data: Partial<Invoice>) => {
-    if (!data.reservationId) {
+    console.log("step one")
+    if (data.type === "rental" && !data.reservationId) {
       toast.error(t("invoices.actions.reservationRequired"));
       return;
     }
     startTransition(async () => {
       const result = await generateInvoiceAction({
+        type: data.type,
         reservationId: data.reservationId,
+        customerId: data.customerId,
+        taxRate: data.lineItems?.[0]?.taxRate,
+        manualLines: data.lineItems?.filter((line) => data.type === "manual" || line.source === "manual"),
         dueAt: data.dueDate || undefined,
         notes: data.notes,
       });
@@ -179,6 +213,9 @@ export function InvoicesPageClient({
               <InvoiceFormPanel
                 initial={panel.invoice}
                 reservationOptions={invoiceableReservations}
+                customerOptions={customers}
+                selectedCustomer={createdCustomer}
+                onAddCustomer={openClientForm}
                 saving={isPending}
                 onClose={closePanel}
                 onSave={handleSave}
@@ -187,6 +224,12 @@ export function InvoicesPageClient({
           </>
         )}
       </AnimatePresence>
+      <ClientFormDialog
+        open={clientFormOpen}
+        mode="create"
+        onClose={() => setClientFormOpen(false)}
+        onSubmit={submitClientForm}
+      />
     </div>
   );
 }

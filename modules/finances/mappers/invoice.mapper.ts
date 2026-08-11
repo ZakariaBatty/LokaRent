@@ -12,16 +12,30 @@ type InvoiceWithDetails = Prisma.InvoiceGetPayload<{
   };
 }>;
 
+type InvoiceReservationWithVehicle = NonNullable<InvoiceWithDetails["reservation"]>;
+
 type InvoiceableReservation = {
   id: string;
   code: string;
   currency: string;
   customer: InvoiceWithDetails["customer"];
-  vehicle: InvoiceWithDetails["reservation"]["vehicle"];
+  vehicle: InvoiceReservationWithVehicle["vehicle"];
   pricingSnapshots: {
+    id: string;
+    pricePerDay: Prisma.Decimal;
+    days: number;
+    discountAmount: Prisma.Decimal;
+    discountReason: string | null;
     totalAmount: Prisma.Decimal;
     currency: string;
     taxRate: Prisma.Decimal | null;
+  }[];
+  extras: {
+    id: string;
+    label: string;
+    quantity: number;
+    unitPrice: Prisma.Decimal;
+    totalPrice: Prisma.Decimal;
   }[];
 };
 
@@ -36,6 +50,16 @@ export type InvoiceableReservationOption = {
   total: number;
   currency: string;
   taxReady: boolean;
+  defaultTaxRate: number | null;
+  lineItems: Invoice["lineItems"];
+};
+
+export type InvoiceCustomerOption = {
+  id: string;
+  name: string;
+  type: "individual" | "company";
+  phone: string;
+  email: string;
 };
 
 function toNumber(value: Prisma.Decimal | number | null | undefined) {
@@ -62,7 +86,7 @@ function customerName(customer: InvoiceWithDetails["customer"] | InvoiceableRese
   return [customer.individual?.firstName, customer.individual?.lastName].filter(Boolean).join(" ") || customer.email || customer.code;
 }
 
-function carLabel(vehicle: InvoiceWithDetails["reservation"]["vehicle"] | InvoiceableReservation["vehicle"]) {
+function carLabel(vehicle: InvoiceReservationWithVehicle["vehicle"] | InvoiceableReservation["vehicle"]) {
   return [vehicle.brand, vehicle.model, vehicle.plate].filter(Boolean).join(" · ");
 }
 
@@ -125,7 +149,7 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
     id: invoice.id,
     number: invoice.code,
     status: mapStatus(invoice.status),
-    type: "rental",
+    type: invoice.type,
     customerId: invoice.customerId,
     customerName: customerName(invoice.customer),
     customerType: invoice.customer.type === "company" ? "company" : "individual",
@@ -133,9 +157,9 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
     customerEmail: invoice.customer.email ?? undefined,
     customerAddress: undefined,
     customerCompany: invoice.customerBusiness?.companyName ?? invoice.customer.business?.companyName ?? undefined,
-    reservationId: invoice.reservationId,
-    reservationCode: invoice.reservation.code,
-    carLabel: carLabel(invoice.reservation.vehicle),
+    reservationId: invoice.reservationId ?? undefined,
+    reservationCode: invoice.reservation?.code,
+    carLabel: invoice.reservation ? carLabel(invoice.reservation.vehicle) : undefined,
     issueDate: toIsoDate(invoice.issuedAt ?? invoice.createdAt),
     dueDate: toIsoDate(invoice.dueAt),
     lineItems: invoice.lineItems.map((lineItem) => {
@@ -149,6 +173,7 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
         taxRate: toNumber(lineItem.taxRate),
         subtotal,
         total: subtotal + taxAmount,
+        source: invoice.type === "rental" && lineItem.sortOrder <= (invoice.reservation ? 999 : -1) ? "system" : "manual",
       };
     }),
     subtotal: toNumber(invoice.subtotal),
@@ -172,6 +197,46 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
 
 export function mapInvoiceableReservationToOption(reservation: InvoiceableReservation): InvoiceableReservationOption {
   const snapshot = reservation.pricingSnapshots[0];
+  const taxRate = snapshot?.taxRate ? toNumber(snapshot.taxRate) : null;
+  const lineItems: Invoice["lineItems"] = snapshot
+    ? [
+        {
+          id: `${reservation.id}-rental`,
+          description: `Location ${carLabel(reservation.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`,
+          quantity: snapshot.days,
+          unitPrice: toNumber(snapshot.pricePerDay),
+          taxRate: taxRate ?? 0,
+          subtotal: toNumber(snapshot.pricePerDay) * snapshot.days,
+          total: toNumber(snapshot.pricePerDay) * snapshot.days * (1 + (taxRate ?? 0) / 100),
+          source: "system",
+        },
+        ...reservation.extras.map((extra) => {
+          const subtotal = toNumber(extra.totalPrice);
+          return {
+            id: extra.id,
+            description: extra.label,
+            quantity: extra.quantity,
+            unitPrice: toNumber(extra.unitPrice),
+            taxRate: taxRate ?? 0,
+            subtotal,
+            total: subtotal * (1 + (taxRate ?? 0) / 100),
+            source: "system" as const,
+          };
+        }),
+        ...(snapshot.discountAmount.greaterThan(0)
+          ? [{
+              id: `${reservation.id}-discount`,
+              description: snapshot.discountReason ? `Remise - ${snapshot.discountReason}` : "Remise",
+              quantity: 1,
+              unitPrice: -toNumber(snapshot.discountAmount),
+              taxRate: taxRate ?? 0,
+              subtotal: -toNumber(snapshot.discountAmount),
+              total: -toNumber(snapshot.discountAmount) * (1 + (taxRate ?? 0) / 100),
+              source: "system" as const,
+            }]
+          : []),
+      ]
+    : [];
   return {
     id: reservation.id,
     code: reservation.code,
@@ -183,5 +248,7 @@ export function mapInvoiceableReservationToOption(reservation: InvoiceableReserv
     total: snapshot ? toNumber(snapshot.totalAmount) : 0,
     currency: snapshot?.currency ?? reservation.currency,
     taxReady: Boolean(snapshot?.taxRate),
+    defaultTaxRate: taxRate,
+    lineItems,
   };
 }

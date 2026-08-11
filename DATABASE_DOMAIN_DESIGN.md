@@ -185,9 +185,10 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 
 **Invoice ownership:**
 - An invoice is owned by the agency that issued it (`agency_id`).
-- Every invoice references one reservation (`reservation_id`).
+- Rental invoices reference one reservation (`reservation_id`). Manual invoices are reservation-independent and keep `reservation_id NULL`.
 - Every invoice references one customer (`customer_id`).
 - When the customer type is `company`, `customer_business_id` is also populated for accurate legal billing.
+- `invoices.type` explicitly distinguishes `rental` and `manual`; a database check keeps rental invoices linked to reservations and manual invoices unlinked.
 
 **Invoice numbering strategy:**
 - Format: `INV-{AGENCY_CODE}-{YEAR}-{SEQUENCE}` — e.g. `INV-AGA-2025-00017`.

@@ -1,4 +1,4 @@
-import { DepositStatus, InvoiceStatus, Prisma, prisma } from "@lokarent/db";
+import { CustomerStatus, DepositStatus, InvoiceStatus, Prisma, prisma } from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -175,8 +175,54 @@ export async function listInvoiceableReservations(
     include: {
       customer: { include: { individual: true, business: true } },
       vehicle: true,
+      extras: { orderBy: { createdAt: "asc" } },
       pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
     },
+    orderBy: { createdAt: "desc" },
+    take: input.take ?? 50,
+  });
+}
+
+export async function findInvoiceCustomer(
+  input: { companyId: string; agencyId: string; customerId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.customer.findFirst({
+    where: {
+      id: input.customerId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+    },
+    include: { individual: true, business: true },
+  });
+}
+
+export async function listInvoiceCustomers(
+  input: { companyId: string; agencyId: string; search?: string; take?: number },
+  db: DatabaseClient = prisma,
+) {
+  const search = input.search?.trim();
+  return db.customer.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      status: CustomerStatus.active,
+      deletedAt: null,
+      ...(search
+        ? {
+            OR: [
+              { code: { contains: search, mode: "insensitive" } },
+              { email: { contains: search, mode: "insensitive" } },
+              { phone: { contains: search, mode: "insensitive" } },
+              { individual: { firstName: { contains: search, mode: "insensitive" } } },
+              { individual: { lastName: { contains: search, mode: "insensitive" } } },
+              { business: { companyName: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    include: { individual: true, business: true },
     orderBy: { createdAt: "desc" },
     take: input.take ?? 50,
   });
@@ -422,6 +468,8 @@ export const financesRepository = {
   lockReservationForInvoice,
   lockInvoiceByReservation,
   listInvoiceableReservations,
+  findInvoiceCustomer,
+  listInvoiceCustomers,
   createInvoice,
   updateInvoice,
   createInvoiceLineItem,

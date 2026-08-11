@@ -965,6 +965,8 @@ Every FK is enforced at the database level. Violation = insert/update rejected.
 - `status` transitions: `'draft'` → `'issued'` → `'paid'` or `'overdue'` → `'cancelled'`
 - Cannot issue if customer blacklisted
 - Total must equal sum of line items
+- `type = rental` requires `reservation_id`; `type = manual` requires `reservation_id IS NULL`
+- Manual invoices require an existing scoped customer and at least one manual line item
 - Issued invoices must use `invoice_line_items.tax_rate` and `invoice_line_items.tax_amount` as the historical tax snapshot. Never recalculate issued invoice tax from current settings.
 
 **Payment validation:**

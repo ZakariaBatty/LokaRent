@@ -6,8 +6,8 @@ import {
   runInTransaction,
 } from "@/shared";
 import { createReservationTimelineEvent } from "@/modules/reservations/repositories/reservations.repository";
-import { incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
-import { Prisma } from "@lokarent/db";
+import { findSettingResolutionRows, incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
+import { InvoiceType, Prisma } from "@lokarent/db";
 import {
   createCreditNote,
   createDeposit,
@@ -17,10 +17,12 @@ import {
   createInvoice,
   createManyInvoiceLineItems,
   createPayment,
+  findInvoiceCustomer,
   findInvoiceById,
   findInvoiceByReservation,
   findInvoiceGenerationSource,
   getInvoicePaymentSummary,
+  listInvoiceCustomers,
   listInvoiceableReservations,
   listCreditNotesForInvoice,
   listDeposits,
@@ -82,6 +84,13 @@ type InvoiceGenerationSource = NonNullable<
   Awaited<ReturnType<typeof findInvoiceGenerationSource>>
 >;
 
+export type InvoiceDraftLineInput = {
+  description: string;
+  quantity: Prisma.Decimal.Value;
+  unitPrice: Prisma.Decimal.Value;
+  source?: "system" | "manual";
+};
+
 export async function getInvoiceService(input: {
   companyId: string;
   agencyId: string;
@@ -126,10 +135,56 @@ function decimal(value: unknown) {
 
 function taxAmountFor(
   totalPrice: Prisma.Decimal,
-  taxRate: Prisma.Decimal | null,
+  taxRate: Prisma.Decimal,
 ) {
-  if (!taxRate) return null;
   return totalPrice.mul(taxRate).div(100);
+}
+
+function assertTaxRate(value: Prisma.Decimal) {
+  if (value.lessThan(0) || value.greaterThan(100)) {
+    throw createValidationError("INVOICE_TAX_RATE_INVALID");
+  }
+}
+
+function normalizeManualLines(lines: InvoiceDraftLineInput[] | undefined) {
+  return (lines ?? [])
+    .filter((line) => line.source !== "system")
+    .map((line) => ({
+      description: line.description.trim(),
+      quantity: decimal(line.quantity),
+      unitPrice: decimal(line.unitPrice),
+    }))
+    .filter((line) => line.description && line.quantity.greaterThan(0));
+}
+
+function lineInputToCreateInput(input: {
+  description: string;
+  quantity: Prisma.Decimal;
+  unitPrice: Prisma.Decimal;
+  taxRate: Prisma.Decimal;
+  sortOrder: number;
+}): InvoiceLineItemCreateData {
+  const totalPrice = input.quantity.mul(input.unitPrice);
+  return {
+    description: input.description,
+    quantity: input.quantity,
+    unitPrice: input.unitPrice,
+    totalPrice,
+    taxRate: input.taxRate,
+    taxAmount: taxAmountFor(totalPrice, input.taxRate),
+    sortOrder: input.sortOrder,
+  };
+}
+
+async function resolveAgencyTaxRate(
+  context: FinanceServiceContext,
+  db: Parameters<typeof findSettingResolutionRows>[1],
+) {
+  const rows = await findSettingResolutionRows(
+    { companyId: context.companyId, agencyId: context.agencyId, key: "tax_rate" },
+    db,
+  );
+  return rows[0]?.value != null ? decimal(rows[0].value) : null;
 }
 
 async function generateInvoiceCode(
@@ -159,76 +214,105 @@ export async function listInvoiceableReservationsService(input: {
   return listInvoiceableReservations(input);
 }
 
+export async function listInvoiceCustomersService(input: {
+  companyId: string;
+  agencyId: string;
+  search?: string;
+  take?: number;
+}) {
+  return listInvoiceCustomers(input);
+}
+
 export async function generateInvoiceFromReservationService(input: {
   context: FinanceServiceContext;
-  reservationId: string;
+  type?: InvoiceType;
+  reservationId?: string | null;
+  customerId?: string | null;
+  taxRate?: Prisma.Decimal.Value | null;
+  manualLines?: InvoiceDraftLineInput[];
   dueAt?: Date | null;
   notes?: string | null;
 }) {
+  const type = input.type ?? (input.reservationId ? InvoiceType.rental : InvoiceType.manual);
+  if (type === InvoiceType.rental && !input.reservationId) throw createValidationError("INVOICE_RESERVATION_REQUIRED");
+  if (type === InvoiceType.manual && input.reservationId) throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
+
   let createdInvoiceId = "";
   const invoice = await runInTransaction(async (tx) => {
-    const scope = { ...input.context, reservationId: input.reservationId };
-    await lockReservationForInvoice(scope, tx);
-    await lockInvoiceByReservation(scope, tx);
-
-    const source = await findInvoiceGenerationSource(scope, tx);
-    if (!source) throw createNotFoundError("Reservation", input);
-    if (source.invoice)
-      throw createValidationError("FINANCE_INVOICE_ALREADY_EXISTS");
-
-    const snapshot = source.pricingSnapshots[0];
-    if (!snapshot)
-      throw createValidationError("FINANCE_PRICING_SNAPSHOT_MISSING");
-    if (!snapshot.taxRate)
-      throw createValidationError("FINANCE_HISTORICAL_TAX_RATE_MISSING");
-
     const invoiceId = createId();
     createdInvoiceId = invoiceId;
     const sequence = await generateInvoiceCode(input.context, tx);
     const issuedAt = new Date();
     const dueAt = input.dueAt ?? new Date(issuedAt.getTime() + 14 * 86_400_000);
+    const manualLines = normalizeManualLines(input.manualLines);
+    let reservationId: string | null = null;
+    let customerId = input.customerId ?? null;
+    let customerBusinessId: string | null = null;
+    let currency = "MAD";
+    let discountAmount = decimal(0);
+    let lineItems: InvoiceLineItemCreateData[] = [];
 
-    const rentalDescription = `Location ${invoiceVehicleLabel(source.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`;
-    const rentalTotal = snapshot.pricePerDay.mul(snapshot.days);
-    const rentalTaxAmount = taxAmountFor(rentalTotal, snapshot.taxRate);
-    const lineItems: InvoiceLineItemCreateData[] = [
-      {
-        description: rentalDescription,
-        quantity: decimal(snapshot.days),
-        unitPrice: snapshot.pricePerDay,
-        totalPrice: rentalTotal,
-        taxRate: snapshot.taxRate,
-        taxAmount: rentalTaxAmount,
-        sortOrder: 0,
-      },
-      ...source.extras.map((extra, index) => ({
-        description: extra.label,
-        quantity: decimal(extra.quantity),
-        unitPrice: extra.unitPrice,
-        totalPrice: extra.totalPrice,
-        taxRate: snapshot.taxRate,
-        taxAmount: taxAmountFor(extra.totalPrice, snapshot.taxRate),
-        sortOrder: index + 1,
-      })),
-    ];
+    if (type === InvoiceType.rental) {
+      const scope = { ...input.context, reservationId: input.reservationId! };
+      await lockReservationForInvoice(scope, tx);
+      await lockInvoiceByReservation(scope, tx);
+      const source = await findInvoiceGenerationSource(scope, tx);
+      if (!source) throw createNotFoundError("Reservation", input);
+      if (source.invoice) throw createValidationError("INVOICE_ALREADY_EXISTS_FOR_RESERVATION");
+      const snapshot = source.pricingSnapshots[0];
+      if (!snapshot) throw createValidationError("INVOICE_PRICING_SNAPSHOT_MISSING");
+      const taxRate = input.taxRate != null ? decimal(input.taxRate) : snapshot.taxRate ?? await resolveAgencyTaxRate(input.context, tx);
+      if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
+      assertTaxRate(taxRate);
 
-    if (snapshot.discountAmount.greaterThan(0)) {
-      lineItems.push({
-        description: snapshot.discountReason
-          ? `Remise - ${snapshot.discountReason}`
-          : "Remise",
-        quantity: decimal(1),
-        unitPrice: snapshot.discountAmount.negated(),
-        totalPrice: snapshot.discountAmount.negated(),
-        taxRate: snapshot.taxRate,
-        taxAmount: taxAmountFor(
-          snapshot.discountAmount.negated(),
-          snapshot.taxRate,
-        ),
-        sortOrder: lineItems.length,
-      });
+      reservationId = source.id;
+      customerId = source.customerId;
+      customerBusinessId = source.customer.business?.id ?? null;
+      currency = snapshot.currency;
+      discountAmount = snapshot.discountAmount;
+      lineItems = [
+        lineInputToCreateInput({
+          description: `Location ${invoiceVehicleLabel(source.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`,
+          quantity: decimal(snapshot.days),
+          unitPrice: snapshot.pricePerDay,
+          taxRate,
+          sortOrder: 0,
+        }),
+        ...source.extras.map((extra, index) => lineInputToCreateInput({
+          description: extra.label,
+          quantity: decimal(extra.quantity),
+          unitPrice: extra.unitPrice,
+          taxRate,
+          sortOrder: index + 1,
+        })),
+      ];
+      if (snapshot.discountAmount.greaterThan(0)) {
+        lineItems.push(lineInputToCreateInput({
+          description: snapshot.discountReason ? `Remise - ${snapshot.discountReason}` : "Remise",
+          quantity: decimal(1),
+          unitPrice: snapshot.discountAmount.negated(),
+          taxRate,
+          sortOrder: lineItems.length,
+        }));
+      }
+      lineItems.push(...manualLines.map((line, index) => lineInputToCreateInput({
+        ...line,
+        taxRate,
+        sortOrder: lineItems.length + index,
+      })));
+    } else {
+      if (!customerId) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
+      const customer = await findInvoiceCustomer({ ...input.context, customerId }, tx);
+      if (!customer) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
+      if (manualLines.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
+      const taxRate = input.taxRate != null ? decimal(input.taxRate) : await resolveAgencyTaxRate(input.context, tx);
+      if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
+      assertTaxRate(taxRate);
+      customerBusinessId = customer.business?.id ?? null;
+      lineItems = manualLines.map((line, index) => lineInputToCreateInput({ ...line, taxRate, sortOrder: index }));
     }
 
+    if (lineItems.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
     const subtotal = lineItems.reduce(
       (sum, item) => sum.plus(decimal(item.totalPrice)),
       decimal(0),
@@ -243,16 +327,17 @@ export async function generateInvoiceFromReservationService(input: {
         id: invoiceId,
         companyId: input.context.companyId,
         agencyId: input.context.agencyId,
+        type,
         code: sequence.formatted,
-        reservationId: source.id,
-        customerId: source.customerId,
-        customerBusinessId: source.customer.business?.id ?? null,
+        reservationId,
+        customerId: customerId!,
+        customerBusinessId,
         status: "issued",
         subtotal,
         taxAmount,
-        discountAmount: snapshot.discountAmount,
+        discountAmount,
         totalAmount,
-        currency: snapshot.currency,
+        currency,
         issuedAt,
         dueAt,
         notes: input.notes ?? null,
@@ -268,17 +353,19 @@ export async function generateInvoiceFromReservationService(input: {
       })),
       tx,
     );
-    await createReservationTimelineEvent(
-      {
+    if (created.reservationId) {
+      await createReservationTimelineEvent(
+        {
         id: createId(),
         companyId: created.companyId,
         reservationId: created.reservationId,
         eventType: "invoice_issued",
         description: created.code,
         performedBy: input.context.userId ?? null,
-      },
-      tx,
-    );
+        },
+        tx,
+      );
+    }
     return created;
   });
 
@@ -324,16 +411,18 @@ export async function createInvoiceService(input: {
         tx,
       );
     }
-    await createReservationTimelineEvent(
-      {
-        id: createId(),
-        companyId: created.companyId,
-        reservationId: created.reservationId,
-        eventType: "invoice_issued",
-        performedBy: input.context.userId ?? null,
-      },
-      tx,
-    );
+    if (created.reservationId) {
+      await createReservationTimelineEvent(
+        {
+          id: createId(),
+          companyId: created.companyId,
+          reservationId: created.reservationId,
+          eventType: "invoice_issued",
+          performedBy: input.context.userId ?? null,
+        },
+        tx,
+      );
+    }
     return created;
   });
   await publishDomainEvent({
@@ -709,6 +798,7 @@ export const financesService = {
   createInvoiceService,
   generateInvoiceFromReservationService,
   listInvoiceableReservationsService,
+  listInvoiceCustomersService,
   issueInvoiceService,
   recordPaymentService,
   listPaymentsService,
