@@ -44,6 +44,7 @@ const methodLabels: Record<string, string> = {
   card:          "Carte",
   bank_transfer: "Virement",
   cheque:        "Chèque",
+  other:         "Autre",
 }
 
 const timelineIcons: Record<string, { icon: LucideIcon; bg: string; color: string }> = {

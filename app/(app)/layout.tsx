@@ -4,7 +4,11 @@ import { AppHeader } from "@/components/app/app-header"
 import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppShell } from "@/components/app/app-shell"
 import { AgencyProvider } from "@/contexts/agency-context"
-import { requireCurrentAgencyContext, requireCurrentCompanyContext } from "@/shared/auth"
+import {
+  listCurrentAgencyOptions,
+  requireCurrentAgencyContext,
+  requireCurrentCompanyContext,
+} from "@/shared/auth"
 import { redirect } from "next/navigation"
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -19,10 +23,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/blocked-account")
   }
 
-  await requireCurrentAgencyContext()
+  const agencyContext = await requireCurrentAgencyContext()
+  const agencies = await listCurrentAgencyOptions()
 
   return (
-    <AgencyProvider>
+    <AgencyProvider initialAgencies={agencies} initialAgencyId={agencyContext.agencyId}>
     <SidebarProvider>
       <div className="relative min-h-screen overflow-hidden text-slate-900">
         {/* Light premium ambient background */}

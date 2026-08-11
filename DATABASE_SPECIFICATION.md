@@ -181,17 +181,17 @@ companies (1 row)
 
 ### 1.9 — Money Storage
 
-**Rule:** Store money as `NUMERIC(12, 2)` (not float). Never store currency code on money columns; derive it from scope.
+**Rule:** Store money as `NUMERIC(14, 4)` (not float). Store the currency on financial rows where the certified Prisma schema includes it.
 
-**Why:** Floating-point precision. Accounting requires exact representation. Every money value is implicitly in the scope's currency (company or agency).
+**Why:** Floating-point precision. Accounting requires exact representation. The certified Prisma schema uses four-decimal precision for rental, tax, and finance calculations.
 
 **Standard:**
 - Column name: `amount`, `total`, `price`, `tax` (never `price_usd` or currency-suffixed)
-- Type: `NUMERIC(12, 2)` — supports up to 10 digits before decimal, 2 after
-- Default currency: Inherited from `company.currency` or `agency.currency`
-- Example: `invoices.total NUMERIC(12, 2)` implicitly in the invoice's agency's currency
+- Type: `NUMERIC(14, 4)` — matches the certified Prisma `Decimal(14,4)` convention
+- Default currency: Inherited from `company.currency` or `agency.currency` when creating scoped rows
+- Example: `invoices.total NUMERIC(14, 4)` with `invoices.currency`
 
-**Per-row currency:** Only add explicit `currency char(3)` column when truly needed (Phase 2 multi-currency). Phase 1 is single-currency per company.
+**Currency aggregation:** Until an FX/conversion model exists, finance reports must group or filter by currency and must not aggregate different currencies into one total.
 
 ---
 
@@ -965,6 +965,7 @@ Every FK is enforced at the database level. Violation = insert/update rejected.
 - `status` transitions: `'draft'` → `'issued'` → `'paid'` or `'overdue'` → `'cancelled'`
 - Cannot issue if customer blacklisted
 - Total must equal sum of line items
+- Issued invoices must use `invoice_line_items.tax_rate` and `invoice_line_items.tax_amount` as the historical tax snapshot. Never recalculate issued invoice tax from current settings.
 
 **Payment validation:**
 - `amount_paid > 0`
@@ -994,13 +995,14 @@ Every FK is enforced at the database level. Violation = insert/update rejected.
 
 ### Category 5 — Money Validations
 
-**All money columns (NUMERIC(12,2)):**
+**All money columns (certified Prisma schema: NUMERIC(14,4)):**
 - >= 0 (no negative amounts in base tables)
 - <= 9,999,999.99 (max 10 digits before decimal)
 - Exception: `credit_notes.amount` can be negative (reversal)
 
 **Invoice total:**
 - `invoices.total = SUM(invoice_line_items.amount)` (enforced at insert time, not DB constraint)
+- `invoice_line_items.tax_rate` / `tax_amount` are immutable once the invoice is issued.
 
 **Deposit:**
 - `deposits.amount <= reservations.pricing_snapshot.deposit_required`
@@ -1184,6 +1186,7 @@ When a parent is soft-deleted, children are NOT automatically soft-deleted. Appl
 - `reservation_pricing_snapshots` rows are inserted once and never updated
 - A price change creates a new snapshot row with `supersedes_id` reference to the old one
 - Queries always select the latest (highest `created_at`) snapshot per reservation
+- `reservation_pricing_snapshots.tax_rate` stores the immutable accepted tax rate copied from resolved agency settings at snapshot creation. Existing historical rows may be `NULL` if that rate was not stored.
 
 ---
 

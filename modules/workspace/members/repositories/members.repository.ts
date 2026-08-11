@@ -103,7 +103,18 @@ export async function listUserAgencyMemberships(
       userId: input.userId,
       ...(input.includeDeleted ? {} : { deletedAt: null }),
     },
-    include: { role: true, agency: true },
+    include: {
+      role: true,
+      agency: {
+        include: {
+          _count: {
+            select: {
+              vehicles: { where: { deletedAt: null } },
+            },
+          },
+        },
+      },
+    },
     orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
   });
 }

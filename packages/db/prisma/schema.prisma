@@ -1241,6 +1241,7 @@ model ReservationPricingSnapshot {
   mileageLimit     Int?      @map("mileage_limit")
   extraMileageRate Decimal?  @map("extra_mileage_rate") @db.Decimal(14, 4)
   depositAmount    Decimal?  @map("deposit_amount") @db.Decimal(14, 4)
+  taxRate          Decimal?  @map("tax_rate") @db.Decimal(14, 4)
   currency         String    @db.Char(3)
   lockedAt         DateTime  @map("locked_at") @db.Timestamptz()
   lockedBy         String    @map("locked_by") @db.Uuid
@@ -1570,6 +1571,7 @@ model Invoice {
   issuedAt           DateTime?     @map("issued_at") @db.Date
   dueAt              DateTime?     @map("due_at") @db.Date
   paidAt             DateTime?     @map("paid_at") @db.Timestamptz()
+  documentUrl        String?       @map("document_url")
   notes              String?
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
@@ -1602,6 +1604,8 @@ model InvoiceLineItem {
   quantity    Decimal  @db.Decimal(14, 4)
   unitPrice   Decimal  @map("unit_price") @db.Decimal(14, 4)
   totalPrice  Decimal  @map("total_price") @db.Decimal(14, 4)
+  taxRate     Decimal? @map("tax_rate") @db.Decimal(14, 4)
+  taxAmount   Decimal? @map("tax_amount") @db.Decimal(14, 4)
   sortOrder   Int      @default(0) @map("sort_order") @db.SmallInt
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -1725,6 +1729,8 @@ model Expense {
   occurredAt    DateTime       @map("occurred_at") @db.Date
   method        PaymentMethod?
   reference     String?
+  provider      String?
+  internalNote  String?        @map("internal_note")
   documentUrl   String?        @map("document_url")
   recordedBy    String         @map("recorded_by") @db.Uuid
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()

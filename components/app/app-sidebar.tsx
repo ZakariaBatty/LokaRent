@@ -52,9 +52,11 @@ function PlanWidget({ collapsed }: { collapsed: boolean }) {
   const { activeAgency, agencyData } = useAgency()
   const plan = activeAgency?.plan ?? 'PRO'
   const planLabel = plan.charAt(0) + plan.slice(1).toLowerCase()
-  const planPrice = plan === 'STARTER' ? '199 DH/mo' : plan === 'ENTERPRISE' ? 'Sur devis' : '599 DH/mo'
-  const planMax = plan === 'STARTER' ? 20 : plan === 'ENTERPRISE' ? 200 : 50
-  const carCount = agencyData.cars.length
+  const planPrice = plan === 'STARTER' ? '199 DH/mo' : plan === 'BUSINESS' ? 'Sur devis' : '599 DH/mo'
+  const planMax = plan === 'STARTER' ? 20 : plan === 'BUSINESS' ? 200 : 50
+  const carCount = activeAgency && 'vehicleCount' in activeAgency
+    ? activeAgency.vehicleCount
+    : agencyData.cars.length
   const pct = Math.min(100, Math.round((carCount / planMax) * 100))
 
   return (
@@ -113,7 +115,7 @@ function PlanWidget({ collapsed }: { collapsed: boolean }) {
                 />
               </div>
             </div>
-            {plan !== 'ENTERPRISE' && (
+            {plan !== 'BUSINESS' && (
               <button className="relative mt-3 flex w-full items-center justify-center rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 py-1.5 text-[11px] font-semibold text-white shadow-sm shadow-blue-500/20 transition-all hover:shadow-md hover:shadow-blue-500/30">
                 Améliorer
               </button>

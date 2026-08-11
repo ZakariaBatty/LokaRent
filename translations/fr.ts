@@ -626,6 +626,20 @@ export default {
     viewInvoice: 'Voir la facture',
     downloadInvoice: 'Télécharger la facture',
     sendInvoice: 'Envoyer la facture',
+    actions: {
+      generated: 'Facture générée',
+      deleteBlocked: 'Les factures émises ne sont pas supprimées. Utilisez une note de crédit.',
+      reservationRequired: 'Sélectionnez une réservation avec un instantané de prix.',
+    },
+    errors: {
+      generic: 'Impossible de traiter cette facture pour le moment.',
+      forbidden: 'Vous n’avez pas la permission de gérer les factures.',
+      notFound: 'Facture ou réservation introuvable.',
+      validation: 'Les données de facture sont invalides.',
+      alreadyExists: 'Une facture existe déjà pour cette réservation.',
+      pricingSnapshotMissing: 'Aucun instantané de prix courant n’existe pour cette réservation.',
+      historicalTaxMissing: 'Le taux de TVA historique de cette réservation est manquant.',
+    },
   },
 
   communication: {

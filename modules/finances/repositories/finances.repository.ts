@@ -11,7 +11,10 @@ export type FinanceListInput = PaginationInput & {
   agencyId: string;
   from?: Date;
   to?: Date;
+  search?: string;
 };
+
+export type InvoiceSort = "recent" | "amount_desc" | "due_asc";
 
 export async function findInvoiceById(
   input: { companyId: string; agencyId: string; invoiceId: string },
@@ -23,8 +26,9 @@ export async function findInvoiceById(
       lineItems: { orderBy: { sortOrder: "asc" } },
       payments: { orderBy: { paidAt: "desc" } },
       creditNotesAsOriginal: true,
-      reservation: true,
+      reservation: { include: { vehicle: true } },
       customer: { include: { individual: true, business: true } },
+      customerBusiness: true,
     },
   });
 }
@@ -40,28 +44,142 @@ export async function findInvoiceByReservation(
 }
 
 export async function paginateInvoices(
-  input: FinanceListInput & { status?: InvoiceStatus; customerId?: string },
+  input: FinanceListInput & { status?: InvoiceStatus; customerId?: string; sort?: InvoiceSort },
   db: DatabaseClient = prisma,
 ) {
   const pagination = getPagination(input);
+  const search = input.search?.trim();
   const where: Prisma.InvoiceWhereInput = {
     companyId: input.companyId,
     agencyId: input.agencyId,
     status: input.status,
     customerId: input.customerId,
     ...(input.from || input.to ? { createdAt: { gte: input.from, lte: input.to } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { code: { contains: search, mode: "insensitive" } },
+            { reservation: { code: { contains: search, mode: "insensitive" } } },
+            { customer: { code: { contains: search, mode: "insensitive" } } },
+            { customer: { email: { contains: search, mode: "insensitive" } } },
+            { customer: { phone: { contains: search, mode: "insensitive" } } },
+            { customer: { individual: { firstName: { contains: search, mode: "insensitive" } } } },
+            { customer: { individual: { lastName: { contains: search, mode: "insensitive" } } } },
+            { customer: { business: { companyName: { contains: search, mode: "insensitive" } } } },
+            { reservation: { vehicle: { plate: { contains: search, mode: "insensitive" } } } },
+          ],
+        }
+      : {}),
   };
+  const orderBy: Prisma.InvoiceOrderByWithRelationInput =
+    input.sort === "amount_desc"
+      ? { totalAmount: "desc" }
+      : input.sort === "due_asc"
+        ? { dueAt: "asc" }
+        : { createdAt: "desc" };
   const [data, total] = await Promise.all([
     db.invoice.findMany({
       where,
-      include: { customer: true },
-      orderBy: { createdAt: "desc" },
+      include: {
+        lineItems: { orderBy: { sortOrder: "asc" } },
+        payments: { orderBy: { paidAt: "desc" } },
+        creditNotesAsOriginal: true,
+        reservation: { include: { vehicle: true } },
+        customer: { include: { individual: true, business: true } },
+        customerBusiness: true,
+      },
+      orderBy,
       skip: pagination.skip,
       take: pagination.take,
     }),
     db.invoice.count({ where }),
   ]);
   return { data, pagination: createPaginationMeta(pagination, total) };
+}
+
+export async function findInvoiceGenerationSource(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.findFirst({
+    where: {
+      id: input.reservationId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+    },
+    include: {
+      customer: { include: { individual: true, business: true } },
+      vehicle: true,
+      extras: { orderBy: { createdAt: "asc" } },
+      pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
+      invoice: true,
+    },
+  });
+}
+
+export async function lockReservationForInvoice(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  await db.$queryRaw`
+    SELECT id
+    FROM reservations
+    WHERE id = ${input.reservationId}::uuid
+      AND company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+    FOR UPDATE
+  `;
+}
+
+export async function lockInvoiceByReservation(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  await db.$queryRaw`
+    SELECT id
+    FROM invoices
+    WHERE company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+      AND reservation_id = ${input.reservationId}::uuid
+    FOR UPDATE
+  `;
+}
+
+export async function listInvoiceableReservations(
+  input: { companyId: string; agencyId: string; search?: string; take?: number },
+  db: DatabaseClient = prisma,
+) {
+  const search = input.search?.trim();
+  return db.reservation.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      invoice: null,
+      pricingSnapshots: { some: { isCurrent: true } },
+      ...(search
+        ? {
+            OR: [
+              { code: { contains: search, mode: "insensitive" } },
+              { customer: { code: { contains: search, mode: "insensitive" } } },
+              { customer: { individual: { firstName: { contains: search, mode: "insensitive" } } } },
+              { customer: { individual: { lastName: { contains: search, mode: "insensitive" } } } },
+              { customer: { business: { companyName: { contains: search, mode: "insensitive" } } } },
+              { vehicle: { plate: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    include: {
+      customer: { include: { individual: true, business: true } },
+      vehicle: true,
+      pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
+    },
+    orderBy: { createdAt: "desc" },
+    take: input.take ?? 50,
+  });
 }
 
 export async function createInvoice(data: Prisma.InvoiceUncheckedCreateInput, db: DatabaseClient = prisma) {
@@ -300,6 +418,10 @@ export const financesRepository = {
   findInvoiceById,
   findInvoiceByReservation,
   paginateInvoices,
+  findInvoiceGenerationSource,
+  lockReservationForInvoice,
+  lockInvoiceByReservation,
+  listInvoiceableReservations,
   createInvoice,
   updateInvoice,
   createInvoiceLineItem,

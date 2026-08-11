@@ -205,6 +205,20 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 
 **Key design decision:** `invoices` and `credit_notes` are never deleted or mutated after issuance. A correction creates a new credit note referencing the original invoice. This is not optional — it is how VAT-compliant accounting works in every jurisdiction.
 
+**Tax and document snapshots:**
+- `settings.tax_rate` is mutable agency configuration. It is resolved at reservation confirmation/repricing time and copied into `reservation_pricing_snapshots.tax_rate`.
+- `reservation_pricing_snapshots.tax_rate` is the immutable accepted tax rate for that pricing snapshot. Historical rows may be `NULL` when the rate was not stored before the Phase-1 Finance tax snapshot migration.
+- `invoice_line_items.tax_rate` and `invoice_line_items.tax_amount` freeze the tax basis actually used for each issued invoice line. Issued invoices never recalculate tax from current settings.
+- `invoices.document_url` stores the generated invoice document/PDF location. Invoice PDFs are accounting documents and are retained permanently.
+
+**Phase-1 correction boundary:**
+- `credit_notes` are accounting/document corrections for invoice voids or amount corrections.
+- `credit_notes` are not cash refunds.
+- A dedicated `refunds` table is postponed to the Phase 2 online-payment/refund workflow.
+- `FinancialAccount`/cashbox/bank account modeling is not required in Phase 1; Finance remains operational rental ERP finance, not a double-entry accounting ledger.
+
+**Currency aggregation rule:** Finance rows carry explicit currency. Until an FX/conversion model exists, reports and KPIs must group or filter by currency and must not aggregate different currencies into one total.
+
 ---
 
 ### Domain 9 — Drivers
@@ -1083,7 +1097,7 @@ Every file type that the system stores, where it lives, who owns it, and what ha
 | **Customer passport scan** | `customer_documents` | Object storage — private bucket | Same as driving license | Same as driving license. |
 | **Contract PDF (generated)** | `contracts` | Object storage — private bucket, immutable path | Forever — legal document | Never deleted. Not even after company closure. The object storage path is preserved in `contracts.rendered_pdf_url`. |
 | **Contract signed PDF** | `contracts` | Object storage — private bucket, immutable path | Forever | Never deleted. |
-| **Invoice PDF** | `invoices` | Object storage — private bucket | Forever — accounting document | Never deleted. |
+| **Invoice PDF** | `invoices.document_url` | Object storage — private bucket | Forever — accounting document | Never deleted. |
 | **Credit note PDF** | `credit_notes` | Object storage — private bucket | Forever | Never deleted. |
 | **Vehicle insurance certificate** | `vehicle_insurances` | Object storage | Life of the insurance policy + 5 years | Soft-delete `documents` row. File purged after 5-year retention from policy end. |
 | **Vehicle registration document** | `vehicle_registrations` | Object storage | Life of registration period + 5 years | Same as insurance. |
@@ -1223,7 +1237,7 @@ Without writing SQL. Every field below must have an index, and the type and reas
 | `invoices` | `due_date` | B-tree | Overdue detection job. |
 | `invoices` | `customer_id` | B-tree | All invoices for a customer. |
 | `invoices` | `customer_business_id` | B-tree (sparse) | All invoices for a company customer entity. |
-| `payments` | `(invoice_id, status)` | B-tree | Payments for an invoice. |
+| `payments` | `invoice_id` | B-tree | Payments for an invoice. Phase 1 has no `Payment.status`. |
 | `payments` | `(agency_id, created_at)` | B-tree | Payment feed and reporting. |
 | `deposits` | `(reservation_id, status)` | B-tree | Deposit status per reservation. |
 | `expenses` | `(agency_id, date)` | B-tree | Expense reports by date range. |

@@ -24,9 +24,9 @@ import {
   type Invoice,
   type InvoiceType,
   type InvoiceLineItem,
-  invoices as allInvoices,
   formatMAD,
 } from "@/lib/invoices-data"
+import type { InvoiceableReservationOption } from "@/modules/finances/mappers/invoice.mapper"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -49,22 +49,6 @@ type FormState = {
   notes: string
   lineItems: DraftLineItem[]
 }
-
-// Seed reservation options from existing mock invoices that are rental type
-const rentalOptions = allInvoices
-  .filter((i) => i.type === "rental" && i.reservationCode)
-  .map((i) => ({
-    id: i.reservationId ?? i.id,
-    code: i.reservationCode ?? "",
-    carLabel: i.carLabel ?? "",
-    customerName: i.customerName,
-    customerPhone: i.customerPhone,
-    customerEmail: i.customerEmail ?? "",
-    lineItems: i.lineItems,
-    subtotal: i.subtotal,
-    taxTotal: i.taxTotal,
-    total: i.total,
-  }))
 
 const today = new Date().toISOString().split("T")[0]
 const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0]
@@ -135,10 +119,14 @@ function inputClass(error?: boolean) {
 // ---------------------------------------------------------------------------
 export function InvoiceFormPanel({
   initial,
+  reservationOptions = [],
+  saving: externalSaving,
   onClose,
   onSave,
 }: {
   initial?: Invoice | null
+  reservationOptions?: InvoiceableReservationOption[]
+  saving?: boolean
   onClose: () => void
   onSave: (data: Partial<Invoice>) => void
 }) {
@@ -175,20 +163,22 @@ export function InvoiceFormPanel({
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [saving, setSaving] = useState(false)
+  const isSaving = externalSaving ?? saving
 
   // Auto-populate rental fields when a reservation is selected
   useEffect(() => {
     if (form.type !== "rental" || !form.reservationId) return
-    const opt = rentalOptions.find((r) => r.id === form.reservationId)
+    const opt = reservationOptions.find((r) => r.id === form.reservationId)
     if (!opt) return
     setForm((prev) => ({
       ...prev,
       customerName:  opt.customerName,
       customerPhone: opt.customerPhone,
       customerEmail: opt.customerEmail,
-      lineItems:     opt.lineItems.map((li) => ({ ...li })),
+      customerType:  opt.customerType,
+      lineItems:     prev.lineItems,
     }))
-  }, [form.reservationId, form.type])
+  }, [form.reservationId, form.type, reservationOptions])
 
   const update = useCallback(
     <K extends keyof FormState>(key: K, val: FormState[K]) => {
@@ -244,9 +234,11 @@ export function InvoiceFormPanel({
   const handleSave = async () => {
     const e = validate()
     if (Object.keys(e).length > 0) { setErrors(e); return }
-    setSaving(true)
-    await new Promise((r) => setTimeout(r, 900))
-    setSaving(false)
+    if (externalSaving === undefined) {
+      setSaving(true)
+      await new Promise((r) => setTimeout(r, 900))
+      setSaving(false)
+    }
     onSave({
       type:          form.type,
       customerName:  form.customerName,
@@ -348,8 +340,8 @@ export function InvoiceFormPanel({
                       >
                         <span className="truncate">
                           {form.reservationId
-                            ? rentalOptions.find((r) => r.id === form.reservationId)
-                              ? `${rentalOptions.find((r) => r.id === form.reservationId)!.code} · ${rentalOptions.find((r) => r.id === form.reservationId)!.carLabel}`
+                            ? reservationOptions.find((r) => r.id === form.reservationId)
+                              ? `${reservationOptions.find((r) => r.id === form.reservationId)!.code} · ${reservationOptions.find((r) => r.id === form.reservationId)!.carLabel}`
                               : form.reservationId
                             : "Choisir une réservation…"}
                         </span>
@@ -357,7 +349,7 @@ export function InvoiceFormPanel({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-full max-w-sm rounded-xl">
-                      {rentalOptions.map((r) => (
+                      {reservationOptions.map((r) => (
                         <DropdownMenuItem
                           key={r.id}
                           onClick={() => update("reservationId", r.id)}
@@ -366,6 +358,7 @@ export function InvoiceFormPanel({
                           <Car className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           <span className="font-mono text-xs text-indigo-600">{r.code}</span>
                           <span className="truncate text-slate-700">{r.carLabel}</span>
+                          {!r.taxReady && <span className="ml-auto text-[10px] text-amber-600">TVA manquante</span>}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
@@ -620,11 +613,11 @@ export function InvoiceFormPanel({
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={isSaving}
           className="group relative inline-flex h-10 items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-b from-blue-600 to-indigo-700 px-5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(37,99,235,0.25)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.35)] disabled:opacity-70"
         >
           <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-          {saving ? (
+          {isSaving ? (
             <span className="relative">Enregistrement…</span>
           ) : (
             <span className="relative">{isEdit ? "Enregistrer les modifications" : "Créer la facture"}</span>

@@ -626,6 +626,20 @@ export default {
     viewInvoice: 'View Invoice',
     downloadInvoice: 'Download Invoice',
     sendInvoice: 'Send Invoice',
+    actions: {
+      generated: 'Invoice generated',
+      deleteBlocked: 'Issued invoices are not deleted. Use a credit note.',
+      reservationRequired: 'Select a reservation with a pricing snapshot.',
+    },
+    errors: {
+      generic: 'Unable to process this invoice right now.',
+      forbidden: 'You do not have permission to manage invoices.',
+      notFound: 'Invoice or reservation not found.',
+      validation: 'Invoice data is invalid.',
+      alreadyExists: 'An invoice already exists for this reservation.',
+      pricingSnapshotMissing: 'No current pricing snapshot exists for this reservation.',
+      historicalTaxMissing: 'This reservation is missing its historical tax rate.',
+    },
   },
 
   communication: {

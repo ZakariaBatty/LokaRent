@@ -1,5 +1,13 @@
-import { createId, createNotFoundError, createValidationError, publishDomainEvent, runInTransaction } from "@/shared";
+import {
+  createId,
+  createNotFoundError,
+  createValidationError,
+  publishDomainEvent,
+  runInTransaction,
+} from "@/shared";
 import { createReservationTimelineEvent } from "@/modules/reservations/repositories/reservations.repository";
+import { incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
+import { Prisma } from "@lokarent/db";
 import {
   createCreditNote,
   createDeposit,
@@ -11,10 +19,14 @@ import {
   createPayment,
   findInvoiceById,
   findInvoiceByReservation,
+  findInvoiceGenerationSource,
   getInvoicePaymentSummary,
+  listInvoiceableReservations,
   listCreditNotesForInvoice,
   listDeposits,
   listDriverPayments,
+  lockInvoiceByReservation,
+  lockReservationForInvoice,
   listExpenseCategories,
   listPayments,
   paginateExpenses,
@@ -34,14 +46,41 @@ export type FinanceServiceContext = {
   actorName?: string;
 };
 
-type InvoiceCreateData = Omit<Parameters<typeof createInvoice>[0], "id" | "companyId" | "agencyId">;
-type InvoiceLineItemCreateData = Omit<Parameters<typeof createManyInvoiceLineItems>[0][number], "id" | "companyId" | "invoiceId">;
-type PaymentCreateData = Omit<Parameters<typeof createPayment>[0], "id" | "companyId" | "agencyId" | "recordedBy">;
-type DepositCreateData = Omit<Parameters<typeof createDeposit>[0], "id" | "companyId" | "agencyId" | "collectedBy">;
-type CreditNoteCreateData = Omit<Parameters<typeof createCreditNote>[0], "id" | "companyId" | "agencyId" | "issuedBy">;
-type ExpenseCategoryCreateData = Omit<Parameters<typeof createExpenseCategory>[0], "id" | "companyId">;
-type ExpenseCreateData = Omit<Parameters<typeof createExpense>[0], "id" | "companyId" | "agencyId" | "recordedBy">;
-type DriverPaymentCreateData = Omit<Parameters<typeof createDriverPayment>[0], "id" | "companyId" | "agencyId" | "recordedBy">;
+type InvoiceCreateData = Omit<
+  Parameters<typeof createInvoice>[0],
+  "id" | "companyId" | "agencyId"
+>;
+type InvoiceLineItemCreateData = Omit<
+  Parameters<typeof createManyInvoiceLineItems>[0][number],
+  "id" | "companyId" | "invoiceId"
+>;
+type PaymentCreateData = Omit<
+  Parameters<typeof createPayment>[0],
+  "id" | "companyId" | "agencyId" | "recordedBy"
+>;
+type DepositCreateData = Omit<
+  Parameters<typeof createDeposit>[0],
+  "id" | "companyId" | "agencyId" | "collectedBy"
+>;
+type CreditNoteCreateData = Omit<
+  Parameters<typeof createCreditNote>[0],
+  "id" | "companyId" | "agencyId" | "issuedBy"
+>;
+type ExpenseCategoryCreateData = Omit<
+  Parameters<typeof createExpenseCategory>[0],
+  "id" | "companyId"
+>;
+type ExpenseCreateData = Omit<
+  Parameters<typeof createExpense>[0],
+  "id" | "companyId" | "agencyId" | "recordedBy"
+>;
+type DriverPaymentCreateData = Omit<
+  Parameters<typeof createDriverPayment>[0],
+  "id" | "companyId" | "agencyId" | "recordedBy"
+>;
+type InvoiceGenerationSource = NonNullable<
+  Awaited<ReturnType<typeof findInvoiceGenerationSource>>
+>;
 
 export async function getInvoiceService(input: {
   companyId: string;
@@ -64,9 +103,197 @@ export async function getInvoiceByReservationService(input: {
 }
 
 export async function listInvoicesService(
-  input: FinanceListInput & { status?: Parameters<typeof paginateInvoices>[0]["status"]; customerId?: string },
+  input: FinanceListInput & {
+    status?: Parameters<typeof paginateInvoices>[0]["status"];
+    customerId?: string;
+    sort?: Parameters<typeof paginateInvoices>[0]["sort"];
+  },
 ) {
   return paginateInvoices(input);
+}
+
+function invoiceVehicleLabel(vehicle: InvoiceGenerationSource["vehicle"]) {
+  return [vehicle.brand, vehicle.model, vehicle.plate]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function decimal(value: unknown) {
+  return value instanceof Prisma.Decimal
+    ? value
+    : new Prisma.Decimal(value as string | number);
+}
+
+function taxAmountFor(
+  totalPrice: Prisma.Decimal,
+  taxRate: Prisma.Decimal | null,
+) {
+  if (!taxRate) return null;
+  return totalPrice.mul(taxRate).div(100);
+}
+
+async function generateInvoiceCode(
+  context: FinanceServiceContext,
+  db: Parameters<typeof incrementNumberSequence>[1],
+) {
+  const year = String(new Date().getFullYear());
+  return incrementNumberSequence(
+    {
+      id: createId(),
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      sequenceKey: "invoice",
+      periodKey: year,
+      prefix: `FAC-${year}-`,
+    },
+    db,
+  );
+}
+
+export async function listInvoiceableReservationsService(input: {
+  companyId: string;
+  agencyId: string;
+  search?: string;
+  take?: number;
+}) {
+  return listInvoiceableReservations(input);
+}
+
+export async function generateInvoiceFromReservationService(input: {
+  context: FinanceServiceContext;
+  reservationId: string;
+  dueAt?: Date | null;
+  notes?: string | null;
+}) {
+  let createdInvoiceId = "";
+  const invoice = await runInTransaction(async (tx) => {
+    const scope = { ...input.context, reservationId: input.reservationId };
+    await lockReservationForInvoice(scope, tx);
+    await lockInvoiceByReservation(scope, tx);
+
+    const source = await findInvoiceGenerationSource(scope, tx);
+    if (!source) throw createNotFoundError("Reservation", input);
+    if (source.invoice)
+      throw createValidationError("FINANCE_INVOICE_ALREADY_EXISTS");
+
+    const snapshot = source.pricingSnapshots[0];
+    if (!snapshot)
+      throw createValidationError("FINANCE_PRICING_SNAPSHOT_MISSING");
+    if (!snapshot.taxRate)
+      throw createValidationError("FINANCE_HISTORICAL_TAX_RATE_MISSING");
+
+    const invoiceId = createId();
+    createdInvoiceId = invoiceId;
+    const sequence = await generateInvoiceCode(input.context, tx);
+    const issuedAt = new Date();
+    const dueAt = input.dueAt ?? new Date(issuedAt.getTime() + 14 * 86_400_000);
+
+    const rentalDescription = `Location ${invoiceVehicleLabel(source.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`;
+    const rentalTotal = snapshot.pricePerDay.mul(snapshot.days);
+    const rentalTaxAmount = taxAmountFor(rentalTotal, snapshot.taxRate);
+    const lineItems: InvoiceLineItemCreateData[] = [
+      {
+        description: rentalDescription,
+        quantity: decimal(snapshot.days),
+        unitPrice: snapshot.pricePerDay,
+        totalPrice: rentalTotal,
+        taxRate: snapshot.taxRate,
+        taxAmount: rentalTaxAmount,
+        sortOrder: 0,
+      },
+      ...source.extras.map((extra, index) => ({
+        description: extra.label,
+        quantity: decimal(extra.quantity),
+        unitPrice: extra.unitPrice,
+        totalPrice: extra.totalPrice,
+        taxRate: snapshot.taxRate,
+        taxAmount: taxAmountFor(extra.totalPrice, snapshot.taxRate),
+        sortOrder: index + 1,
+      })),
+    ];
+
+    if (snapshot.discountAmount.greaterThan(0)) {
+      lineItems.push({
+        description: snapshot.discountReason
+          ? `Remise - ${snapshot.discountReason}`
+          : "Remise",
+        quantity: decimal(1),
+        unitPrice: snapshot.discountAmount.negated(),
+        totalPrice: snapshot.discountAmount.negated(),
+        taxRate: snapshot.taxRate,
+        taxAmount: taxAmountFor(
+          snapshot.discountAmount.negated(),
+          snapshot.taxRate,
+        ),
+        sortOrder: lineItems.length,
+      });
+    }
+
+    const subtotal = lineItems.reduce(
+      (sum, item) => sum.plus(decimal(item.totalPrice)),
+      decimal(0),
+    );
+    const taxAmount = lineItems.reduce(
+      (sum, item) => sum.plus(decimal(item.taxAmount ?? 0)),
+      decimal(0),
+    );
+    const totalAmount = subtotal.plus(taxAmount);
+    const created = await createInvoice(
+      {
+        id: invoiceId,
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        code: sequence.formatted,
+        reservationId: source.id,
+        customerId: source.customerId,
+        customerBusinessId: source.customer.business?.id ?? null,
+        status: "issued",
+        subtotal,
+        taxAmount,
+        discountAmount: snapshot.discountAmount,
+        totalAmount,
+        currency: snapshot.currency,
+        issuedAt,
+        dueAt,
+        notes: input.notes ?? null,
+      },
+      tx,
+    );
+    await createManyInvoiceLineItems(
+      lineItems.map((lineItem) => ({
+        ...lineItem,
+        id: createId(),
+        companyId: input.context.companyId,
+        invoiceId,
+      })),
+      tx,
+    );
+    await createReservationTimelineEvent(
+      {
+        id: createId(),
+        companyId: created.companyId,
+        reservationId: created.reservationId,
+        eventType: "invoice_issued",
+        description: created.code,
+        performedBy: input.context.userId ?? null,
+      },
+      tx,
+    );
+    return created;
+  });
+
+  await publishDomainEvent({
+    name: "InvoiceGenerated",
+    companyId: invoice.companyId,
+    agencyId: invoice.agencyId,
+    entityType: "invoice",
+    entityId: createdInvoiceId || invoice.id,
+    userId: input.context.userId,
+    actorName: input.context.actorName,
+    occurredAt: new Date(),
+  });
+
+  return getInvoiceService({ ...input.context, invoiceId: invoice.id });
 }
 
 export async function createInvoiceService(input: {
@@ -122,7 +349,9 @@ export async function createInvoiceService(input: {
   return invoice;
 }
 
-export async function issueInvoiceService(input: FinanceServiceContext & { invoiceId: string }) {
+export async function issueInvoiceService(
+  input: FinanceServiceContext & { invoiceId: string },
+) {
   const invoice = await getInvoiceService(input);
   if (invoice.status !== "draft") {
     throw createValidationError("Only draft invoices can be issued");
@@ -169,7 +398,9 @@ export async function recordPaymentService(input: {
         tx,
       );
       if (summary.invoice && summary.paidAmount) {
-        const nextStatus = summary.paidAmount.greaterThanOrEqualTo(summary.invoice.totalAmount)
+        const nextStatus = summary.paidAmount.greaterThanOrEqualTo(
+          summary.invoice.totalAmount,
+        )
           ? "paid"
           : "partially_paid";
         await updateInvoice(
@@ -212,7 +443,11 @@ export async function recordPaymentService(input: {
 }
 
 export async function listPaymentsService(
-  input: FinanceListInput & { invoiceId?: string; reservationId?: string; customerId?: string },
+  input: FinanceListInput & {
+    invoiceId?: string;
+    reservationId?: string;
+    customerId?: string;
+  },
 ) {
   return listPayments(input);
 }
@@ -257,11 +492,15 @@ export async function collectDepositService(input: {
   return deposit;
 }
 
-export async function releaseDepositService(input: FinanceServiceContext & {
-  depositId: string;
-  releasedAmount?: Parameters<typeof updateDeposit>[0]["data"]["releasedAmount"];
-  notes?: string | null;
-}) {
+export async function releaseDepositService(
+  input: FinanceServiceContext & {
+    depositId: string;
+    releasedAmount?: Parameters<
+      typeof updateDeposit
+    >[0]["data"]["releasedAmount"];
+    notes?: string | null;
+  },
+) {
   const status = input.releasedAmount ? "partially_released" : "released";
   const result = await updateDeposit({
     companyId: input.companyId,
@@ -288,11 +527,14 @@ export async function releaseDepositService(input: FinanceServiceContext & {
   return result;
 }
 
-export async function forfeitDepositService(input: FinanceServiceContext & {
-  depositId: string;
-  reason: string;
-}) {
-  if (!input.reason.trim()) throw createValidationError("Deposit forfeiture reason is required");
+export async function forfeitDepositService(
+  input: FinanceServiceContext & {
+    depositId: string;
+    reason: string;
+  },
+) {
+  if (!input.reason.trim())
+    throw createValidationError("Deposit forfeiture reason is required");
   const result = await updateDeposit({
     companyId: input.companyId,
     agencyId: input.agencyId,
@@ -313,7 +555,11 @@ export async function forfeitDepositService(input: FinanceServiceContext & {
 }
 
 export async function listDepositsService(
-  input: FinanceListInput & { reservationId?: string; customerId?: string; status?: Parameters<typeof listDeposits>[0]["status"] },
+  input: FinanceListInput & {
+    reservationId?: string;
+    customerId?: string;
+    status?: Parameters<typeof listDeposits>[0]["status"];
+  },
 ) {
   return listDeposits(input);
 }
@@ -358,7 +604,11 @@ export async function createExpenseCategoryService(input: {
   companyId: string;
   data: ExpenseCategoryCreateData;
 }) {
-  return createExpenseCategory({ ...input.data, id: createId(), companyId: input.companyId });
+  return createExpenseCategory({
+    ...input.data,
+    id: createId(),
+    companyId: input.companyId,
+  });
 }
 
 export async function listExpensesService(
@@ -457,6 +707,8 @@ export const financesService = {
   getInvoiceByReservationService,
   listInvoicesService,
   createInvoiceService,
+  generateInvoiceFromReservationService,
+  listInvoiceableReservationsService,
   issueInvoiceService,
   recordPaymentService,
   listPaymentsService,

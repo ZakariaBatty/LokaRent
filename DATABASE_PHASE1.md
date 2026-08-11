@@ -1044,6 +1044,7 @@ reservation_pricing_snapshots
   mileage_limit       integer NULL
   extra_mileage_rate  numeric(14,4) NULL
   deposit_amount      numeric(14,4) NULL
+  tax_rate            numeric(14,4) NULL              -- immutable accepted tax rate copied from agency setting at snapshot creation
   currency            char(3) NOT NULL
   locked_at           timestamptz NOT NULL
   locked_by           uuid FK → users NOT NULL
@@ -1266,14 +1267,15 @@ invoices
   reservation_id  uuid FK → reservations NOT NULL
   customer_id     uuid FK → customers NOT NULL
   status          enum(draft, issued, paid, partially_paid, voided) NOT NULL
-  subtotal        numeric(12,2) NOT NULL
-  tax_amount      numeric(12,2) NOT NULL DEFAULT 0
-  discount_amount numeric(12,2) NOT NULL DEFAULT 0
-  total_amount    numeric(12,2) NOT NULL
+  subtotal        numeric(14,4) NOT NULL
+  tax_amount      numeric(14,4) NOT NULL DEFAULT 0
+  discount_amount numeric(14,4) NOT NULL DEFAULT 0
+  total_amount    numeric(14,4) NOT NULL
   currency        char(3) NOT NULL
   issued_at       date
   due_at          date
   paid_at         timestamptz
+  document_url    text                        -- generated invoice document/PDF URL
   notes           text
   created_at      timestamptz
   updated_at      timestamptz
@@ -1293,12 +1295,16 @@ invoice_line_items
   company_id      uuid FK NOT NULL
   invoice_id      uuid FK → invoices NOT NULL
   description     text NOT NULL
-  quantity        numeric(10,2) NOT NULL
-  unit_price      numeric(10,2) NOT NULL
-  total_price     numeric(10,2) NOT NULL
+  quantity        numeric(14,4) NOT NULL
+  unit_price      numeric(14,4) NOT NULL
+  total_price     numeric(14,4) NOT NULL
+  tax_rate        numeric(14,4) NULL           -- immutable tax rate actually used for this historical line
+  tax_amount      numeric(14,4) NULL           -- immutable tax amount actually applied to this historical line
   sort_order      smallint NOT NULL DEFAULT 0
   created_at      timestamptz
 ```
+
+`reservation_pricing_snapshots.tax_rate` is copied from the resolved agency `tax_rate` setting when the accepted pricing snapshot is created. Existing historical rows may be `NULL` if the accepted tax rate was not previously stored. Issued invoice line items must use their own `tax_rate` and `tax_amount` snapshot and must never recalculate tax from current settings.
 
 ---
 
@@ -1381,11 +1387,13 @@ expenses
   vehicle_id      uuid FK → vehicles          -- null = non-vehicle expense
   reservation_id  uuid FK → reservations      -- null = non-reservation expense
   description     text NOT NULL
-  amount          numeric(12,2) NOT NULL
+  amount          numeric(14,4) NOT NULL
   currency        char(3) NOT NULL
   occurred_at     date NOT NULL
   method          enum(cash, bank_transfer, cheque, card, other)
   reference       text
+  provider        text                         -- supplier/provider shown in operational expense UI
+  internal_note   text                         -- private operational note
   document_url    text
   recorded_by     uuid FK → users NOT NULL
   created_at      timestamptz
@@ -1512,6 +1520,12 @@ activity_logs
 - `disputes` — linked to `payments.id`
 
 **Existing tables untouched:** `payments`, `invoices`, `companies`, `reservations`. Zero new columns.
+
+Refunds remain Phase 2. In Phase 1, `credit_notes` are accounting correction documents for invoice voids/corrections and are not cash refunds. A future dedicated `refunds` table will represent money returned from a prior payment.
+
+Financial accounts/cashboxes/bank accounts are not required in Phase 1. Payments and expenses remain operational records, not a double-entry ledger.
+
+Because there is no FX/conversion model, Finance aggregates must not combine different currencies into one total. KPI/report queries must filter or group by `currency`.
 
 ---
 

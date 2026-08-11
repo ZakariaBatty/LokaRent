@@ -19,7 +19,7 @@ export type InvoiceLineItem = {
 export type InvoicePayment = {
   id: string
   date: string
-  method: "cash" | "bank_transfer" | "card" | "cheque"
+  method: "cash" | "bank_transfer" | "card" | "cheque" | "other"
   amount: number
   reference?: string
   note?: string
