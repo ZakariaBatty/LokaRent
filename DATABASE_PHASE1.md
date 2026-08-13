@@ -1280,11 +1280,15 @@ invoices
   notes           text
   created_at      timestamptz
   updated_at      timestamptz
+  deleted_at      timestamptz                  -- draft-only soft delete
+  deleted_by      uuid
 
   UNIQUE(company_id, code)
-  UNIQUE(reservation_id)                       -- PostgreSQL permits many NULL manual invoices
+  UNIQUE(reservation_id) WHERE type = 'rental' AND reservation_id IS NOT NULL AND deleted_at IS NULL
   CHECK ((type = 'rental' AND reservation_id IS NOT NULL) OR (type = 'manual' AND reservation_id IS NULL))
 ```
+
+Only draft invoices may be soft-deleted. Issued, partially paid, paid, overdue, and voided invoices remain historical accounting records; corrections use `credit_notes`.
 
 ---
 
@@ -1320,7 +1324,7 @@ payments
   id              uuid PK
   company_id      uuid FK NOT NULL
   agency_id       uuid FK NOT NULL
-  reservation_id  uuid FK → reservations NOT NULL
+  reservation_id  uuid FK → reservations       -- required for rental invoice payments, NULL for manual invoice payments
   invoice_id      uuid FK → invoices
   customer_id     uuid FK → customers NOT NULL
   method          enum(cash, bank_transfer, cheque, card, other) NOT NULL
@@ -1332,8 +1336,9 @@ payments
   recorded_by     uuid FK → users NOT NULL
   created_at      timestamptz
   updated_at      timestamptz
-  deleted_at      timestamptz
-  deleted_by      uuid
+```
+
+Payments are immutable append-only records and are not soft-deleted.
 ```
 
 ---

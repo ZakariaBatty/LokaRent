@@ -13,7 +13,6 @@ import {
   User,
   Plus,
 } from "lucide-react"
-import { toast } from "sonner"
 import {
   type Invoice,
   statusConfig,
@@ -39,6 +38,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/contexts/i18n-context"
 
 export function InvoicesTable({
   invoices,
@@ -47,6 +47,7 @@ export function InvoicesTable({
   onEdit,
   onDelete,
   onNew,
+  loading = false,
 }: {
   invoices: Invoice[]
   selectedId: string | null
@@ -54,7 +55,9 @@ export function InvoicesTable({
   onEdit: (inv: Invoice) => void
   onDelete: (id: string) => void
   onNew: () => void
+  loading?: boolean
 }) {
+  const { t } = useI18n()
   const [confirmDelete, setConfirmDelete] = useState<Invoice | null>(null)
 
   if (invoices.length === 0) {
@@ -84,7 +87,7 @@ export function InvoicesTable({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+    <div className={cn("overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]", loading && "opacity-70")}>
       <div className="max-h-[680px] overflow-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10 border-b border-slate-200/80 bg-gradient-to-b from-slate-50 to-white text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 backdrop-blur">
@@ -242,7 +245,7 @@ export function InvoicesTable({
                           <DropdownMenuItem
                             onClick={() => onEdit(inv)}
                             className="gap-2"
-                            disabled={inv.status === "cancelled"}
+                            disabled={inv.status !== "draft"}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                             Éditer
@@ -251,6 +254,7 @@ export function InvoicesTable({
                           <DropdownMenuItem
                             onClick={() => setConfirmDelete(inv)}
                             className="gap-2 text-rose-700 focus:bg-rose-50 focus:text-rose-700"
+                            disabled={inv.status !== "draft"}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                             Supprimer
@@ -272,25 +276,23 @@ export function InvoicesTable({
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50">
               <Trash2 className="h-5 w-5 text-rose-600" />
             </div>
-            <AlertDialogTitle>Supprimer la facture ?</AlertDialogTitle>
+            <AlertDialogTitle>{t("invoices.delete.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Cette action est irréversible. La facture {confirmDelete?.number} sera définitivement
-              supprimée.
+              {t(confirmDelete?.status === "draft" ? "invoices.delete.draftDescription" : "invoices.delete.issuedDescription").replace("{number}", confirmDelete?.number ?? "")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-lg">Annuler</AlertDialogCancel>
+            <AlertDialogCancel className="rounded-lg">{t("invoices.delete.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (confirmDelete) {
                   onDelete(confirmDelete.id)
-                  toast.success("Facture supprimée")
                 }
                 setConfirmDelete(null)
               }}
               className="rounded-lg bg-rose-600 text-white hover:bg-rose-700"
             >
-              Supprimer
+              {t("invoices.delete.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

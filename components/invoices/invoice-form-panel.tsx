@@ -284,6 +284,7 @@ export function InvoiceFormPanel({
       setSaving(false)
     }
     onSave({
+      id:            initial?.id,
       type:          form.type,
       customerName:  form.customerName,
       customerPhone: form.customerPhone,

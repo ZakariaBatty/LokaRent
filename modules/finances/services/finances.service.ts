@@ -5,9 +5,10 @@ import {
   publishDomainEvent,
   runInTransaction,
 } from "@/shared";
+import { writeActivityLog, writeAuditLog } from "@/shared/audit";
 import { createReservationTimelineEvent } from "@/modules/reservations/repositories/reservations.repository";
 import { findSettingResolutionRows, incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
-import { InvoiceType, Prisma } from "@lokarent/db";
+import { InvoiceStatus, InvoiceType, PaymentMethod, Prisma } from "@lokarent/db";
 import {
   createCreditNote,
   createDeposit,
@@ -16,9 +17,11 @@ import {
   createExpenseCategory,
   createInvoice,
   createManyInvoiceLineItems,
+  deleteInvoiceLineItems,
   createPayment,
   findInvoiceCustomer,
   findInvoiceById,
+  findInvoiceByIdForUpdate,
   findInvoiceByReservation,
   findInvoiceGenerationSource,
   getInvoicePaymentSummary,
@@ -34,6 +37,7 @@ import {
   paginateExpenses,
   paginateInvoices,
   restoreExpense,
+  softDeleteInvoice,
   softDeleteExpense,
   updateDeposit,
   updateExpense,
@@ -91,6 +95,26 @@ export type InvoiceDraftLineInput = {
   source?: "system" | "manual";
 };
 
+export type InvoiceMutationInput = {
+  type?: InvoiceType;
+  reservationId?: string | null;
+  customerId?: string | null;
+  taxRate?: Prisma.Decimal.Value | null;
+  manualLines?: InvoiceDraftLineInput[];
+  issueAt?: Date | null;
+  dueAt?: Date | null;
+  notes?: string | null;
+};
+
+export type InvoicePaymentInput = {
+  invoiceId: string;
+  amount: Prisma.Decimal.Value;
+  method: PaymentMethod;
+  paidAt: Date;
+  reference?: string | null;
+  notes?: string | null;
+};
+
 export async function getInvoiceService(input: {
   companyId: string;
   agencyId: string;
@@ -114,7 +138,9 @@ export async function getInvoiceByReservationService(input: {
 export async function listInvoicesService(
   input: FinanceListInput & {
     status?: Parameters<typeof paginateInvoices>[0]["status"];
+    type?: Parameters<typeof paginateInvoices>[0]["type"];
     customerId?: string;
+    customerType?: Parameters<typeof paginateInvoices>[0]["customerType"];
     sort?: Parameters<typeof paginateInvoices>[0]["sort"];
   },
 ) {
@@ -144,6 +170,56 @@ function assertTaxRate(value: Prisma.Decimal) {
   if (value.lessThan(0) || value.greaterThan(100)) {
     throw createValidationError("INVOICE_TAX_RATE_INVALID");
   }
+}
+
+function assertPastOrPresentDate(value: Date) {
+  if (Number.isNaN(value.getTime()) || value.getTime() > Date.now()) {
+    throw createValidationError("INVOICE_PAYMENT_DATE_INVALID");
+  }
+}
+
+function normalizeOptionalText(value: string | null | undefined) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+async function writeInvoiceAuditActivity(
+  input: FinanceServiceContext & {
+    invoiceId: string;
+    action: string;
+    verb: string;
+    metadata?: Prisma.InputJsonValue;
+  },
+  db: Parameters<typeof writeAuditLog>[1],
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: input.action,
+      entityType: "invoice",
+      entityId: input.invoiceId,
+      changes: input.metadata,
+    },
+    db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "invoice",
+      entityId: input.invoiceId,
+      verb: input.verb,
+      metadata: input.metadata,
+    },
+    db,
+  );
 }
 
 function normalizeManualLines(lines: InvoiceDraftLineInput[] | undefined) {
@@ -176,6 +252,27 @@ function lineInputToCreateInput(input: {
   };
 }
 
+function totalsForLineItems(lineItems: InvoiceLineItemCreateData[]) {
+  const subtotalBeforeDiscount = lineItems.reduce((sum, item) => {
+    const totalPrice = decimal(item.totalPrice);
+    return totalPrice.lessThan(0) ? sum : sum.plus(totalPrice);
+  }, decimal(0));
+  const discountAmount = lineItems.reduce((sum, item) => {
+    const totalPrice = decimal(item.totalPrice);
+    return totalPrice.lessThan(0) ? sum.plus(totalPrice.abs()) : sum;
+  }, decimal(0));
+  const taxAmount = lineItems.reduce(
+    (sum, item) => sum.plus(decimal(item.taxAmount ?? 0)),
+    decimal(0),
+  );
+  const totalAmount = subtotalBeforeDiscount.minus(discountAmount).plus(taxAmount);
+  return { subtotalBeforeDiscount, discountAmount, taxAmount, totalAmount };
+}
+
+function nextDueDate(issueAt: Date) {
+  return new Date(issueAt.getTime() + 14 * 86_400_000);
+}
+
 async function resolveAgencyTaxRate(
   context: FinanceServiceContext,
   db: Parameters<typeof findSettingResolutionRows>[1],
@@ -205,6 +302,109 @@ async function generateInvoiceCode(
   );
 }
 
+async function generateCreditNoteCode(
+  context: FinanceServiceContext,
+  db: Parameters<typeof incrementNumberSequence>[1],
+) {
+  const year = String(new Date().getFullYear());
+  return incrementNumberSequence(
+    {
+      id: createId(),
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      sequenceKey: "credit_note",
+      periodKey: year,
+      prefix: `AV-${year}-`,
+    },
+    db,
+  );
+}
+
+async function buildInvoiceDraft(input: {
+  context: FinanceServiceContext;
+  type: InvoiceType;
+  reservationId?: string | null;
+  customerId?: string | null;
+  taxRate?: Prisma.Decimal.Value | null;
+  manualLines?: InvoiceDraftLineInput[];
+  db: Parameters<typeof findInvoiceGenerationSource>[1];
+}) {
+  const manualLines = normalizeManualLines(input.manualLines);
+  let reservationId: string | null = null;
+  let customerId = input.customerId ?? null;
+  let customerBusinessId: string | null = null;
+  let currency = "MAD";
+  let lineItems: InvoiceLineItemCreateData[] = [];
+
+  if (input.type === InvoiceType.rental) {
+    if (!input.reservationId) throw createValidationError("INVOICE_RESERVATION_REQUIRED");
+    const scope = { ...input.context, reservationId: input.reservationId };
+    const source = await findInvoiceGenerationSource(scope, input.db);
+    if (!source) throw createNotFoundError("Reservation", input);
+    const snapshot = source.pricingSnapshots[0];
+    if (!snapshot) throw createValidationError("INVOICE_PRICING_SNAPSHOT_MISSING");
+    const taxRate = snapshot.taxRate ?? await resolveAgencyTaxRate(input.context, input.db);
+    if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
+    assertTaxRate(taxRate);
+
+    reservationId = source.id;
+    customerId = source.customerId;
+    customerBusinessId = source.customer.business?.id ?? null;
+    currency = snapshot.currency;
+    lineItems = [
+      lineInputToCreateInput({
+        description: `Location ${invoiceVehicleLabel(source.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`,
+        quantity: decimal(snapshot.days),
+        unitPrice: snapshot.pricePerDay,
+        taxRate,
+        sortOrder: 0,
+      }),
+      ...source.extras.map((extra, index) => lineInputToCreateInput({
+        description: extra.label,
+        quantity: decimal(extra.quantity),
+        unitPrice: extra.unitPrice,
+        taxRate,
+        sortOrder: index + 1,
+      })),
+    ];
+    if (snapshot.discountAmount.greaterThan(0)) {
+      lineItems.push(lineInputToCreateInput({
+        description: snapshot.discountReason ? `Remise - ${snapshot.discountReason}` : "Remise",
+        quantity: decimal(1),
+        unitPrice: snapshot.discountAmount.negated(),
+        taxRate,
+        sortOrder: lineItems.length,
+      }));
+    }
+    lineItems.push(...manualLines.map((line, index) => lineInputToCreateInput({
+      ...line,
+      taxRate,
+      sortOrder: lineItems.length + index,
+    })));
+  } else {
+    if (input.reservationId) throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
+    if (!customerId) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
+    const customer = await findInvoiceCustomer({ ...input.context, customerId }, input.db);
+    if (!customer) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
+    if (manualLines.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
+    const taxRate = input.taxRate != null ? decimal(input.taxRate) : await resolveAgencyTaxRate(input.context, input.db);
+    if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
+    assertTaxRate(taxRate);
+    customerBusinessId = customer.business?.id ?? null;
+    lineItems = manualLines.map((line, index) => lineInputToCreateInput({ ...line, taxRate, sortOrder: index }));
+  }
+
+  if (lineItems.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
+  return {
+    reservationId,
+    customerId: customerId!,
+    customerBusinessId,
+    currency,
+    lineItems,
+    totals: totalsForLineItems(lineItems),
+  };
+}
+
 export async function listInvoiceableReservationsService(input: {
   companyId: string;
   agencyId: string;
@@ -225,14 +425,7 @@ export async function listInvoiceCustomersService(input: {
 
 export async function generateInvoiceFromReservationService(input: {
   context: FinanceServiceContext;
-  type?: InvoiceType;
-  reservationId?: string | null;
-  customerId?: string | null;
-  taxRate?: Prisma.Decimal.Value | null;
-  manualLines?: InvoiceDraftLineInput[];
-  dueAt?: Date | null;
-  notes?: string | null;
-}) {
+} & InvoiceMutationInput) {
   const type = input.type ?? (input.reservationId ? InvoiceType.rental : InvoiceType.manual);
   if (type === InvoiceType.rental && !input.reservationId) throw createValidationError("INVOICE_RESERVATION_REQUIRED");
   if (type === InvoiceType.manual && input.reservationId) throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
@@ -242,15 +435,8 @@ export async function generateInvoiceFromReservationService(input: {
     const invoiceId = createId();
     createdInvoiceId = invoiceId;
     const sequence = await generateInvoiceCode(input.context, tx);
-    const issuedAt = new Date();
-    const dueAt = input.dueAt ?? new Date(issuedAt.getTime() + 14 * 86_400_000);
-    const manualLines = normalizeManualLines(input.manualLines);
-    let reservationId: string | null = null;
-    let customerId = input.customerId ?? null;
-    let customerBusinessId: string | null = null;
-    let currency = "MAD";
-    let discountAmount = decimal(0);
-    let lineItems: InvoiceLineItemCreateData[] = [];
+    const issueAt = input.issueAt ?? new Date();
+    const dueAt = input.dueAt ?? nextDueDate(issueAt);
 
     if (type === InvoiceType.rental) {
       const scope = { ...input.context, reservationId: input.reservationId! };
@@ -258,70 +444,10 @@ export async function generateInvoiceFromReservationService(input: {
       await lockInvoiceByReservation(scope, tx);
       const source = await findInvoiceGenerationSource(scope, tx);
       if (!source) throw createNotFoundError("Reservation", input);
-      if (source.invoice) throw createValidationError("INVOICE_ALREADY_EXISTS_FOR_RESERVATION");
-      const snapshot = source.pricingSnapshots[0];
-      if (!snapshot) throw createValidationError("INVOICE_PRICING_SNAPSHOT_MISSING");
-      const taxRate = input.taxRate != null ? decimal(input.taxRate) : snapshot.taxRate ?? await resolveAgencyTaxRate(input.context, tx);
-      if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
-      assertTaxRate(taxRate);
-
-      reservationId = source.id;
-      customerId = source.customerId;
-      customerBusinessId = source.customer.business?.id ?? null;
-      currency = snapshot.currency;
-      discountAmount = snapshot.discountAmount;
-      lineItems = [
-        lineInputToCreateInput({
-          description: `Location ${invoiceVehicleLabel(source.vehicle)} - ${snapshot.days} jour${snapshot.days > 1 ? "s" : ""}`,
-          quantity: decimal(snapshot.days),
-          unitPrice: snapshot.pricePerDay,
-          taxRate,
-          sortOrder: 0,
-        }),
-        ...source.extras.map((extra, index) => lineInputToCreateInput({
-          description: extra.label,
-          quantity: decimal(extra.quantity),
-          unitPrice: extra.unitPrice,
-          taxRate,
-          sortOrder: index + 1,
-        })),
-      ];
-      if (snapshot.discountAmount.greaterThan(0)) {
-        lineItems.push(lineInputToCreateInput({
-          description: snapshot.discountReason ? `Remise - ${snapshot.discountReason}` : "Remise",
-          quantity: decimal(1),
-          unitPrice: snapshot.discountAmount.negated(),
-          taxRate,
-          sortOrder: lineItems.length,
-        }));
-      }
-      lineItems.push(...manualLines.map((line, index) => lineInputToCreateInput({
-        ...line,
-        taxRate,
-        sortOrder: lineItems.length + index,
-      })));
-    } else {
-      if (!customerId) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
-      const customer = await findInvoiceCustomer({ ...input.context, customerId }, tx);
-      if (!customer) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
-      if (manualLines.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
-      const taxRate = input.taxRate != null ? decimal(input.taxRate) : await resolveAgencyTaxRate(input.context, tx);
-      if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
-      assertTaxRate(taxRate);
-      customerBusinessId = customer.business?.id ?? null;
-      lineItems = manualLines.map((line, index) => lineInputToCreateInput({ ...line, taxRate, sortOrder: index }));
+      if (source.invoices[0]) throw createValidationError("INVOICE_ALREADY_EXISTS_FOR_RESERVATION");
     }
 
-    if (lineItems.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
-    const subtotal = lineItems.reduce(
-      (sum, item) => sum.plus(decimal(item.totalPrice)),
-      decimal(0),
-    );
-    const taxAmount = lineItems.reduce(
-      (sum, item) => sum.plus(decimal(item.taxAmount ?? 0)),
-      decimal(0),
-    );
-    const totalAmount = subtotal.plus(taxAmount);
+    const draft = await buildInvoiceDraft({ ...input, type, db: tx });
     const created = await createInvoice(
       {
         id: invoiceId,
@@ -329,23 +455,23 @@ export async function generateInvoiceFromReservationService(input: {
         agencyId: input.context.agencyId,
         type,
         code: sequence.formatted,
-        reservationId,
-        customerId: customerId!,
-        customerBusinessId,
-        status: "issued",
-        subtotal,
-        taxAmount,
-        discountAmount,
-        totalAmount,
-        currency,
-        issuedAt,
+        reservationId: draft.reservationId,
+        customerId: draft.customerId,
+        customerBusinessId: draft.customerBusinessId,
+        status: InvoiceStatus.draft,
+        subtotal: draft.totals.subtotalBeforeDiscount,
+        taxAmount: draft.totals.taxAmount,
+        discountAmount: draft.totals.discountAmount,
+        totalAmount: draft.totals.totalAmount,
+        currency: draft.currency,
+        issuedAt: issueAt,
         dueAt,
         notes: input.notes ?? null,
       },
       tx,
     );
     await createManyInvoiceLineItems(
-      lineItems.map((lineItem) => ({
+      draft.lineItems.map((lineItem) => ({
         ...lineItem,
         id: createId(),
         companyId: input.context.companyId,
@@ -359,7 +485,7 @@ export async function generateInvoiceFromReservationService(input: {
         id: createId(),
         companyId: created.companyId,
         reservationId: created.reservationId,
-        eventType: "invoice_issued",
+        eventType: "invoice_generated",
         description: created.code,
         performedBy: input.context.userId ?? null,
         },
@@ -381,6 +507,98 @@ export async function generateInvoiceFromReservationService(input: {
   });
 
   return getInvoiceService({ ...input.context, invoiceId: invoice.id });
+}
+
+export async function updateInvoiceService(input: {
+  context: FinanceServiceContext;
+  invoiceId: string;
+} & InvoiceMutationInput) {
+  const invoice = await runInTransaction(async (tx) => {
+    const current = await findInvoiceById({ ...input.context, invoiceId: input.invoiceId }, tx);
+    if (!current) throw createNotFoundError("Invoice", input);
+    if (current.status !== InvoiceStatus.draft) throw createValidationError("FINANCE_INVOICE_IMMUTABLE");
+
+    const type = current.type;
+    if (input.type && input.type !== type) throw createValidationError("INVOICE_TYPE_IMMUTABLE");
+
+    const draft = await buildInvoiceDraft({
+      context: input.context,
+      type,
+      reservationId: type === InvoiceType.rental ? current.reservationId : null,
+      customerId: type === InvoiceType.rental ? current.customerId : input.customerId,
+      taxRate: input.taxRate,
+      manualLines: input.manualLines,
+      db: tx,
+    });
+
+    await updateInvoice(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        invoiceId: input.invoiceId,
+        data: {
+          customerId: draft.customerId,
+          customerBusinessId: draft.customerBusinessId,
+          subtotal: draft.totals.subtotalBeforeDiscount,
+          taxAmount: draft.totals.taxAmount,
+          discountAmount: draft.totals.discountAmount,
+          totalAmount: draft.totals.totalAmount,
+          currency: draft.currency,
+          issuedAt: input.issueAt ?? current.issuedAt,
+          dueAt: input.dueAt ?? current.dueAt,
+          notes: input.notes ?? null,
+        },
+      },
+      tx,
+    );
+    await deleteInvoiceLineItems({ companyId: input.context.companyId, invoiceId: input.invoiceId }, tx);
+    await createManyInvoiceLineItems(
+      draft.lineItems.map((lineItem) => ({
+        ...lineItem,
+        id: createId(),
+        companyId: input.context.companyId,
+        invoiceId: input.invoiceId,
+      })),
+      tx,
+    );
+
+    const updated = await findInvoiceById({ ...input.context, invoiceId: input.invoiceId }, tx);
+    if (!updated) throw createNotFoundError("Invoice", input);
+    return updated;
+  });
+  return invoice;
+}
+
+export async function deleteInvoiceService(input: FinanceServiceContext & { invoiceId: string }) {
+  await runInTransaction(async (tx) => {
+    const current = await findInvoiceByIdForUpdate(input, tx);
+    if (!current) throw createNotFoundError("Invoice", input);
+    if (current.status !== InvoiceStatus.draft) {
+      throw createValidationError("INVOICE_DELETE_REQUIRES_DRAFT");
+    }
+
+    const result = await softDeleteInvoice(
+      {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        invoiceId: input.invoiceId,
+        deletedBy: input.userId ?? null,
+      },
+      tx,
+    );
+    if (result.count !== 1) throw createNotFoundError("Invoice", input);
+
+    await writeInvoiceAuditActivity(
+      {
+        ...input,
+        action: "InvoiceDraftDeleted",
+        verb: "InvoiceDraftDeleted",
+        metadata: { status: current.status, code: current.code },
+      },
+      tx,
+    );
+  });
+  return { invoiceId: input.invoiceId };
 }
 
 export async function createInvoiceService(input: {
@@ -441,83 +659,272 @@ export async function createInvoiceService(input: {
 export async function issueInvoiceService(
   input: FinanceServiceContext & { invoiceId: string },
 ) {
-  const invoice = await getInvoiceService(input);
-  if (invoice.status !== "draft") {
-    throw createValidationError("Only draft invoices can be issued");
-  }
-  await updateInvoice({
-    ...input,
-    data: { status: "issued", issuedAt: new Date() },
+  const invoice = await runInTransaction(async (tx) => {
+    const current = await findInvoiceByIdForUpdate(input, tx);
+    if (!current) throw createNotFoundError("Invoice", input);
+    if (current.status !== InvoiceStatus.draft) {
+      throw createValidationError("INVOICE_ISSUE_REQUIRES_DRAFT");
+    }
+
+    await updateInvoice({
+      ...input,
+      data: { status: InvoiceStatus.issued, issuedAt: current.issuedAt ?? new Date() },
+    }, tx);
+    if (current.reservationId) {
+      await createReservationTimelineEvent(
+        {
+          id: createId(),
+          companyId: current.companyId,
+          reservationId: current.reservationId,
+          eventType: "invoice_issued",
+          description: current.code,
+          performedBy: input.userId ?? null,
+        },
+        tx,
+      );
+    }
+    await writeInvoiceAuditActivity(
+      {
+        ...input,
+        action: "InvoiceIssued",
+        verb: "InvoiceIssued",
+        metadata: { from: current.status, to: InvoiceStatus.issued },
+      },
+      tx,
+    );
+    const issued = await findInvoiceById(input, tx);
+    if (!issued) throw createNotFoundError("Invoice", input);
+    return issued;
   });
   await publishDomainEvent({
     name: "InvoiceIssued",
-    companyId: input.companyId,
-    agencyId: input.agencyId,
+    companyId: invoice.companyId,
+    agencyId: invoice.agencyId,
     entityType: "invoice",
     entityId: input.invoiceId,
     userId: input.userId,
     actorName: input.actorName,
     occurredAt: new Date(),
   });
-  return getInvoiceService(input);
+  return invoice;
+}
+
+export async function voidInvoiceService(input: FinanceServiceContext & { invoiceId: string }) {
+  const actorUserId = input.userId;
+  if (!actorUserId) throw createValidationError("INVOICE_VOID_ACTOR_REQUIRED");
+
+  const invoice = await runInTransaction(async (tx) => {
+    const current = await findInvoiceByIdForUpdate(input, tx);
+    if (!current) throw createNotFoundError("Invoice", input);
+    if (current.status !== InvoiceStatus.issued && current.status !== InvoiceStatus.overdue) {
+      if (current.status === InvoiceStatus.voided) throw createValidationError("INVOICE_ALREADY_VOIDED");
+      throw createValidationError("INVOICE_VOID_NOT_ALLOWED");
+    }
+
+    const sequence = await generateCreditNoteCode(input, tx);
+    await createCreditNote(
+      {
+        id: createId(),
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        code: sequence.formatted,
+        originalInvoiceId: input.invoiceId,
+        amount: current.totalAmount,
+        currency: current.currency,
+        reason: "INVOICE_VOIDED",
+        issuedBy: actorUserId,
+        issuedAt: new Date(),
+      },
+      tx,
+    );
+    await updateInvoice(
+      {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        invoiceId: input.invoiceId,
+        data: { status: InvoiceStatus.voided },
+      },
+      tx,
+    );
+    if (current.reservationId) {
+      await createReservationTimelineEvent(
+        {
+          id: createId(),
+          companyId: current.companyId,
+          reservationId: current.reservationId,
+          eventType: "invoice_cancelled",
+          description: current.code,
+          performedBy: input.userId ?? null,
+        },
+        tx,
+      );
+    }
+    await writeInvoiceAuditActivity(
+      {
+        ...input,
+        action: "InvoiceVoided",
+        verb: "InvoiceVoided",
+        metadata: { from: current.status, to: InvoiceStatus.voided, creditNoteCode: sequence.formatted },
+      },
+      tx,
+    );
+    const voided = await findInvoiceById(input, tx);
+    if (!voided) throw createNotFoundError("Invoice", input);
+    return voided;
+  });
+  await publishDomainEvent({
+    name: "CreditNoteIssued",
+    companyId: invoice.companyId,
+    agencyId: invoice.agencyId,
+    entityType: "invoice",
+    entityId: invoice.id,
+    userId: input.userId,
+    actorName: input.actorName,
+    occurredAt: new Date(),
+  });
+  return invoice;
+}
+
+export async function recordInvoicePaymentService(input: {
+  context: FinanceServiceContext;
+  payment: InvoicePaymentInput;
+}) {
+  const actorUserId = input.context.userId;
+  if (!actorUserId) throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
+  const amount = decimal(input.payment.amount);
+  if (!amount.greaterThan(0)) throw createValidationError("INVOICE_PAYMENT_INVALID_AMOUNT");
+  assertPastOrPresentDate(input.payment.paidAt);
+
+  const result = await runInTransaction(async (tx) => {
+    const current = await findInvoiceByIdForUpdate(
+      { ...input.context, invoiceId: input.payment.invoiceId },
+      tx,
+    );
+    if (!current) throw createNotFoundError("Invoice", input.payment);
+    if (
+      current.status !== InvoiceStatus.issued &&
+      current.status !== InvoiceStatus.partially_paid &&
+      current.status !== InvoiceStatus.overdue
+    ) {
+      if (current.status === InvoiceStatus.draft) throw createValidationError("INVOICE_PAYMENT_REQUIRES_ISSUED");
+      if (current.status === InvoiceStatus.paid) throw createValidationError("INVOICE_ALREADY_PAID");
+      throw createValidationError("INVOICE_PAYMENT_NOT_ALLOWED");
+    }
+
+    const summary = await getInvoicePaymentSummary(
+      { companyId: current.companyId, agencyId: current.agencyId, invoiceId: current.id },
+      tx,
+    );
+    const paidBefore = decimal(summary.paidAmount ?? 0);
+    const credited = decimal(summary.creditedAmount ?? 0);
+    const outstanding = current.totalAmount.minus(paidBefore).minus(credited);
+    if (amount.greaterThan(outstanding)) {
+      throw createValidationError("INVOICE_PAYMENT_OVERPAYMENT");
+    }
+
+    const created = await createPayment(
+      {
+        id: createId(),
+        companyId: current.companyId,
+        agencyId: current.agencyId,
+        invoiceId: current.id,
+        reservationId: current.reservationId ?? null,
+        customerId: current.customerId,
+        method: input.payment.method,
+        amount,
+        currency: current.currency,
+        paidAt: input.payment.paidAt,
+        reference: normalizeOptionalText(input.payment.reference),
+        notes: normalizeOptionalText(input.payment.notes),
+        recordedBy: actorUserId,
+      },
+      tx,
+    );
+
+    const paidAfter = paidBefore.plus(amount);
+    const payableTotal = current.totalAmount.minus(credited);
+    const nextStatus = paidAfter.greaterThanOrEqualTo(payableTotal)
+      ? InvoiceStatus.paid
+      : InvoiceStatus.partially_paid;
+    await updateInvoice(
+      {
+        companyId: current.companyId,
+        agencyId: current.agencyId,
+        invoiceId: current.id,
+        data: { status: nextStatus, paidAt: nextStatus === InvoiceStatus.paid ? input.payment.paidAt : null },
+      },
+      tx,
+    );
+
+    if (current.reservationId) {
+      await createReservationTimelineEvent(
+        {
+          id: createId(),
+          companyId: current.companyId,
+          reservationId: current.reservationId,
+          eventType: "payment_recorded",
+          description: current.code,
+          performedBy: actorUserId,
+        },
+        tx,
+      );
+    }
+    await writeInvoiceAuditActivity(
+      {
+        ...input.context,
+        invoiceId: current.id,
+        action: "InvoicePaymentRecorded",
+        verb: "InvoicePaymentRecorded",
+        metadata: { paymentId: created.id, amount: amount.toString(), status: nextStatus },
+      },
+      tx,
+    );
+
+    const updated = await findInvoiceById({ ...input.context, invoiceId: current.id }, tx);
+    if (!updated) throw createNotFoundError("Invoice", input.payment);
+    return { invoice: updated, payment: created, paid: nextStatus === InvoiceStatus.paid };
+  });
+
+  await publishDomainEvent({
+    name: "PaymentRecorded",
+    companyId: result.payment.companyId,
+    agencyId: result.payment.agencyId,
+    entityType: "payment",
+    entityId: result.payment.id,
+    userId: input.context.userId,
+    actorName: input.context.actorName,
+    occurredAt: new Date(),
+  });
+  if (result.paid) {
+    await publishDomainEvent({
+      name: "InvoicePaid",
+      companyId: result.invoice.companyId,
+      agencyId: result.invoice.agencyId,
+      entityType: "invoice",
+      entityId: result.invoice.id,
+      userId: input.context.userId,
+      actorName: input.context.actorName,
+      occurredAt: new Date(),
+    });
+  }
+  return result.invoice;
 }
 
 export async function recordPaymentService(input: {
   context: FinanceServiceContext;
   payment: PaymentCreateData;
 }) {
-  const payment = await runInTransaction(async (tx) => {
-    const created = await createPayment(
-      {
-        ...input.payment,
-        id: createId(),
-        companyId: input.context.companyId,
-        agencyId: input.context.agencyId,
-        recordedBy: input.context.userId ?? "",
-      },
-      tx,
-    );
-    if (created.invoiceId) {
-      const summary = await getInvoicePaymentSummary(
-        {
-          companyId: created.companyId,
-          agencyId: created.agencyId,
-          invoiceId: created.invoiceId,
-        },
-        tx,
-      );
-      if (summary.invoice && summary.paidAmount) {
-        const nextStatus = summary.paidAmount.greaterThanOrEqualTo(
-          summary.invoice.totalAmount,
-        )
-          ? "paid"
-          : "partially_paid";
-        await updateInvoice(
-          {
-            companyId: created.companyId,
-            agencyId: created.agencyId,
-            invoiceId: created.invoiceId,
-            data: {
-              status: nextStatus,
-              paidAt: nextStatus === "paid" ? new Date() : null,
-            },
-          },
-          tx,
-        );
-      }
-    }
-    await createReservationTimelineEvent(
-      {
-        id: createId(),
-        companyId: created.companyId,
-        reservationId: created.reservationId,
-        eventType: "payment_recorded",
-        performedBy: input.context.userId ?? null,
-      },
-      tx,
-    );
-    return created;
-  });
+  if (!input.context.userId) throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
+  const payment = await runInTransaction(async (tx) => createPayment(
+    {
+      ...input.payment,
+      id: createId(),
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      recordedBy: input.context.userId!,
+    },
+    tx,
+  ));
   await publishDomainEvent({
     name: "PaymentRecorded",
     companyId: payment.companyId,
@@ -797,6 +1204,8 @@ export const financesService = {
   listInvoicesService,
   createInvoiceService,
   generateInvoiceFromReservationService,
+  updateInvoiceService,
+  deleteInvoiceService,
   listInvoiceableReservationsService,
   listInvoiceCustomersService,
   issueInvoiceService,

@@ -189,6 +189,8 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 - Every invoice references one customer (`customer_id`).
 - When the customer type is `company`, `customer_business_id` is also populated for accurate legal billing.
 - `invoices.type` explicitly distinguishes `rental` and `manual`; a database check keeps rental invoices linked to reservations and manual invoices unlinked.
+- Draft invoices may be soft-deleted with `deleted_at` / `deleted_by`. Issued and other historical invoice states are never deleted; corrections use credit notes.
+- The active rental-invoice uniqueness rule is `reservation_id WHERE type = 'rental' AND deleted_at IS NULL`, so a soft-deleted draft frees the reservation for a new invoice while preserving active duplicate protection.
 
 **Invoice numbering strategy:**
 - Format: `INV-{AGENCY_CODE}-{YEAR}-{SEQUENCE}` — e.g. `INV-AGA-2025-00017`.
@@ -200,11 +202,12 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 - `invoices.customer_id` → `customers` — always set.
 - `invoices.customer_business_id` → `customer_businesses` — set only when customer type is `company`.
 - `invoices.reservation_id` → `reservations` — always set for rental invoices.
+- `payments.reservation_id` → `reservations` — set for rental invoice payments, `NULL` for manual invoice payments.
 - `payments.invoice_id` → `invoices` — nullable (advance or deposit payments may not yet reference an invoice).
 - `credit_notes.original_invoice_id` → `invoices` — the invoice being corrected.
 - `credit_notes.replacement_invoice_id` → `invoices` — nullable; the correcting invoice if one was re-issued.
 
-**Key design decision:** `invoices` and `credit_notes` are never deleted or mutated after issuance. A correction creates a new credit note referencing the original invoice. This is not optional — it is how VAT-compliant accounting works in every jurisdiction.
+**Key design decision:** `invoices` and `credit_notes` are never deleted or mutated after issuance. A correction creates a new credit note referencing the original invoice. Draft invoices may be soft-deleted before issuance, but issued accounting history is preserved. This is not optional — it is how VAT-compliant accounting works in every jurisdiction.
 
 **Tax and document snapshots:**
 - `settings.tax_rate` is mutable agency configuration. It is resolved at reservation confirmation/repricing time and copied into `reservation_pricing_snapshots.tax_rate`.

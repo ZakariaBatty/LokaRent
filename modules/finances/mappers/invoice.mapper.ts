@@ -6,7 +6,13 @@ type InvoiceWithDetails = Prisma.InvoiceGetPayload<{
     lineItems: true;
     payments: true;
     creditNotesAsOriginal: true;
-    reservation: { include: { vehicle: true } };
+    reservation: {
+      include: {
+        vehicle: true;
+        extras: true;
+        pricingSnapshots: true;
+      };
+    };
     customer: { include: { individual: true; business: true } };
     customerBusiness: true;
   };
@@ -139,11 +145,20 @@ function timeline(invoice: InvoiceWithDetails, paid: number): InvoiceTimelineEve
   return events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 }
 
+function systemLineCount(invoice: InvoiceWithDetails) {
+  if (invoice.type !== "rental" || !invoice.reservation) return 0;
+  const snapshot = invoice.reservation.pricingSnapshots[0];
+  if (!snapshot) return 0;
+  return 1 + invoice.reservation.extras.length + (snapshot.discountAmount.greaterThan(0) ? 1 : 0);
+}
+
 export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
   const paid = invoice.payments.reduce((sum, payment) => sum + toNumber(payment.amount), 0);
   const credited = invoice.creditNotesAsOriginal.reduce((sum, note) => sum + toNumber(note.amount), 0);
   const total = toNumber(invoice.totalAmount);
   const remaining = Math.max(0, total - paid - credited);
+  const trustedSystemLineCount = systemLineCount(invoice);
+  const taxRate = invoice.lineItems.find((lineItem) => lineItem.taxRate != null)?.taxRate;
 
   return {
     id: invoice.id,
@@ -162,7 +177,7 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
     carLabel: invoice.reservation ? carLabel(invoice.reservation.vehicle) : undefined,
     issueDate: toIsoDate(invoice.issuedAt ?? invoice.createdAt),
     dueDate: toIsoDate(invoice.dueAt),
-    lineItems: invoice.lineItems.map((lineItem) => {
+    lineItems: invoice.lineItems.map((lineItem, index) => {
       const subtotal = toNumber(lineItem.totalPrice);
       const taxAmount = toNumber(lineItem.taxAmount);
       return {
@@ -173,14 +188,17 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
         taxRate: toNumber(lineItem.taxRate),
         subtotal,
         total: subtotal + taxAmount,
-        source: invoice.type === "rental" && lineItem.sortOrder <= (invoice.reservation ? 999 : -1) ? "system" : "manual",
+        source: invoice.type === "rental" && index < trustedSystemLineCount ? "system" : "manual",
       };
     }),
     subtotal: toNumber(invoice.subtotal),
     taxTotal: toNumber(invoice.taxAmount),
+    taxRate: taxRate != null ? toNumber(taxRate) : undefined,
+    discount: toNumber(invoice.discountAmount),
     total,
     paid,
     remaining,
+    currency: invoice.currency,
     payments: invoice.payments.map((payment) => ({
       id: payment.id,
       date: toIsoDate(payment.paidAt),
@@ -188,6 +206,7 @@ export function mapInvoiceToUi(invoice: InvoiceWithDetails): Invoice {
       amount: toNumber(payment.amount),
       reference: payment.reference ?? undefined,
       note: payment.notes ?? undefined,
+      recordedBy: payment.recordedBy,
     })),
     notes: invoice.notes ?? undefined,
     createdAt: toIsoDateTime(invoice.createdAt),

@@ -104,7 +104,7 @@
 
 | # | Prisma Model | DB Table | Notes |
 |---|---|---|---|
-| 39 | `Invoice` | `invoices` | One per reservation. Never deleted. |
+| 39 | `Invoice` | `invoices` | One active rental invoice per reservation. Draft invoices may be soft-deleted; issued financial history is preserved through credit notes. |
 | 40 | `InvoiceLineItem` | `invoice_line_items` | Auto-generated from snapshot and extras. |
 | 41 | `Payment` | `payments` | Method-agnostic payment records. |
 | 42 | `Deposit` | `deposits` | Caution deposits with full release tracking. |
@@ -518,7 +518,7 @@ Relations are listed by domain. Prisma relation names follow the convention `{Mo
 | `Reservation` | `ReservationPricingSnapshot[]` | `reservation_pricing_snapshot.reservation_id` — chain of snapshots; one `is_current = true` |
 | `Reservation` | `ReservationExtra[]` | `reservation_extra.reservation_id` |
 | `Reservation` | `ReservationTimelineEvent[]` | `reservation_timeline_event.reservation_id` |
-| `Reservation` | `Invoice[]` | `invoice.reservation_id` — technically 1:1 per domain, enforced by `@unique` |
+| `Reservation` | `Invoice[]` | `invoice.reservation_id` — active rental uniqueness enforced by a raw partial unique index where `deleted_at IS NULL` |
 | `Reservation` | `Deposit[]` | `deposit.reservation_id` |
 | `Reservation` | `Expense[]` (nullable) | `expense.reservation_id` |
 | `Reservation` | `DriverReservationAssignment[]` | `driver_reservation_assignment.reservation_id` |
@@ -801,12 +801,13 @@ Every business model receives the following indexes via `@@index`:
 | Model | Prisma Declaration |
 |---|---|
 | `Invoice` | `@@unique([companyId, code])` |
-| `Invoice` | `@unique` on `reservationId` |
+| `Invoice` | Raw partial unique index on `reservationId` where `type = 'rental' AND deleted_at IS NULL` |
 | `Invoice` | `@@index([agencyId, status])` |
 | `Invoice` | `@@index([dueAt])` |
 | `Invoice` | `@@index([customerId])` |
 | `Invoice` | `@@index([customerBusinessId])` |
-| `Payment` | `@@index([invoiceId, status])` |
+| `Invoice` | `@@index([companyId, deletedAt])` |
+| `Payment` | `@@index([invoiceId])` |
 | `Payment` | `@@index([agencyId, createdAt])` |
 | `Deposit` | `@@index([reservationId, status])` |
 | `Expense` | `@@index([agencyId, occurredAt])` |
@@ -959,11 +960,13 @@ Soft delete (`deleted_at` + `deleted_by`) is present on these models:
 
 **Yes — `deletedAt` + `deletedBy`:**
 
-`Company`, `Agency`, `User`, `CompanyMembership`, `AgencyMembership`, `Role`, `Invitation`, `VehicleCategory`, `Vehicle`, `VehicleAvailabilityBlock`, `VehicleRegistration`, `VehicleInsurance`, `VehicleInspection`, `VehicleVignette`, `VehicleMaintenance`, `Customer`, `CustomerDocument`, `CustomerContact`, `CustomerBlacklist`, `Driver`, `DriverPricingRule`, `DriverDocument`, `DriverReservationAssignment`, `ContractTemplate`, `Contract`, `ContractInspectionItem`, `Reservation`, `ReservationExtraDefinition`, `ReservationExtra`, `ReservationAuthorizedDriver`, `Expense`, `Setting`, `Document`
+`Company`, `Agency`, `User`, `CompanyMembership`, `AgencyMembership`, `Role`, `Invitation`, `VehicleCategory`, `Vehicle`, `VehicleAvailabilityBlock`, `VehicleRegistration`, `VehicleInsurance`, `VehicleInspection`, `VehicleVignette`, `VehicleMaintenance`, `Customer`, `CustomerDocument`, `CustomerContact`, `CustomerBlacklist`, `Driver`, `DriverPricingRule`, `DriverDocument`, `DriverReservationAssignment`, `ContractTemplate`, `Contract`, `ContractInspectionItem`, `Reservation`, `ReservationExtraDefinition`, `ReservationExtra`, `ReservationAuthorizedDriver`, `Invoice`, `Expense`, `Setting`, `Document`
 
 **No soft delete — these records are immutable or never deleted:**
 
-`AuditLog`, `ActivityLog`, `ReservationPricingSnapshot`, `ReservationTimelineEvent`, `ContractTemplateVersion`, `ContractSignature`, `Invoice`, `InvoiceLineItem`, `CreditNote`, `Payment`, `Deposit`, `DriverPayment`, `Plan`, `PlanLimit`, `PlanFeature`, `ReservationSource`, `Permission`, `ExpenseCategory`, `VehicleMileageLog`, `NumberSequence`
+`AuditLog`, `ActivityLog`, `ReservationPricingSnapshot`, `ReservationTimelineEvent`, `ContractTemplateVersion`, `ContractSignature`, `InvoiceLineItem`, `CreditNote`, `Payment`, `Deposit`, `DriverPayment`, `Plan`, `PlanLimit`, `PlanFeature`, `ReservationSource`, `Permission`, `ExpenseCategory`, `VehicleMileageLog`, `NumberSequence`
+
+> Invoice soft delete is draft-only. Issued, partially paid, paid, overdue, and voided invoices remain historical accounting records; corrections use `CreditNote`.
 
 > `ContractTemplateVersion` is immutable and never soft-deleted: once a version has been used to sign a contract, its body must be preserved verbatim for legal integrity. New edits to a template create a **new** version row rather than mutating an existing one.
 

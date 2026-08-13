@@ -17,7 +17,7 @@ export async function getAgencyDashboardCounts(
       },
     }),
     db.invoice.count({
-      where: { companyId: input.companyId, agencyId: input.agencyId, status: "overdue" },
+      where: { companyId: input.companyId, agencyId: input.agencyId, status: "overdue", deletedAt: null },
     }),
     db.expense.count({
       where: { companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
@@ -36,6 +36,7 @@ export async function getRevenueSummary(
       where: {
         companyId: input.companyId,
         agencyId: input.agencyId,
+        deletedAt: null,
         ...(input.from || input.to ? { createdAt: { gte: input.from, lte: input.to } } : {}),
       },
       _sum: { totalAmount: true },

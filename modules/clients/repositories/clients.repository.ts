@@ -435,6 +435,7 @@ export async function findCustomerReservationSummary(
         companyId: input.companyId,
         agencyId: input.agencyId,
         customerId: input.customerId,
+        deletedAt: null,
       },
       _count: true,
       _sum: { totalAmount: true },

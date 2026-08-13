@@ -1,13 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { InvoiceStatus, InvoiceType } from "@lokarent/db";
+import { InvoiceStatus, InvoiceType, PaymentMethod } from "@lokarent/db";
 import { z } from "zod";
 import { requireCurrentAgencyContext } from "@/shared/auth";
 import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
 import {
   generateInvoiceFromReservationService,
+  issueInvoiceService,
+  voidInvoiceService,
+  recordInvoicePaymentService,
+  updateInvoiceService,
+  deleteInvoiceService,
   listInvoiceCustomersService,
   listInvoiceableReservationsService,
   listInvoicesService,
@@ -23,7 +28,11 @@ const listInvoicesSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
   search: z.string().trim().max(120).optional(),
   status: z.nativeEnum(InvoiceStatus).optional(),
+  type: z.nativeEnum(InvoiceType).optional(),
   customerId: z.string().uuid().optional(),
+  customerType: z.enum(["individual", "company"]).optional(),
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
   sort: z.enum(["recent", "amount_desc", "due_asc"]).optional(),
 });
 
@@ -37,11 +46,15 @@ const listInvoiceCustomersSchema = z.object({
   take: z.coerce.number().int().min(1).max(100).optional(),
 });
 
+function emptyToUndefined(value: unknown) {
+  return value === "" ? undefined : value;
+}
+
 const generateInvoiceSchema = z.object({
   type: z.nativeEnum(InvoiceType).default(InvoiceType.rental),
-  reservationId: z.string().uuid().optional().nullable(),
-  customerId: z.string().uuid().optional().nullable(),
-  taxRate: z.coerce.number().min(0).max(100).optional().nullable(),
+  reservationId: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
+  customerId: z.preprocess(emptyToUndefined, z.string().uuid().optional().nullable()),
+  taxRate: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(100).optional().nullable()),
   manualLines: z
     .array(
       z.object({
@@ -52,7 +65,33 @@ const generateInvoiceSchema = z.object({
       }),
     )
     .optional(),
-  dueAt: z.coerce.date().optional().nullable(),
+  issueAt: z.preprocess(emptyToUndefined, z.coerce.date().optional().nullable()),
+  dueAt: z.preprocess(emptyToUndefined, z.coerce.date().optional().nullable()),
+  notes: z.string().trim().max(1000).optional().nullable(),
+});
+
+const updateInvoiceSchema = generateInvoiceSchema.extend({
+  invoiceId: z.string().uuid(),
+});
+
+const deleteInvoiceSchema = z.object({
+  invoiceId: z.string().uuid(),
+});
+
+const issueInvoiceSchema = z.object({
+  invoiceId: z.string().uuid(),
+});
+
+const voidInvoiceSchema = z.object({
+  invoiceId: z.string().uuid(),
+});
+
+const recordInvoicePaymentSchema = z.object({
+  invoiceId: z.string().uuid(),
+  amount: z.preprocess(emptyToUndefined, z.coerce.number().positive()),
+  method: z.nativeEnum(PaymentMethod),
+  paidAt: z.coerce.date(),
+  reference: z.string().trim().max(120).optional().nullable(),
   notes: z.string().trim().max(1000).optional().nullable(),
 });
 
@@ -77,6 +116,34 @@ function messageKeyForError(error: unknown) {
       return "invoices.errors.taxRateInvalid";
     if (error.message === "INVOICE_MANUAL_RESERVATION_NOT_ALLOWED")
       return "invoices.errors.manualReservationNotAllowed";
+    if (error.message === "FINANCE_INVOICE_IMMUTABLE")
+      return "invoices.errors.immutable";
+    if (error.message === "INVOICE_TYPE_IMMUTABLE")
+      return "invoices.errors.typeImmutable";
+    if (error.message === "INVOICE_DELETE_REQUIRES_DRAFT")
+      return "invoices.errors.deleteRequiresDraft";
+    if (error.message === "INVOICE_ISSUE_REQUIRES_DRAFT")
+      return "invoices.errors.issueRequiresDraft";
+    if (error.message === "INVOICE_ALREADY_VOIDED")
+      return "invoices.errors.alreadyVoided";
+    if (error.message === "INVOICE_VOID_ACTOR_REQUIRED")
+      return "invoices.errors.voidActorRequired";
+    if (error.message === "INVOICE_VOID_NOT_ALLOWED")
+      return "invoices.errors.voidNotAllowed";
+    if (error.message === "INVOICE_PAYMENT_REQUIRES_ISSUED")
+      return "invoices.errors.paymentRequiresIssued";
+    if (error.message === "INVOICE_PAYMENT_NOT_ALLOWED")
+      return "invoices.errors.paymentNotAllowed";
+    if (error.message === "INVOICE_PAYMENT_INVALID_AMOUNT")
+      return "invoices.errors.paymentInvalidAmount";
+    if (error.message === "INVOICE_PAYMENT_OVERPAYMENT")
+      return "invoices.errors.paymentOverpayment";
+    if (error.message === "INVOICE_ALREADY_PAID")
+      return "invoices.errors.alreadyPaid";
+    if (error.message === "INVOICE_PAYMENT_DATE_INVALID")
+      return "invoices.errors.paymentDateInvalid";
+    if (error.message === "INVOICE_PAYMENT_ACTOR_REQUIRED")
+      return "invoices.errors.paymentActorRequired";
     return "invoices.errors.validation";
   }
   return "invoices.errors.generic";
@@ -106,6 +173,7 @@ export async function listInvoicesAction(input: unknown) {
     return {
       success: false as const,
       messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
     };
   try {
     const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);
@@ -115,6 +183,122 @@ export async function listInvoicesAction(input: unknown) {
       invoices: result.data.map(mapInvoiceToUi),
       pagination: result.pagination,
     };
+  } catch (error) {
+    return {
+      success: false as const,
+      messageKey: messageKeyForError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}
+
+export async function updateInvoiceAction(input: unknown) {
+  const parsed = updateInvoiceSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false as const,
+      messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
+    };
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);
+    const invoice = await updateInvoiceService({
+      context,
+      ...parsed.data,
+    });
+    revalidateInvoicePaths();
+    return { success: true as const, invoice: mapInvoiceToUi(invoice) };
+  } catch (error) {
+    return {
+      success: false as const,
+      messageKey: messageKeyForError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}
+
+export async function deleteInvoiceAction(input: unknown) {
+  const parsed = deleteInvoiceSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false as const,
+      messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
+    };
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);
+    const deleted = await deleteInvoiceService({ ...context, invoiceId: parsed.data.invoiceId });
+    revalidateInvoicePaths();
+    return { success: true as const, invoiceId: deleted.invoiceId };
+  } catch (error) {
+    return {
+      success: false as const,
+      messageKey: messageKeyForError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}
+
+export async function issueInvoiceAction(input: unknown) {
+  const parsed = issueInvoiceSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false as const,
+      messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
+    };
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);
+    const invoice = await issueInvoiceService({ ...context, invoiceId: parsed.data.invoiceId });
+    revalidateInvoicePaths();
+    return { success: true as const, invoice: mapInvoiceToUi(invoice) };
+  } catch (error) {
+    return {
+      success: false as const,
+      messageKey: messageKeyForError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}
+
+export async function voidInvoiceAction(input: unknown) {
+  const parsed = voidInvoiceSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false as const,
+      messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
+    };
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);
+    const invoice = await voidInvoiceService({ ...context, invoiceId: parsed.data.invoiceId });
+    revalidateInvoicePaths();
+    return { success: true as const, invoice: mapInvoiceToUi(invoice) };
+  } catch (error) {
+    return {
+      success: false as const,
+      messageKey: messageKeyForError(error),
+      code: isAppError(error) ? error.code : undefined,
+    };
+  }
+}
+
+export async function recordInvoicePaymentAction(input: unknown) {
+  const parsed = recordInvoicePaymentSchema.safeParse(input);
+  if (!parsed.success)
+    return {
+      success: false as const,
+      messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
+    };
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_PAYMENTS_RECORD);
+    const invoice = await recordInvoicePaymentService({
+      context,
+      payment: parsed.data,
+    });
+    revalidateInvoicePaths();
+    return { success: true as const, invoice: mapInvoiceToUi(invoice) };
   } catch (error) {
     return {
       success: false as const,
@@ -200,6 +384,7 @@ export async function generateInvoiceAction(input: unknown) {
     return {
       success: false as const,
       messageKey: "invoices.errors.validation",
+      issues: parsed.error.flatten().fieldErrors,
     };
   try {
     const context = await getActionContext(PERMISSIONS.FINANCE_INVOICES_VIEW);

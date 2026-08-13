@@ -1204,7 +1204,7 @@ model Reservation {
   assignedAgent      User?                         @relation("ReservationAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: NoAction)
   cancelledByUser    User?                         @relation("ReservationCancelledBy", fields: [cancelledBy], references: [id], onDelete: NoAction)
   contracts          Contract[]
-  invoice            Invoice?
+  invoices           Invoice[]
   payments           Payment[]
   deposits           Deposit[]
   expenses           Expense[]
@@ -1565,7 +1565,7 @@ model Invoice {
   agencyId           String        @map("agency_id") @db.Uuid
   code               String
   type               InvoiceType   @default(rental)
-  reservationId      String?       @unique @map("reservation_id") @db.Uuid
+  reservationId      String?       @map("reservation_id") @db.Uuid
   customerId         String        @map("customer_id") @db.Uuid
   customerBusinessId String?       @map("customer_business_id") @db.Uuid
   status             InvoiceStatus
@@ -1581,8 +1581,10 @@ model Invoice {
   notes              String?
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt          DateTime?     @map("deleted_at") @db.Timestamptz()
+  deletedBy          String?       @map("deleted_by") @db.Uuid
 
-  // Immutable after issuance — never soft-deleted (VAT compliance). Corrections create a CreditNote.
+  // Draft invoices may be soft-deleted. Issued financial history is preserved via CreditNote corrections.
 
   company                  Company           @relation(fields: [companyId], references: [id], onDelete: NoAction)
   agency                   Agency            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
@@ -1599,6 +1601,7 @@ model Invoice {
   @@index([dueAt])
   @@index([customerId])
   @@index([customerBusinessId])
+  @@index([companyId, deletedAt])
   @@map("invoices")
 }
 
@@ -1629,7 +1632,7 @@ model Payment {
   id            String        @id @db.Uuid
   companyId     String        @map("company_id") @db.Uuid
   agencyId      String        @map("agency_id") @db.Uuid
-  reservationId String        @map("reservation_id") @db.Uuid
+  reservationId String?       @map("reservation_id") @db.Uuid
   invoiceId     String?       @map("invoice_id") @db.Uuid
   customerId    String        @map("customer_id") @db.Uuid
   method        PaymentMethod
@@ -1646,12 +1649,12 @@ model Payment {
   // NOTE: plan documents @@index([invoiceId, status]) but payments has no `status` column
   //       (no PaymentStatus enum exists); degraded to @@index([invoiceId]).
 
-  company        Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agency         Agency      @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: NoAction)
-  invoice        Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: NoAction)
-  customer       Customer    @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  recordedByUser User        @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency       @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation    Reservation? @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: NoAction)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  recordedByUser User         @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
 
   @@index([invoiceId])
   @@index([agencyId, createdAt])

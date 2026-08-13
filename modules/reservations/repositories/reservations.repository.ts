@@ -71,7 +71,7 @@ export async function findReservationById(
       authorizedDrivers: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
       timelineEvents: { orderBy: { createdAt: "desc" } },
       contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
-      invoice: true,
+      invoices: { where: { deletedAt: null }, take: 1 },
       driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
     },
   });

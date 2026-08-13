@@ -24,6 +24,7 @@ export type InvoicePayment = {
   amount: number
   reference?: string
   note?: string
+  recordedBy?: string
 }
 
 export type InvoiceTimelineEvent = {
@@ -63,9 +64,12 @@ export type Invoice = {
   lineItems: InvoiceLineItem[]
   subtotal: number
   taxTotal: number
+  taxRate?: number
+  discount?: number
   total: number
   paid: number
   remaining: number
+  currency?: string
 
   // Payments recorded
   payments: InvoicePayment[]

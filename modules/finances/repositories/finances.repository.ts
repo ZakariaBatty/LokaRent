@@ -1,4 +1,4 @@
-import { CustomerStatus, DepositStatus, InvoiceStatus, Prisma, prisma } from "@lokarent/db";
+import { CustomerStatus, CustomerType, DepositStatus, InvoiceStatus, InvoiceType, Prisma, prisma } from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -16,20 +16,28 @@ export type FinanceListInput = PaginationInput & {
 
 export type InvoiceSort = "recent" | "amount_desc" | "due_asc";
 
+const invoiceInclude = {
+  lineItems: { orderBy: { sortOrder: "asc" } },
+  payments: { orderBy: { paidAt: "desc" } },
+  creditNotesAsOriginal: true,
+  reservation: {
+    include: {
+      vehicle: true,
+      extras: { orderBy: { createdAt: "asc" } },
+      pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
+    },
+  },
+  customer: { include: { individual: true, business: true } },
+  customerBusiness: true,
+} satisfies Prisma.InvoiceInclude;
+
 export async function findInvoiceById(
   input: { companyId: string; agencyId: string; invoiceId: string },
   db: DatabaseClient = prisma,
 ) {
   return db.invoice.findFirst({
-    where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId },
-    include: {
-      lineItems: { orderBy: { sortOrder: "asc" } },
-      payments: { orderBy: { paidAt: "desc" } },
-      creditNotesAsOriginal: true,
-      reservation: { include: { vehicle: true } },
-      customer: { include: { individual: true, business: true } },
-      customerBusiness: true,
-    },
+    where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    include: invoiceInclude,
   });
 }
 
@@ -38,13 +46,19 @@ export async function findInvoiceByReservation(
   db: DatabaseClient = prisma,
 ) {
   return db.invoice.findFirst({
-    where: { companyId: input.companyId, agencyId: input.agencyId, reservationId: input.reservationId },
+    where: { companyId: input.companyId, agencyId: input.agencyId, reservationId: input.reservationId, deletedAt: null },
     include: { lineItems: { orderBy: { sortOrder: "asc" } }, payments: true },
   });
 }
 
 export async function paginateInvoices(
-  input: FinanceListInput & { status?: InvoiceStatus; customerId?: string; sort?: InvoiceSort },
+  input: FinanceListInput & {
+    status?: InvoiceStatus;
+    type?: InvoiceType;
+    customerId?: string;
+    customerType?: CustomerType;
+    sort?: InvoiceSort;
+  },
   db: DatabaseClient = prisma,
 ) {
   const pagination = getPagination(input);
@@ -52,9 +66,12 @@ export async function paginateInvoices(
   const where: Prisma.InvoiceWhereInput = {
     companyId: input.companyId,
     agencyId: input.agencyId,
+    deletedAt: null,
     status: input.status,
+    type: input.type,
     customerId: input.customerId,
-    ...(input.from || input.to ? { createdAt: { gte: input.from, lte: input.to } } : {}),
+    ...(input.customerType ? { customer: { type: input.customerType } } : {}),
+    ...(input.from || input.to ? { issuedAt: { gte: input.from, lte: input.to } } : {}),
     ...(search
       ? {
           OR: [
@@ -80,14 +97,7 @@ export async function paginateInvoices(
   const [data, total] = await Promise.all([
     db.invoice.findMany({
       where,
-      include: {
-        lineItems: { orderBy: { sortOrder: "asc" } },
-        payments: { orderBy: { paidAt: "desc" } },
-        creditNotesAsOriginal: true,
-        reservation: { include: { vehicle: true } },
-        customer: { include: { individual: true, business: true } },
-        customerBusiness: true,
-      },
+      include: invoiceInclude,
       orderBy,
       skip: pagination.skip,
       take: pagination.take,
@@ -114,7 +124,7 @@ export async function findInvoiceGenerationSource(
       extras: { orderBy: { createdAt: "asc" } },
       pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
       contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
-      invoice: true,
+      invoices: { where: { deletedAt: null }, take: 1 },
     },
   });
 }
@@ -157,7 +167,7 @@ export async function listInvoiceableReservations(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
-      invoice: null,
+      invoices: { none: { deletedAt: null } },
       pricingSnapshots: { some: { isCurrent: true } },
       ...(search
         ? {
@@ -237,8 +247,50 @@ export async function updateInvoice(
   db: DatabaseClient = prisma,
 ) {
   return db.invoice.updateMany({
-    where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId },
+    where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
     data: input.data,
+  });
+}
+
+export async function softDeleteInvoice(
+  input: { companyId: string; agencyId: string; invoiceId: string; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.invoice.updateMany({
+    where: {
+      id: input.invoiceId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      status: InvoiceStatus.draft,
+      deletedAt: null,
+    },
+    data: { deletedAt: new Date(), deletedBy: input.deletedBy ?? null },
+  });
+}
+
+export async function findInvoiceByIdForUpdate(
+  input: { companyId: string; agencyId: string; invoiceId: string },
+  db: DatabaseClient = prisma,
+) {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT id
+    FROM invoices
+    WHERE id = ${input.invoiceId}::uuid
+      AND company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+      AND deleted_at IS NULL
+    FOR UPDATE
+  `;
+  if (rows.length === 0) return null;
+  return findInvoiceById(input, db);
+}
+
+export async function deleteInvoiceLineItems(
+  input: { companyId: string; invoiceId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.invoiceLineItem.deleteMany({
+    where: { companyId: input.companyId, invoiceId: input.invoiceId },
   });
 }
 
@@ -440,7 +492,7 @@ export async function getInvoicePaymentSummary(
 ) {
   const [invoice, payments, creditNotes] = await Promise.all([
     db.invoice.findFirst({
-      where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId },
+      where: { id: input.invoiceId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
       select: { totalAmount: true, currency: true },
     }),
     db.payment.aggregate({
@@ -472,8 +524,11 @@ export const financesRepository = {
   listInvoiceCustomers,
   createInvoice,
   updateInvoice,
+  softDeleteInvoice,
+  findInvoiceByIdForUpdate,
   createInvoiceLineItem,
   createManyInvoiceLineItems,
+  deleteInvoiceLineItems,
   listPayments,
   createPayment,
   updatePayment,
