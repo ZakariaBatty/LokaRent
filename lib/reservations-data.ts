@@ -29,6 +29,30 @@ export type ReservationAuthorizedDriver = {
   documentUrl?: string | null
 }
 
+export type ReservationDeposit = {
+  id: string
+  amount: number
+  currency: string
+  method: "cash" | "cheque" | "card" | "other"
+  status: "held" | "released" | "forfeited" | "partially_released"
+  collectedAt: string
+  releasedAt?: string | null
+  releasedAmount: number
+  heldAmount: number
+  forfeitureReason?: string | null
+  notes?: string | null
+}
+
+export type ReservationDepositSummary = {
+  agreedAmount: number
+  collectedAmount: number
+  releasedAmount: number
+  heldAmount: number
+  currency: string
+  status: "not_collected" | ReservationDeposit["status"]
+  records: ReservationDeposit[]
+}
+
 export type ContractChecklistItem = {
   label: string
   ok: boolean
@@ -89,6 +113,7 @@ export type Reservation = {
   total: number
   currentPricingSnapshotId?: string | null
   caution: number
+  deposit?: ReservationDepositSummary
   advance: number
   remaining: number
   paymentMethod: "Espèces" | "Carte bancaire" | "Virement" | "Chèque"

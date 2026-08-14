@@ -46,10 +46,12 @@ export function ReservationDetailPanel({
   reservation,
   onClose,
   onStatusChange,
+  onReservationUpdated,
 }: {
   reservation: Reservation
   onClose: () => void
   onStatusChange: (id: string, next: ReservationStatus) => void
+  onReservationUpdated?: (reservation: Reservation) => void
 }) {
   const router = useRouter()
   const { t } = useI18n()
@@ -326,7 +328,7 @@ export function ReservationDetailPanel({
           />
         )}
         {tab === "contract" && <ContractTab reservation={reservation} />}
-        {tab === "payment" && <PaymentTab reservation={reservation} />}
+        {tab === "payment" && <PaymentTab reservation={reservation} onReservationUpdated={onReservationUpdated} />}
         {tab === "timeline" && <TimelineTab reservation={reservation} />}
       </div>
     </div>

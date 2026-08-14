@@ -14,6 +14,7 @@ type ReservationPayload = Prisma.ReservationGetPayload<{
     authorizedDrivers: true;
     timelineEvents: true;
     contracts: true;
+    deposits: true;
     driverAssignments: { include: { driver: true } };
   };
 }>;
@@ -82,6 +83,40 @@ function mapTimeline(event: ReservationPayload["timelineEvents"][number]): Timel
   };
 }
 
+function depositHeldAmount(deposit: ReservationPayload["deposits"][number]) {
+  return Math.max(0, Number(deposit.amount) - Number(deposit.releasedAmount ?? 0));
+}
+
+function mapDepositSummary(reservation: ReservationPayload) {
+  const agreedAmount = Number(reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent)?.depositAmount ?? reservation.depositAmount);
+  const records = reservation.deposits.map((deposit) => ({
+    id: deposit.id,
+    amount: Number(deposit.amount),
+    currency: deposit.currency,
+    method: deposit.method,
+    status: deposit.status,
+    collectedAt: deposit.collectedAt.toISOString(),
+    releasedAt: deposit.releasedAt?.toISOString() ?? null,
+    releasedAmount: Number(deposit.releasedAmount ?? 0),
+    heldAmount: depositHeldAmount(deposit),
+    forfeitureReason: deposit.forfeitureReason,
+    notes: deposit.notes,
+  }));
+  const collectedAmount = records.reduce((sum, deposit) => sum + deposit.amount, 0);
+  const releasedAmount = records.reduce((sum, deposit) => sum + deposit.releasedAmount, 0);
+  const heldAmount = records.reduce((sum, deposit) => sum + deposit.heldAmount, 0);
+  const current = records[0] ?? null;
+  return {
+    agreedAmount,
+    collectedAmount,
+    releasedAmount,
+    heldAmount,
+    currency: current?.currency ?? reservation.currency,
+    status: current?.status ?? "not_collected",
+    records,
+  };
+}
+
 function includesAny(value: string, terms: string[]) {
   const normalized = value.toLowerCase();
   return terms.some((term) => normalized.includes(term));
@@ -102,6 +137,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
   const authorizedDriver = reservation.authorizedDrivers[0];
   const currentPricingSnapshot = reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? null;
   const currentContract = reservation.contracts[0];
+  const depositSummary = mapDepositSummary(reservation);
   return {
     id: reservation.id,
     code: reservation.code,
@@ -158,6 +194,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
     total,
     currentPricingSnapshotId: currentPricingSnapshot?.id ?? null,
     caution: Number(reservation.depositAmount),
+    deposit: depositSummary,
     advance,
     remaining: Math.max(0, total - advance),
     paymentMethod: "Espèces",

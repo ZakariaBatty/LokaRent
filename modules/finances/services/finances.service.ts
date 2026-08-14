@@ -8,7 +8,7 @@ import {
 import { writeActivityLog, writeAuditLog } from "@/shared/audit";
 import { createReservationTimelineEvent } from "@/modules/reservations/repositories/reservations.repository";
 import { findSettingResolutionRows, incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
-import { InvoiceStatus, InvoiceType, PaymentMethod, Prisma } from "@lokarent/db";
+import { DepositMethod, DepositStatus, InvoiceStatus, InvoiceType, PaymentMethod, Prisma } from "@lokarent/db";
 import {
   createCreditNote,
   createDeposit,
@@ -23,6 +23,9 @@ import {
   findInvoiceById,
   findInvoiceByIdForUpdate,
   findInvoiceByReservation,
+  findCreditNoteByOriginalInvoice,
+  findDepositByIdForUpdate,
+  findDepositReservationSource,
   findInvoiceGenerationSource,
   getInvoicePaymentSummary,
   listInvoiceCustomers,
@@ -31,6 +34,7 @@ import {
   listDeposits,
   listDriverPayments,
   lockInvoiceByReservation,
+  lockDepositsByReservation,
   lockReservationForInvoice,
   listExpenseCategories,
   listPayments,
@@ -64,13 +68,8 @@ type PaymentCreateData = Omit<
   Parameters<typeof createPayment>[0],
   "id" | "companyId" | "agencyId" | "recordedBy"
 >;
-type DepositCreateData = Omit<
-  Parameters<typeof createDeposit>[0],
-  "id" | "companyId" | "agencyId" | "collectedBy"
->;
-type CreditNoteCreateData = Omit<
-  Parameters<typeof createCreditNote>[0],
-  "id" | "companyId" | "agencyId" | "issuedBy"
+type DepositReservationSource = NonNullable<
+  Awaited<ReturnType<typeof findDepositReservationSource>>
 >;
 type ExpenseCategoryCreateData = Omit<
   Parameters<typeof createExpenseCategory>[0],
@@ -113,6 +112,33 @@ export type InvoicePaymentInput = {
   paidAt: Date;
   reference?: string | null;
   notes?: string | null;
+};
+
+export type DepositCollectionInput = {
+  reservationId: string;
+  amount: Prisma.Decimal.Value;
+  method: DepositMethod;
+  collectedAt?: Date | null;
+  notes?: string | null;
+};
+
+export type DepositReleaseInput = {
+  depositId: string;
+  amount?: Prisma.Decimal.Value | null;
+  notes?: string | null;
+};
+
+export type DepositForfeitInput = {
+  depositId: string;
+  reason: string;
+};
+
+export type CreditNoteIssueInput = {
+  originalInvoiceId: string;
+  amount: Prisma.Decimal.Value;
+  reason?: string | null;
+  replacementInvoiceId?: string | null;
+  issuedAt?: Date | null;
 };
 
 export async function getInvoiceService(input: {
@@ -178,9 +204,71 @@ function assertPastOrPresentDate(value: Date) {
   }
 }
 
+function assertDepositDate(value: Date) {
+  if (Number.isNaN(value.getTime()) || value.getTime() > Date.now()) {
+    throw createValidationError("DEPOSIT_DATE_INVALID");
+  }
+}
+
 function normalizeOptionalText(value: string | null | undefined) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function currentDepositRequirement(source: DepositReservationSource) {
+  return decimal(source.pricingSnapshots[0]?.depositAmount ?? source.depositAmount ?? 0);
+}
+
+function depositReleasedAmount(deposit: { releasedAmount: Prisma.Decimal | null }) {
+  return decimal(deposit.releasedAmount ?? 0);
+}
+
+function depositHeldAmount(deposit: { amount: Prisma.Decimal; releasedAmount: Prisma.Decimal | null }) {
+  return deposit.amount.minus(depositReleasedAmount(deposit));
+}
+
+function assertDepositActor(context: FinanceServiceContext) {
+  if (!context.userId) throw createValidationError("DEPOSIT_ACTOR_REQUIRED");
+  return context.userId;
+}
+
+async function writeDepositAuditActivity(
+  input: FinanceServiceContext & {
+    depositId: string;
+    action: string;
+    verb: string;
+    metadata?: Prisma.InputJsonValue;
+  },
+  db: Parameters<typeof writeAuditLog>[1],
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: input.action,
+      entityType: "deposit",
+      entityId: input.depositId,
+      changes: input.metadata,
+    },
+    db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "deposit",
+      entityId: input.depositId,
+      verb: input.verb,
+      metadata: input.metadata,
+    },
+    db,
+  );
 }
 
 async function writeInvoiceAuditActivity(
@@ -720,6 +808,11 @@ export async function voidInvoiceService(input: FinanceServiceContext & { invoic
       if (current.status === InvoiceStatus.voided) throw createValidationError("INVOICE_ALREADY_VOIDED");
       throw createValidationError("INVOICE_VOID_NOT_ALLOWED");
     }
+    const existingCorrection = await findCreditNoteByOriginalInvoice(
+      { companyId: current.companyId, agencyId: current.agencyId, invoiceId: current.id },
+      tx,
+    );
+    if (existingCorrection) throw createValidationError("INVOICE_CREDIT_NOTE_ALREADY_EXISTS");
 
     const sequence = await generateCreditNoteCode(input, tx);
     await createCreditNote(
@@ -950,16 +1043,40 @@ export async function listPaymentsService(
 
 export async function collectDepositService(input: {
   context: FinanceServiceContext;
-  deposit: DepositCreateData;
+  deposit: DepositCollectionInput;
 }) {
+  const actorUserId = assertDepositActor(input.context);
+  const amount = decimal(input.deposit.amount);
+  if (!amount.greaterThan(0)) throw createValidationError("DEPOSIT_AMOUNT_INVALID");
+  const collectedAt = input.deposit.collectedAt ?? new Date();
+  assertDepositDate(collectedAt);
+
   const deposit = await runInTransaction(async (tx) => {
+    const scope = { ...input.context, reservationId: input.deposit.reservationId };
+    await lockReservationForInvoice(scope, tx);
+    await lockDepositsByReservation(scope, tx);
+    const source = await findDepositReservationSource(scope, tx);
+    if (!source) throw createNotFoundError("Reservation", input.deposit);
+    const agreedDeposit = currentDepositRequirement(source);
+    if (!agreedDeposit.greaterThan(0)) throw createValidationError("DEPOSIT_NOT_REQUIRED");
+    if (amount.greaterThan(agreedDeposit)) throw createValidationError("DEPOSIT_EXCEEDS_REQUIRED");
+    if (input.deposit.reservationId !== source.id) throw createNotFoundError("Reservation", input.deposit);
+    if (source.deposits.length > 0) throw createValidationError("DEPOSIT_ALREADY_COLLECTED");
+
     const created = await createDeposit(
       {
-        ...input.deposit,
         id: createId(),
         companyId: input.context.companyId,
         agencyId: input.context.agencyId,
-        collectedBy: input.context.userId ?? "",
+        reservationId: source.id,
+        customerId: source.customerId,
+        amount,
+        currency: source.currency,
+        method: input.deposit.method,
+        collectedAt,
+        collectedBy: actorUserId,
+        status: DepositStatus.held,
+        notes: normalizeOptionalText(input.deposit.notes),
       },
       tx,
     );
@@ -969,7 +1086,23 @@ export async function collectDepositService(input: {
         companyId: created.companyId,
         reservationId: created.reservationId,
         eventType: "deposit_collected",
+        description: `${created.amount.toString()} ${created.currency}`,
         performedBy: input.context.userId ?? null,
+      },
+      tx,
+    );
+    await writeDepositAuditActivity(
+      {
+        ...input.context,
+        depositId: created.id,
+        action: "DepositCollected",
+        verb: "DepositCollected",
+        metadata: {
+          reservationId: created.reservationId,
+          amount: created.amount.toString(),
+          currency: created.currency,
+          agreedDeposit: agreedDeposit.toString(),
+        },
       },
       tx,
     );
@@ -989,65 +1122,153 @@ export async function collectDepositService(input: {
 }
 
 export async function releaseDepositService(
-  input: FinanceServiceContext & {
-    depositId: string;
-    releasedAmount?: Parameters<
-      typeof updateDeposit
-    >[0]["data"]["releasedAmount"];
-    notes?: string | null;
-  },
+  input: FinanceServiceContext & DepositReleaseInput,
 ) {
-  const status = input.releasedAmount ? "partially_released" : "released";
-  const result = await updateDeposit({
-    companyId: input.companyId,
-    agencyId: input.agencyId,
-    depositId: input.depositId,
-    data: {
-      status,
-      releasedAt: new Date(),
-      releasedBy: input.userId ?? "",
-      releasedAmount: input.releasedAmount,
-      notes: input.notes,
-    },
+  const actorUserId = assertDepositActor(input);
+  const deposit = await runInTransaction(async (tx) => {
+    const current = await findDepositByIdForUpdate(input, tx);
+    if (!current) throw createNotFoundError("Deposit", input);
+    if (current.status === DepositStatus.released) throw createValidationError("DEPOSIT_ALREADY_RELEASED");
+    if (current.status === DepositStatus.forfeited) throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
+    if (current.status !== DepositStatus.held && current.status !== DepositStatus.partially_released) {
+      throw createValidationError("DEPOSIT_RELEASE_NOT_ALLOWED");
+    }
+
+    const heldBefore = depositHeldAmount(current);
+    if (!heldBefore.greaterThan(0)) throw createValidationError("DEPOSIT_NOTHING_HELD");
+    const releaseAmount = input.amount == null ? heldBefore : decimal(input.amount);
+    if (!releaseAmount.greaterThan(0)) throw createValidationError("DEPOSIT_RELEASE_AMOUNT_INVALID");
+    if (releaseAmount.greaterThan(heldBefore)) throw createValidationError("DEPOSIT_RELEASE_EXCEEDS_HELD");
+    const releasedTotal = depositReleasedAmount(current).plus(releaseAmount);
+    const nextStatus = releasedTotal.greaterThanOrEqualTo(current.amount)
+      ? DepositStatus.released
+      : DepositStatus.partially_released;
+    const now = new Date();
+
+    await updateDeposit(
+      {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        depositId: input.depositId,
+        data: {
+          status: nextStatus,
+          releasedAt: now,
+          releasedBy: actorUserId,
+          releasedAmount: releasedTotal,
+          notes: normalizeOptionalText(input.notes) ?? current.notes,
+        },
+      },
+      tx,
+    );
+    await createReservationTimelineEvent(
+      {
+        id: createId(),
+        companyId: current.companyId,
+        reservationId: current.reservationId,
+        eventType: nextStatus === DepositStatus.released ? "deposit_released" : "deposit_partially_released",
+        description: `${releaseAmount.toString()} ${current.currency}`,
+        performedBy: actorUserId,
+      },
+      tx,
+    );
+    await writeDepositAuditActivity(
+      {
+        ...input,
+        depositId: current.id,
+        action: "DepositReleased",
+        verb: "DepositReleased",
+        metadata: {
+          amount: releaseAmount.toString(),
+          releasedTotal: releasedTotal.toString(),
+          status: nextStatus,
+        },
+      },
+      tx,
+    );
+    const updated = await findDepositByIdForUpdate(input, tx);
+    if (!updated) throw createNotFoundError("Deposit", input);
+    return updated;
   });
   await publishDomainEvent({
     name: "DepositReleased",
-    companyId: input.companyId,
-    agencyId: input.agencyId,
+    companyId: deposit.companyId,
+    agencyId: deposit.agencyId,
     entityType: "deposit",
-    entityId: input.depositId,
+    entityId: deposit.id,
     userId: input.userId,
     actorName: input.actorName,
     occurredAt: new Date(),
   });
-  return result;
+  return deposit;
 }
 
 export async function forfeitDepositService(
-  input: FinanceServiceContext & {
-    depositId: string;
-    reason: string;
-  },
+  input: FinanceServiceContext & DepositForfeitInput,
 ) {
-  if (!input.reason.trim())
-    throw createValidationError("Deposit forfeiture reason is required");
-  const result = await updateDeposit({
-    companyId: input.companyId,
-    agencyId: input.agencyId,
-    depositId: input.depositId,
-    data: { status: "forfeited", forfeitureReason: input.reason },
+  const actorUserId = assertDepositActor(input);
+  const reason = input.reason.trim();
+  if (!reason) throw createValidationError("DEPOSIT_FORFEIT_REASON_REQUIRED");
+  const deposit = await runInTransaction(async (tx) => {
+    const current = await findDepositByIdForUpdate(input, tx);
+    if (!current) throw createNotFoundError("Deposit", input);
+    if (current.status === DepositStatus.released) throw createValidationError("DEPOSIT_ALREADY_RELEASED");
+    if (current.status === DepositStatus.forfeited) throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
+    if (current.status !== DepositStatus.held && current.status !== DepositStatus.partially_released) {
+      throw createValidationError("DEPOSIT_FORFEIT_NOT_ALLOWED");
+    }
+    const held = depositHeldAmount(current);
+    if (!held.greaterThan(0)) throw createValidationError("DEPOSIT_NOTHING_HELD");
+
+    await updateDeposit(
+      {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        depositId: input.depositId,
+        data: {
+          status: DepositStatus.forfeited,
+          forfeitureReason: reason,
+          releasedAt: new Date(),
+          releasedBy: actorUserId,
+        },
+      },
+      tx,
+    );
+    await createReservationTimelineEvent(
+      {
+        id: createId(),
+        companyId: current.companyId,
+        reservationId: current.reservationId,
+        eventType: "deposit_forfeited",
+        description: `${held.toString()} ${current.currency} - ${reason}`,
+        performedBy: actorUserId,
+      },
+      tx,
+    );
+    await writeDepositAuditActivity(
+      {
+        ...input,
+        depositId: current.id,
+        action: "DepositForfeited",
+        verb: "DepositForfeited",
+        metadata: { amount: held.toString(), reason },
+      },
+      tx,
+    );
+    const updated = await findDepositByIdForUpdate(input, tx);
+    if (!updated) throw createNotFoundError("Deposit", input);
+    return updated;
   });
   await publishDomainEvent({
     name: "DepositForfeited",
-    companyId: input.companyId,
-    agencyId: input.agencyId,
+    companyId: deposit.companyId,
+    agencyId: deposit.agencyId,
     entityType: "deposit",
-    entityId: input.depositId,
+    entityId: deposit.id,
     userId: input.userId,
     actorName: input.actorName,
     occurredAt: new Date(),
   });
-  return result;
+  return deposit;
 }
 
 export async function listDepositsService(
@@ -1062,14 +1283,71 @@ export async function listDepositsService(
 
 export async function issueCreditNoteService(input: {
   context: FinanceServiceContext;
-  data: CreditNoteCreateData;
+  data: CreditNoteIssueInput;
 }) {
-  const note = await createCreditNote({
-    ...input.data,
-    id: createId(),
-    companyId: input.context.companyId,
-    agencyId: input.context.agencyId,
-    issuedBy: input.context.userId ?? "",
+  const actorUserId = input.context.userId;
+  if (!actorUserId) throw createValidationError("CREDIT_NOTE_ACTOR_REQUIRED");
+  const amount = decimal(input.data.amount);
+  if (!amount.greaterThan(0)) throw createValidationError("CREDIT_NOTE_AMOUNT_INVALID");
+  const issuedAt = input.data.issuedAt ?? new Date();
+  if (Number.isNaN(issuedAt.getTime()) || issuedAt.getTime() > Date.now()) {
+    throw createValidationError("CREDIT_NOTE_DATE_INVALID");
+  }
+
+  const note = await runInTransaction(async (tx) => {
+    const invoice = await findInvoiceByIdForUpdate(
+      { ...input.context, invoiceId: input.data.originalInvoiceId },
+      tx,
+    );
+    if (!invoice) throw createNotFoundError("Invoice", input.data);
+    if (
+      invoice.status !== InvoiceStatus.issued &&
+      invoice.status !== InvoiceStatus.partially_paid &&
+      invoice.status !== InvoiceStatus.paid &&
+      invoice.status !== InvoiceStatus.overdue
+    ) {
+      throw createValidationError("CREDIT_NOTE_INVOICE_STATUS_INVALID");
+    }
+    if (input.data.replacementInvoiceId) {
+      const replacement = await findInvoiceById(
+        { ...input.context, invoiceId: input.data.replacementInvoiceId },
+        tx,
+      );
+      if (!replacement) throw createNotFoundError("Invoice", { invoiceId: input.data.replacementInvoiceId });
+    }
+    const summary = await getInvoicePaymentSummary(
+      { companyId: invoice.companyId, agencyId: invoice.agencyId, invoiceId: invoice.id },
+      tx,
+    );
+    const credited = decimal(summary.creditedAmount ?? 0);
+    const eligible = invoice.totalAmount.minus(credited);
+    if (!eligible.greaterThan(0)) throw createValidationError("CREDIT_NOTE_NOTHING_ELIGIBLE");
+    if (amount.greaterThan(eligible)) throw createValidationError("CREDIT_NOTE_EXCEEDS_ELIGIBLE");
+    const sequence = await generateCreditNoteCode(input.context, tx);
+    const created = await createCreditNote({
+      id: createId(),
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      code: sequence.formatted,
+      originalInvoiceId: invoice.id,
+      replacementInvoiceId: input.data.replacementInvoiceId ?? null,
+      amount,
+      currency: invoice.currency,
+      reason: normalizeOptionalText(input.data.reason),
+      issuedBy: actorUserId,
+      issuedAt,
+    }, tx);
+    await writeInvoiceAuditActivity(
+      {
+        ...input.context,
+        invoiceId: invoice.id,
+        action: "CreditNoteIssued",
+        verb: "CreditNoteIssued",
+        metadata: { creditNoteId: created.id, amount: amount.toString(), currency: invoice.currency },
+      },
+      tx,
+    );
+    return created;
   });
   await publishDomainEvent({
     name: "CreditNoteIssued",

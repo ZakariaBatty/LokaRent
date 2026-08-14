@@ -72,6 +72,7 @@ export async function findReservationById(
       timelineEvents: { orderBy: { createdAt: "desc" } },
       contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
       invoices: { where: { deletedAt: null }, take: 1 },
+      deposits: { orderBy: { collectedAt: "desc" } },
       driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
     },
   });
@@ -95,6 +96,7 @@ export async function paginateReservations(input: ReservationListInput, db: Data
         timelineEvents: { orderBy: { createdAt: "desc" }, take: 5 },
         driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
         contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
+        deposits: { orderBy: { collectedAt: "desc" } },
       },
       orderBy: [{ [orderField]: direction }, { id: "asc" }],
       skip: pagination.skip,

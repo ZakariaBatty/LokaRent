@@ -130,6 +130,8 @@ function messageKeyForError(error: unknown) {
       return "invoices.errors.voidActorRequired";
     if (error.message === "INVOICE_VOID_NOT_ALLOWED")
       return "invoices.errors.voidNotAllowed";
+    if (error.message === "INVOICE_CREDIT_NOTE_ALREADY_EXISTS")
+      return "invoices.errors.creditNoteAlreadyExists";
     if (error.message === "INVOICE_PAYMENT_REQUIRES_ISSUED")
       return "invoices.errors.paymentRequiresIssued";
     if (error.message === "INVOICE_PAYMENT_NOT_ALLOWED")

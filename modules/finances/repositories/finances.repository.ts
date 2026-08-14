@@ -356,6 +356,63 @@ export async function listDeposits(
   });
 }
 
+export async function findDepositById(
+  input: { companyId: string; agencyId: string; depositId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.deposit.findFirst({
+    where: { id: input.depositId, companyId: input.companyId, agencyId: input.agencyId },
+  });
+}
+
+export async function findDepositByIdForUpdate(
+  input: { companyId: string; agencyId: string; depositId: string },
+  db: DatabaseClient = prisma,
+) {
+  const rows = await db.$queryRaw<{ id: string }[]>`
+    SELECT id
+    FROM deposits
+    WHERE id = ${input.depositId}::uuid
+      AND company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+    FOR UPDATE
+  `;
+  if (rows.length === 0) return null;
+  return findDepositById(input, db);
+}
+
+export async function lockDepositsByReservation(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  await db.$queryRaw`
+    SELECT id
+    FROM deposits
+    WHERE company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+      AND reservation_id = ${input.reservationId}::uuid
+    FOR UPDATE
+  `;
+}
+
+export async function findDepositReservationSource(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.findFirst({
+    where: {
+      id: input.reservationId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+    },
+    include: {
+      pricingSnapshots: { where: { isCurrent: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      deposits: { orderBy: { collectedAt: "desc" } },
+    },
+  });
+}
+
 export async function createDeposit(data: Prisma.DepositUncheckedCreateInput, db: DatabaseClient = prisma) {
   return db.deposit.create({ data });
 }
@@ -372,6 +429,20 @@ export async function updateDeposit(
 
 export async function createCreditNote(data: Prisma.CreditNoteUncheckedCreateInput, db: DatabaseClient = prisma) {
   return db.creditNote.create({ data });
+}
+
+export async function findCreditNoteByOriginalInvoice(
+  input: { companyId: string; agencyId: string; invoiceId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.creditNote.findFirst({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      originalInvoiceId: input.invoiceId,
+    },
+    orderBy: { issuedAt: "desc" },
+  });
 }
 
 export async function listCreditNotesForInvoice(
@@ -533,9 +604,14 @@ export const financesRepository = {
   createPayment,
   updatePayment,
   listDeposits,
+  findDepositById,
+  findDepositByIdForUpdate,
+  lockDepositsByReservation,
+  findDepositReservationSource,
   createDeposit,
   updateDeposit,
   createCreditNote,
+  findCreditNoteByOriginalInvoice,
   listCreditNotesForInvoice,
   listExpenseCategories,
   createExpenseCategory,

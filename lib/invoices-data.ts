@@ -27,6 +27,16 @@ export type InvoicePayment = {
   recordedBy?: string
 }
 
+export type InvoiceCreditNote = {
+  id: string
+  code: string
+  amount: number
+  currency: string
+  reason?: string
+  issuedAt: string
+  replacementInvoiceId?: string
+}
+
 export type InvoiceTimelineEvent = {
   id: string
   type: "created" | "issued" | "payment" | "cancelled" | "edited" | "reminder"
@@ -68,11 +78,14 @@ export type Invoice = {
   discount?: number
   total: number
   paid: number
+  credited?: number
   remaining: number
   currency?: string
+  settlementWarning?: boolean
 
   // Payments recorded
   payments: InvoicePayment[]
+  creditNotes?: InvoiceCreditNote[]
 
   // Meta
   notes?: string

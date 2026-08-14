@@ -273,6 +273,8 @@ function PaymentsTab({ invoice, onUpdated }: { invoice: Invoice; onUpdated?: (in
   const [paidAt, setPaidAt] = useState(() => new Date().toISOString().slice(0, 16))
   const [reference, setReference] = useState("")
   const [notes, setNotes] = useState("")
+  const credited = invoice.credited ?? 0
+  const creditNotes = invoice.creditNotes ?? []
   const pct = invoice.total > 0 ? Math.min(100, Math.round((invoice.paid / invoice.total) * 100)) : 0
   const canRecordPayment = ["issued", "partial", "overdue"].includes(invoice.status) && invoice.remaining > 0
 
@@ -403,7 +405,7 @@ function PaymentsTab({ invoice, onUpdated }: { invoice: Invoice; onUpdated?: (in
           <span>{t("invoices.payments.alreadyPaid")} : {formatMAD(invoice.paid)}</span>
           <span>{t("invoices.payments.outstanding")} : {formatMAD(invoice.remaining)}</span>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+        <div className="mt-3 grid grid-cols-2 gap-2 text-xs md:grid-cols-4">
           <div className="rounded-lg bg-slate-50 p-2">
             <p className="text-slate-400">{t("invoices.payments.totalInvoice")}</p>
             <p className="font-semibold tabular-nums text-slate-800">{formatMAD(invoice.total)}</p>
@@ -413,11 +415,40 @@ function PaymentsTab({ invoice, onUpdated }: { invoice: Invoice; onUpdated?: (in
             <p className="font-semibold tabular-nums text-emerald-700">{formatMAD(invoice.paid)}</p>
           </div>
           <div className="rounded-lg bg-slate-50 p-2">
+            <p className="text-slate-400">{t("invoices.payments.credited")}</p>
+            <p className="font-semibold tabular-nums text-blue-700">{formatMAD(credited)}</p>
+          </div>
+          <div className="rounded-lg bg-slate-50 p-2">
             <p className="text-slate-400">{t("invoices.payments.outstanding")}</p>
             <p className="font-semibold tabular-nums text-amber-700">{formatMAD(invoice.remaining)}</p>
           </div>
         </div>
+        {invoice.settlementWarning && (
+          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            {t("invoices.payments.settlementWarning")}
+          </p>
+        )}
       </div>
+
+      {creditNotes.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            {t("invoices.creditNotes.title")}
+          </p>
+          {creditNotes.map((note) => (
+            <div key={note.id} className="rounded-xl border border-blue-100 bg-blue-50/50 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-mono text-xs font-semibold text-blue-700">{note.code}</p>
+                  <p className="text-xs text-slate-500">{formatDate(note.issuedAt)}</p>
+                </div>
+                <span className="text-sm font-semibold text-blue-700">{formatMAD(note.amount)}</span>
+              </div>
+              {note.reason && <p className="mt-1 text-xs text-slate-500">{note.reason}</p>}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Payment list */}
       {invoice.payments.length === 0 ? (
