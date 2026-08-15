@@ -17,6 +17,8 @@
     "migrate:status": "prisma migrate status --schema prisma/schema.prisma",
     "migrate:reset": "prisma migrate reset --schema prisma/schema.prisma",
 
+    "prisma:reset": "set -a; . ../../.env; set +a; prisma migrate reset --force --schema prisma/schema.prisma",
+
     "db:pull": "prisma db pull --schema prisma/schema.prisma",
 
     "seed": "node --experimental-strip-types src/seed.ts",

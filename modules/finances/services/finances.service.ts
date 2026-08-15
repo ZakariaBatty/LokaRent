@@ -5,10 +5,21 @@ import {
   publishDomainEvent,
   runInTransaction,
 } from "@/shared";
+import type { DatabaseClient } from "@/shared/database";
 import { writeActivityLog, writeAuditLog } from "@/shared/audit";
 import { createReservationTimelineEvent } from "@/modules/reservations/repositories/reservations.repository";
-import { findSettingResolutionRows, incrementNumberSequence } from "@/modules/workspace/billing/repositories/billing.repository";
-import { DepositMethod, DepositStatus, InvoiceStatus, InvoiceType, PaymentMethod, Prisma } from "@lokarent/db";
+import {
+  findSettingResolutionRows,
+  incrementNumberSequence,
+} from "@/modules/workspace/billing/repositories/billing.repository";
+import {
+  DepositMethod,
+  DepositStatus,
+  InvoiceStatus,
+  InvoiceType,
+  PaymentMethod,
+  Prisma,
+} from "@lokarent/db";
 import {
   createCreditNote,
   createDeposit,
@@ -25,6 +36,11 @@ import {
   findInvoiceByReservation,
   findCreditNoteByOriginalInvoice,
   findDepositByIdForUpdate,
+  findExpenseById,
+  findExpenseCategoryById,
+  findExpenseReservationById,
+  findExpenseVehicleById,
+  getExpenseAgencyDefaults,
   findDepositReservationSource,
   findInvoiceGenerationSource,
   getInvoicePaymentSummary,
@@ -37,12 +53,15 @@ import {
   lockDepositsByReservation,
   lockReservationForInvoice,
   listExpenseCategories,
+  listExpenseReservationOptions,
+  listExpenseVehicleOptions,
   listPayments,
   paginateExpenses,
   paginateInvoices,
   restoreExpense,
   softDeleteInvoice,
   softDeleteExpense,
+  summarizeExpensesByCurrency,
   updateDeposit,
   updateExpense,
   updateInvoice,
@@ -133,6 +152,21 @@ export type DepositForfeitInput = {
   reason: string;
 };
 
+export type ExpenseMutationInput = {
+  categoryId: string;
+  vehicleId?: string | null;
+  reservationId?: string | null;
+  description: string;
+  amount: Prisma.Decimal.Value;
+  currency?: string | null;
+  occurredAt: Date;
+  method?: PaymentMethod | null;
+  reference?: string | null;
+  provider?: string | null;
+  internalNote?: string | null;
+  documentUrl?: string | null;
+};
+
 export type CreditNoteIssueInput = {
   originalInvoiceId: string;
   amount: Prisma.Decimal.Value;
@@ -185,10 +219,7 @@ function decimal(value: unknown) {
     : new Prisma.Decimal(value as string | number);
 }
 
-function taxAmountFor(
-  totalPrice: Prisma.Decimal,
-  taxRate: Prisma.Decimal,
-) {
+function taxAmountFor(totalPrice: Prisma.Decimal, taxRate: Prisma.Decimal) {
   return totalPrice.mul(taxRate).div(100);
 }
 
@@ -216,20 +247,101 @@ function normalizeOptionalText(value: string | null | undefined) {
 }
 
 function currentDepositRequirement(source: DepositReservationSource) {
-  return decimal(source.pricingSnapshots[0]?.depositAmount ?? source.depositAmount ?? 0);
+  return decimal(
+    source.pricingSnapshots[0]?.depositAmount ?? source.depositAmount ?? 0,
+  );
 }
 
-function depositReleasedAmount(deposit: { releasedAmount: Prisma.Decimal | null }) {
+function depositReleasedAmount(deposit: {
+  releasedAmount: Prisma.Decimal | null;
+}) {
   return decimal(deposit.releasedAmount ?? 0);
 }
 
-function depositHeldAmount(deposit: { amount: Prisma.Decimal; releasedAmount: Prisma.Decimal | null }) {
+function depositHeldAmount(deposit: {
+  amount: Prisma.Decimal;
+  releasedAmount: Prisma.Decimal | null;
+}) {
   return deposit.amount.minus(depositReleasedAmount(deposit));
 }
 
 function assertDepositActor(context: FinanceServiceContext) {
   if (!context.userId) throw createValidationError("DEPOSIT_ACTOR_REQUIRED");
   return context.userId;
+}
+
+function assertExpenseActor(context: FinanceServiceContext) {
+  if (!context.userId) throw createValidationError("EXPENSE_ACTOR_REQUIRED");
+  return context.userId;
+}
+
+function assertCurrency(value: string) {
+  if (!/^[A-Z]{3}$/.test(value)) throw createValidationError("EXPENSE_CURRENCY_INVALID");
+}
+
+function assertExpenseDate(value: Date) {
+  if (Number.isNaN(value.getTime()) || value.getTime() > Date.now()) {
+    throw createValidationError("EXPENSE_DATE_INVALID");
+  }
+}
+
+async function normalizeExpenseMutation(input: {
+  context: FinanceServiceContext;
+  data: ExpenseMutationInput;
+  db?: DatabaseClient;
+}) {
+  const db = input.db;
+  const amount = decimal(input.data.amount);
+  if (amount.lessThanOrEqualTo(0)) throw createValidationError("EXPENSE_AMOUNT_INVALID");
+  assertExpenseDate(input.data.occurredAt);
+  const currency = (input.data.currency ?? "MAD").trim().toUpperCase();
+  assertCurrency(currency);
+
+  const category = await findExpenseCategoryById({
+    companyId: input.context.companyId,
+    categoryId: input.data.categoryId,
+  }, db);
+  if (!category) throw createValidationError("EXPENSE_CATEGORY_NOT_FOUND");
+
+  let vehicleId = input.data.vehicleId ?? null;
+  if (vehicleId) {
+    const vehicle = await findExpenseVehicleById({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      vehicleId,
+    }, db);
+    if (!vehicle) throw createValidationError("EXPENSE_VEHICLE_NOT_FOUND");
+  }
+
+  let reservationId = input.data.reservationId ?? null;
+  if (input.data.reservationId) {
+    const reservation = await findExpenseReservationById({
+      companyId: input.context.companyId,
+      agencyId: input.context.agencyId,
+      reservationId: input.data.reservationId,
+    }, db);
+    if (!reservation) throw createValidationError("EXPENSE_RESERVATION_NOT_FOUND");
+    if (vehicleId && reservation.vehicleId !== vehicleId) {
+      throw createValidationError("EXPENSE_RESERVATION_VEHICLE_MISMATCH");
+    }
+    vehicleId = vehicleId ?? reservation.vehicleId;
+    reservationId = reservation.id;
+  }
+
+  return {
+    categoryId: input.data.categoryId,
+    vehicleId,
+    reservationId,
+    description: input.data.description.trim(),
+    amount,
+    currency,
+    occurredAt: input.data.occurredAt,
+    method: input.data.method ?? null,
+    reference: normalizeOptionalText(input.data.reference),
+    provider: normalizeOptionalText(input.data.provider),
+    internalNote: normalizeOptionalText(input.data.internalNote),
+    documentUrl: normalizeOptionalText(input.data.documentUrl),
+  } satisfies ExpenseCreateData;
 }
 
 async function writeDepositAuditActivity(
@@ -310,6 +422,45 @@ async function writeInvoiceAuditActivity(
   );
 }
 
+async function writeExpenseAuditActivity(
+  input: FinanceServiceContext & {
+    expenseId: string;
+    action: string;
+    verb: string;
+    metadata?: Prisma.InputJsonValue;
+  },
+  db: Parameters<typeof writeAuditLog>[1],
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: input.action,
+      entityType: "expense",
+      entityId: input.expenseId,
+      changes: input.metadata,
+    },
+    db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "expense",
+      entityId: input.expenseId,
+      verb: input.verb,
+      metadata: input.metadata,
+    },
+    db,
+  );
+}
+
 function normalizeManualLines(lines: InvoiceDraftLineInput[] | undefined) {
   return (lines ?? [])
     .filter((line) => line.source !== "system")
@@ -353,7 +504,9 @@ function totalsForLineItems(lineItems: InvoiceLineItemCreateData[]) {
     (sum, item) => sum.plus(decimal(item.taxAmount ?? 0)),
     decimal(0),
   );
-  const totalAmount = subtotalBeforeDiscount.minus(discountAmount).plus(taxAmount);
+  const totalAmount = subtotalBeforeDiscount
+    .minus(discountAmount)
+    .plus(taxAmount);
   return { subtotalBeforeDiscount, discountAmount, taxAmount, totalAmount };
 }
 
@@ -366,7 +519,11 @@ async function resolveAgencyTaxRate(
   db: Parameters<typeof findSettingResolutionRows>[1],
 ) {
   const rows = await findSettingResolutionRows(
-    { companyId: context.companyId, agencyId: context.agencyId, key: "tax_rate" },
+    {
+      companyId: context.companyId,
+      agencyId: context.agencyId,
+      key: "tax_rate",
+    },
     db,
   );
   return rows[0]?.value != null ? decimal(rows[0].value) : null;
@@ -425,13 +582,16 @@ async function buildInvoiceDraft(input: {
   let lineItems: InvoiceLineItemCreateData[] = [];
 
   if (input.type === InvoiceType.rental) {
-    if (!input.reservationId) throw createValidationError("INVOICE_RESERVATION_REQUIRED");
+    if (!input.reservationId)
+      throw createValidationError("INVOICE_RESERVATION_REQUIRED");
     const scope = { ...input.context, reservationId: input.reservationId };
     const source = await findInvoiceGenerationSource(scope, input.db);
     if (!source) throw createNotFoundError("Reservation", input);
     const snapshot = source.pricingSnapshots[0];
-    if (!snapshot) throw createValidationError("INVOICE_PRICING_SNAPSHOT_MISSING");
-    const taxRate = snapshot.taxRate ?? await resolveAgencyTaxRate(input.context, input.db);
+    if (!snapshot)
+      throw createValidationError("INVOICE_PRICING_SNAPSHOT_MISSING");
+    const taxRate =
+      snapshot.taxRate ?? (await resolveAgencyTaxRate(input.context, input.db));
     if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
     assertTaxRate(taxRate);
 
@@ -447,42 +607,63 @@ async function buildInvoiceDraft(input: {
         taxRate,
         sortOrder: 0,
       }),
-      ...source.extras.map((extra, index) => lineInputToCreateInput({
-        description: extra.label,
-        quantity: decimal(extra.quantity),
-        unitPrice: extra.unitPrice,
-        taxRate,
-        sortOrder: index + 1,
-      })),
+      ...source.extras.map((extra, index) =>
+        lineInputToCreateInput({
+          description: extra.label,
+          quantity: decimal(extra.quantity),
+          unitPrice: extra.unitPrice,
+          taxRate,
+          sortOrder: index + 1,
+        }),
+      ),
     ];
     if (snapshot.discountAmount.greaterThan(0)) {
-      lineItems.push(lineInputToCreateInput({
-        description: snapshot.discountReason ? `Remise - ${snapshot.discountReason}` : "Remise",
-        quantity: decimal(1),
-        unitPrice: snapshot.discountAmount.negated(),
-        taxRate,
-        sortOrder: lineItems.length,
-      }));
+      lineItems.push(
+        lineInputToCreateInput({
+          description: snapshot.discountReason
+            ? `Remise - ${snapshot.discountReason}`
+            : "Remise",
+          quantity: decimal(1),
+          unitPrice: snapshot.discountAmount.negated(),
+          taxRate,
+          sortOrder: lineItems.length,
+        }),
+      );
     }
-    lineItems.push(...manualLines.map((line, index) => lineInputToCreateInput({
-      ...line,
-      taxRate,
-      sortOrder: lineItems.length + index,
-    })));
+    lineItems.push(
+      ...manualLines.map((line, index) =>
+        lineInputToCreateInput({
+          ...line,
+          taxRate,
+          sortOrder: lineItems.length + index,
+        }),
+      ),
+    );
   } else {
-    if (input.reservationId) throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
+    if (input.reservationId)
+      throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
     if (!customerId) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
-    const customer = await findInvoiceCustomer({ ...input.context, customerId }, input.db);
+    const customer = await findInvoiceCustomer(
+      { ...input.context, customerId },
+      input.db,
+    );
     if (!customer) throw createValidationError("INVOICE_CUSTOMER_REQUIRED");
-    if (manualLines.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
-    const taxRate = input.taxRate != null ? decimal(input.taxRate) : await resolveAgencyTaxRate(input.context, input.db);
+    if (manualLines.length === 0)
+      throw createValidationError("INVOICE_LINE_REQUIRED");
+    const taxRate =
+      input.taxRate != null
+        ? decimal(input.taxRate)
+        : await resolveAgencyTaxRate(input.context, input.db);
     if (!taxRate) throw createValidationError("INVOICE_TAX_RATE_REQUIRED");
     assertTaxRate(taxRate);
     customerBusinessId = customer.business?.id ?? null;
-    lineItems = manualLines.map((line, index) => lineInputToCreateInput({ ...line, taxRate, sortOrder: index }));
+    lineItems = manualLines.map((line, index) =>
+      lineInputToCreateInput({ ...line, taxRate, sortOrder: index }),
+    );
   }
 
-  if (lineItems.length === 0) throw createValidationError("INVOICE_LINE_REQUIRED");
+  if (lineItems.length === 0)
+    throw createValidationError("INVOICE_LINE_REQUIRED");
   return {
     reservationId,
     customerId: customerId!,
@@ -511,12 +692,18 @@ export async function listInvoiceCustomersService(input: {
   return listInvoiceCustomers(input);
 }
 
-export async function generateInvoiceFromReservationService(input: {
-  context: FinanceServiceContext;
-} & InvoiceMutationInput) {
-  const type = input.type ?? (input.reservationId ? InvoiceType.rental : InvoiceType.manual);
-  if (type === InvoiceType.rental && !input.reservationId) throw createValidationError("INVOICE_RESERVATION_REQUIRED");
-  if (type === InvoiceType.manual && input.reservationId) throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
+export async function generateInvoiceFromReservationService(
+  input: {
+    context: FinanceServiceContext;
+  } & InvoiceMutationInput,
+) {
+  const type =
+    input.type ??
+    (input.reservationId ? InvoiceType.rental : InvoiceType.manual);
+  if (type === InvoiceType.rental && !input.reservationId)
+    throw createValidationError("INVOICE_RESERVATION_REQUIRED");
+  if (type === InvoiceType.manual && input.reservationId)
+    throw createValidationError("INVOICE_MANUAL_RESERVATION_NOT_ALLOWED");
 
   let createdInvoiceId = "";
   const invoice = await runInTransaction(async (tx) => {
@@ -532,7 +719,8 @@ export async function generateInvoiceFromReservationService(input: {
       await lockInvoiceByReservation(scope, tx);
       const source = await findInvoiceGenerationSource(scope, tx);
       if (!source) throw createNotFoundError("Reservation", input);
-      if (source.invoices[0]) throw createValidationError("INVOICE_ALREADY_EXISTS_FOR_RESERVATION");
+      if (source.invoices[0])
+        throw createValidationError("INVOICE_ALREADY_EXISTS_FOR_RESERVATION");
     }
 
     const draft = await buildInvoiceDraft({ ...input, type, db: tx });
@@ -570,12 +758,12 @@ export async function generateInvoiceFromReservationService(input: {
     if (created.reservationId) {
       await createReservationTimelineEvent(
         {
-        id: createId(),
-        companyId: created.companyId,
-        reservationId: created.reservationId,
-        eventType: "invoice_generated",
-        description: created.code,
-        performedBy: input.context.userId ?? null,
+          id: createId(),
+          companyId: created.companyId,
+          reservationId: created.reservationId,
+          eventType: "invoice_generated",
+          description: created.code,
+          performedBy: input.context.userId ?? null,
         },
         tx,
       );
@@ -597,23 +785,31 @@ export async function generateInvoiceFromReservationService(input: {
   return getInvoiceService({ ...input.context, invoiceId: invoice.id });
 }
 
-export async function updateInvoiceService(input: {
-  context: FinanceServiceContext;
-  invoiceId: string;
-} & InvoiceMutationInput) {
+export async function updateInvoiceService(
+  input: {
+    context: FinanceServiceContext;
+    invoiceId: string;
+  } & InvoiceMutationInput,
+) {
   const invoice = await runInTransaction(async (tx) => {
-    const current = await findInvoiceById({ ...input.context, invoiceId: input.invoiceId }, tx);
+    const current = await findInvoiceById(
+      { ...input.context, invoiceId: input.invoiceId },
+      tx,
+    );
     if (!current) throw createNotFoundError("Invoice", input);
-    if (current.status !== InvoiceStatus.draft) throw createValidationError("FINANCE_INVOICE_IMMUTABLE");
+    if (current.status !== InvoiceStatus.draft)
+      throw createValidationError("FINANCE_INVOICE_IMMUTABLE");
 
     const type = current.type;
-    if (input.type && input.type !== type) throw createValidationError("INVOICE_TYPE_IMMUTABLE");
+    if (input.type && input.type !== type)
+      throw createValidationError("INVOICE_TYPE_IMMUTABLE");
 
     const draft = await buildInvoiceDraft({
       context: input.context,
       type,
       reservationId: type === InvoiceType.rental ? current.reservationId : null,
-      customerId: type === InvoiceType.rental ? current.customerId : input.customerId,
+      customerId:
+        type === InvoiceType.rental ? current.customerId : input.customerId,
       taxRate: input.taxRate,
       manualLines: input.manualLines,
       db: tx,
@@ -639,7 +835,10 @@ export async function updateInvoiceService(input: {
       },
       tx,
     );
-    await deleteInvoiceLineItems({ companyId: input.context.companyId, invoiceId: input.invoiceId }, tx);
+    await deleteInvoiceLineItems(
+      { companyId: input.context.companyId, invoiceId: input.invoiceId },
+      tx,
+    );
     await createManyInvoiceLineItems(
       draft.lineItems.map((lineItem) => ({
         ...lineItem,
@@ -650,14 +849,19 @@ export async function updateInvoiceService(input: {
       tx,
     );
 
-    const updated = await findInvoiceById({ ...input.context, invoiceId: input.invoiceId }, tx);
+    const updated = await findInvoiceById(
+      { ...input.context, invoiceId: input.invoiceId },
+      tx,
+    );
     if (!updated) throw createNotFoundError("Invoice", input);
     return updated;
   });
   return invoice;
 }
 
-export async function deleteInvoiceService(input: FinanceServiceContext & { invoiceId: string }) {
+export async function deleteInvoiceService(
+  input: FinanceServiceContext & { invoiceId: string },
+) {
   await runInTransaction(async (tx) => {
     const current = await findInvoiceByIdForUpdate(input, tx);
     if (!current) throw createNotFoundError("Invoice", input);
@@ -754,10 +958,16 @@ export async function issueInvoiceService(
       throw createValidationError("INVOICE_ISSUE_REQUIRES_DRAFT");
     }
 
-    await updateInvoice({
-      ...input,
-      data: { status: InvoiceStatus.issued, issuedAt: current.issuedAt ?? new Date() },
-    }, tx);
+    await updateInvoice(
+      {
+        ...input,
+        data: {
+          status: InvoiceStatus.issued,
+          issuedAt: current.issuedAt ?? new Date(),
+        },
+      },
+      tx,
+    );
     if (current.reservationId) {
       await createReservationTimelineEvent(
         {
@@ -797,22 +1007,33 @@ export async function issueInvoiceService(
   return invoice;
 }
 
-export async function voidInvoiceService(input: FinanceServiceContext & { invoiceId: string }) {
+export async function voidInvoiceService(
+  input: FinanceServiceContext & { invoiceId: string },
+) {
   const actorUserId = input.userId;
   if (!actorUserId) throw createValidationError("INVOICE_VOID_ACTOR_REQUIRED");
 
   const invoice = await runInTransaction(async (tx) => {
     const current = await findInvoiceByIdForUpdate(input, tx);
     if (!current) throw createNotFoundError("Invoice", input);
-    if (current.status !== InvoiceStatus.issued && current.status !== InvoiceStatus.overdue) {
-      if (current.status === InvoiceStatus.voided) throw createValidationError("INVOICE_ALREADY_VOIDED");
+    if (
+      current.status !== InvoiceStatus.issued &&
+      current.status !== InvoiceStatus.overdue
+    ) {
+      if (current.status === InvoiceStatus.voided)
+        throw createValidationError("INVOICE_ALREADY_VOIDED");
       throw createValidationError("INVOICE_VOID_NOT_ALLOWED");
     }
     const existingCorrection = await findCreditNoteByOriginalInvoice(
-      { companyId: current.companyId, agencyId: current.agencyId, invoiceId: current.id },
+      {
+        companyId: current.companyId,
+        agencyId: current.agencyId,
+        invoiceId: current.id,
+      },
       tx,
     );
-    if (existingCorrection) throw createValidationError("INVOICE_CREDIT_NOTE_ALREADY_EXISTS");
+    if (existingCorrection)
+      throw createValidationError("INVOICE_CREDIT_NOTE_ALREADY_EXISTS");
 
     const sequence = await generateCreditNoteCode(input, tx);
     await createCreditNote(
@@ -857,7 +1078,11 @@ export async function voidInvoiceService(input: FinanceServiceContext & { invoic
         ...input,
         action: "InvoiceVoided",
         verb: "InvoiceVoided",
-        metadata: { from: current.status, to: InvoiceStatus.voided, creditNoteCode: sequence.formatted },
+        metadata: {
+          from: current.status,
+          to: InvoiceStatus.voided,
+          creditNoteCode: sequence.formatted,
+        },
       },
       tx,
     );
@@ -883,9 +1108,11 @@ export async function recordInvoicePaymentService(input: {
   payment: InvoicePaymentInput;
 }) {
   const actorUserId = input.context.userId;
-  if (!actorUserId) throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
+  if (!actorUserId)
+    throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
   const amount = decimal(input.payment.amount);
-  if (!amount.greaterThan(0)) throw createValidationError("INVOICE_PAYMENT_INVALID_AMOUNT");
+  if (!amount.greaterThan(0))
+    throw createValidationError("INVOICE_PAYMENT_INVALID_AMOUNT");
   assertPastOrPresentDate(input.payment.paidAt);
 
   const result = await runInTransaction(async (tx) => {
@@ -899,13 +1126,19 @@ export async function recordInvoicePaymentService(input: {
       current.status !== InvoiceStatus.partially_paid &&
       current.status !== InvoiceStatus.overdue
     ) {
-      if (current.status === InvoiceStatus.draft) throw createValidationError("INVOICE_PAYMENT_REQUIRES_ISSUED");
-      if (current.status === InvoiceStatus.paid) throw createValidationError("INVOICE_ALREADY_PAID");
+      if (current.status === InvoiceStatus.draft)
+        throw createValidationError("INVOICE_PAYMENT_REQUIRES_ISSUED");
+      if (current.status === InvoiceStatus.paid)
+        throw createValidationError("INVOICE_ALREADY_PAID");
       throw createValidationError("INVOICE_PAYMENT_NOT_ALLOWED");
     }
 
     const summary = await getInvoicePaymentSummary(
-      { companyId: current.companyId, agencyId: current.agencyId, invoiceId: current.id },
+      {
+        companyId: current.companyId,
+        agencyId: current.agencyId,
+        invoiceId: current.id,
+      },
       tx,
     );
     const paidBefore = decimal(summary.paidAmount ?? 0);
@@ -944,7 +1177,11 @@ export async function recordInvoicePaymentService(input: {
         companyId: current.companyId,
         agencyId: current.agencyId,
         invoiceId: current.id,
-        data: { status: nextStatus, paidAt: nextStatus === InvoiceStatus.paid ? input.payment.paidAt : null },
+        data: {
+          status: nextStatus,
+          paidAt:
+            nextStatus === InvoiceStatus.paid ? input.payment.paidAt : null,
+        },
       },
       tx,
     );
@@ -968,14 +1205,25 @@ export async function recordInvoicePaymentService(input: {
         invoiceId: current.id,
         action: "InvoicePaymentRecorded",
         verb: "InvoicePaymentRecorded",
-        metadata: { paymentId: created.id, amount: amount.toString(), status: nextStatus },
+        metadata: {
+          paymentId: created.id,
+          amount: amount.toString(),
+          status: nextStatus,
+        },
       },
       tx,
     );
 
-    const updated = await findInvoiceById({ ...input.context, invoiceId: current.id }, tx);
+    const updated = await findInvoiceById(
+      { ...input.context, invoiceId: current.id },
+      tx,
+    );
     if (!updated) throw createNotFoundError("Invoice", input.payment);
-    return { invoice: updated, payment: created, paid: nextStatus === InvoiceStatus.paid };
+    return {
+      invoice: updated,
+      payment: created,
+      paid: nextStatus === InvoiceStatus.paid,
+    };
   });
 
   await publishDomainEvent({
@@ -1007,17 +1255,20 @@ export async function recordPaymentService(input: {
   context: FinanceServiceContext;
   payment: PaymentCreateData;
 }) {
-  if (!input.context.userId) throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
-  const payment = await runInTransaction(async (tx) => createPayment(
-    {
-      ...input.payment,
-      id: createId(),
-      companyId: input.context.companyId,
-      agencyId: input.context.agencyId,
-      recordedBy: input.context.userId!,
-    },
-    tx,
-  ));
+  if (!input.context.userId)
+    throw createValidationError("INVOICE_PAYMENT_ACTOR_REQUIRED");
+  const payment = await runInTransaction(async (tx) =>
+    createPayment(
+      {
+        ...input.payment,
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        recordedBy: input.context.userId!,
+      },
+      tx,
+    ),
+  );
   await publishDomainEvent({
     name: "PaymentRecorded",
     companyId: payment.companyId,
@@ -1047,21 +1298,29 @@ export async function collectDepositService(input: {
 }) {
   const actorUserId = assertDepositActor(input.context);
   const amount = decimal(input.deposit.amount);
-  if (!amount.greaterThan(0)) throw createValidationError("DEPOSIT_AMOUNT_INVALID");
+  if (!amount.greaterThan(0))
+    throw createValidationError("DEPOSIT_AMOUNT_INVALID");
   const collectedAt = input.deposit.collectedAt ?? new Date();
   assertDepositDate(collectedAt);
 
   const deposit = await runInTransaction(async (tx) => {
-    const scope = { ...input.context, reservationId: input.deposit.reservationId };
+    const scope = {
+      ...input.context,
+      reservationId: input.deposit.reservationId,
+    };
     await lockReservationForInvoice(scope, tx);
     await lockDepositsByReservation(scope, tx);
     const source = await findDepositReservationSource(scope, tx);
     if (!source) throw createNotFoundError("Reservation", input.deposit);
     const agreedDeposit = currentDepositRequirement(source);
-    if (!agreedDeposit.greaterThan(0)) throw createValidationError("DEPOSIT_NOT_REQUIRED");
-    if (amount.greaterThan(agreedDeposit)) throw createValidationError("DEPOSIT_EXCEEDS_REQUIRED");
-    if (input.deposit.reservationId !== source.id) throw createNotFoundError("Reservation", input.deposit);
-    if (source.deposits.length > 0) throw createValidationError("DEPOSIT_ALREADY_COLLECTED");
+    if (!agreedDeposit.greaterThan(0))
+      throw createValidationError("DEPOSIT_NOT_REQUIRED");
+    if (amount.greaterThan(agreedDeposit))
+      throw createValidationError("DEPOSIT_EXCEEDS_REQUIRED");
+    if (input.deposit.reservationId !== source.id)
+      throw createNotFoundError("Reservation", input.deposit);
+    if (source.deposits.length > 0)
+      throw createValidationError("DEPOSIT_ALREADY_COLLECTED");
 
     const created = await createDeposit(
       {
@@ -1128,17 +1387,26 @@ export async function releaseDepositService(
   const deposit = await runInTransaction(async (tx) => {
     const current = await findDepositByIdForUpdate(input, tx);
     if (!current) throw createNotFoundError("Deposit", input);
-    if (current.status === DepositStatus.released) throw createValidationError("DEPOSIT_ALREADY_RELEASED");
-    if (current.status === DepositStatus.forfeited) throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
-    if (current.status !== DepositStatus.held && current.status !== DepositStatus.partially_released) {
+    if (current.status === DepositStatus.released)
+      throw createValidationError("DEPOSIT_ALREADY_RELEASED");
+    if (current.status === DepositStatus.forfeited)
+      throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
+    if (
+      current.status !== DepositStatus.held &&
+      current.status !== DepositStatus.partially_released
+    ) {
       throw createValidationError("DEPOSIT_RELEASE_NOT_ALLOWED");
     }
 
     const heldBefore = depositHeldAmount(current);
-    if (!heldBefore.greaterThan(0)) throw createValidationError("DEPOSIT_NOTHING_HELD");
-    const releaseAmount = input.amount == null ? heldBefore : decimal(input.amount);
-    if (!releaseAmount.greaterThan(0)) throw createValidationError("DEPOSIT_RELEASE_AMOUNT_INVALID");
-    if (releaseAmount.greaterThan(heldBefore)) throw createValidationError("DEPOSIT_RELEASE_EXCEEDS_HELD");
+    if (!heldBefore.greaterThan(0))
+      throw createValidationError("DEPOSIT_NOTHING_HELD");
+    const releaseAmount =
+      input.amount == null ? heldBefore : decimal(input.amount);
+    if (!releaseAmount.greaterThan(0))
+      throw createValidationError("DEPOSIT_RELEASE_AMOUNT_INVALID");
+    if (releaseAmount.greaterThan(heldBefore))
+      throw createValidationError("DEPOSIT_RELEASE_EXCEEDS_HELD");
     const releasedTotal = depositReleasedAmount(current).plus(releaseAmount);
     const nextStatus = releasedTotal.greaterThanOrEqualTo(current.amount)
       ? DepositStatus.released
@@ -1165,7 +1433,10 @@ export async function releaseDepositService(
         id: createId(),
         companyId: current.companyId,
         reservationId: current.reservationId,
-        eventType: nextStatus === DepositStatus.released ? "deposit_released" : "deposit_partially_released",
+        eventType:
+          nextStatus === DepositStatus.released
+            ? "deposit_released"
+            : "deposit_partially_released",
         description: `${releaseAmount.toString()} ${current.currency}`,
         performedBy: actorUserId,
       },
@@ -1211,13 +1482,19 @@ export async function forfeitDepositService(
   const deposit = await runInTransaction(async (tx) => {
     const current = await findDepositByIdForUpdate(input, tx);
     if (!current) throw createNotFoundError("Deposit", input);
-    if (current.status === DepositStatus.released) throw createValidationError("DEPOSIT_ALREADY_RELEASED");
-    if (current.status === DepositStatus.forfeited) throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
-    if (current.status !== DepositStatus.held && current.status !== DepositStatus.partially_released) {
+    if (current.status === DepositStatus.released)
+      throw createValidationError("DEPOSIT_ALREADY_RELEASED");
+    if (current.status === DepositStatus.forfeited)
+      throw createValidationError("DEPOSIT_ALREADY_FORFEITED");
+    if (
+      current.status !== DepositStatus.held &&
+      current.status !== DepositStatus.partially_released
+    ) {
       throw createValidationError("DEPOSIT_FORFEIT_NOT_ALLOWED");
     }
     const held = depositHeldAmount(current);
-    if (!held.greaterThan(0)) throw createValidationError("DEPOSIT_NOTHING_HELD");
+    if (!held.greaterThan(0))
+      throw createValidationError("DEPOSIT_NOTHING_HELD");
 
     await updateDeposit(
       {
@@ -1288,7 +1565,8 @@ export async function issueCreditNoteService(input: {
   const actorUserId = input.context.userId;
   if (!actorUserId) throw createValidationError("CREDIT_NOTE_ACTOR_REQUIRED");
   const amount = decimal(input.data.amount);
-  if (!amount.greaterThan(0)) throw createValidationError("CREDIT_NOTE_AMOUNT_INVALID");
+  if (!amount.greaterThan(0))
+    throw createValidationError("CREDIT_NOTE_AMOUNT_INVALID");
   const issuedAt = input.data.issuedAt ?? new Date();
   if (Number.isNaN(issuedAt.getTime()) || issuedAt.getTime() > Date.now()) {
     throw createValidationError("CREDIT_NOTE_DATE_INVALID");
@@ -1313,37 +1591,53 @@ export async function issueCreditNoteService(input: {
         { ...input.context, invoiceId: input.data.replacementInvoiceId },
         tx,
       );
-      if (!replacement) throw createNotFoundError("Invoice", { invoiceId: input.data.replacementInvoiceId });
+      if (!replacement)
+        throw createNotFoundError("Invoice", {
+          invoiceId: input.data.replacementInvoiceId,
+        });
     }
     const summary = await getInvoicePaymentSummary(
-      { companyId: invoice.companyId, agencyId: invoice.agencyId, invoiceId: invoice.id },
+      {
+        companyId: invoice.companyId,
+        agencyId: invoice.agencyId,
+        invoiceId: invoice.id,
+      },
       tx,
     );
     const credited = decimal(summary.creditedAmount ?? 0);
     const eligible = invoice.totalAmount.minus(credited);
-    if (!eligible.greaterThan(0)) throw createValidationError("CREDIT_NOTE_NOTHING_ELIGIBLE");
-    if (amount.greaterThan(eligible)) throw createValidationError("CREDIT_NOTE_EXCEEDS_ELIGIBLE");
+    if (!eligible.greaterThan(0))
+      throw createValidationError("CREDIT_NOTE_NOTHING_ELIGIBLE");
+    if (amount.greaterThan(eligible))
+      throw createValidationError("CREDIT_NOTE_EXCEEDS_ELIGIBLE");
     const sequence = await generateCreditNoteCode(input.context, tx);
-    const created = await createCreditNote({
-      id: createId(),
-      companyId: input.context.companyId,
-      agencyId: input.context.agencyId,
-      code: sequence.formatted,
-      originalInvoiceId: invoice.id,
-      replacementInvoiceId: input.data.replacementInvoiceId ?? null,
-      amount,
-      currency: invoice.currency,
-      reason: normalizeOptionalText(input.data.reason),
-      issuedBy: actorUserId,
-      issuedAt,
-    }, tx);
+    const created = await createCreditNote(
+      {
+        id: createId(),
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        code: sequence.formatted,
+        originalInvoiceId: invoice.id,
+        replacementInvoiceId: input.data.replacementInvoiceId ?? null,
+        amount,
+        currency: invoice.currency,
+        reason: normalizeOptionalText(input.data.reason),
+        issuedBy: actorUserId,
+        issuedAt,
+      },
+      tx,
+    );
     await writeInvoiceAuditActivity(
       {
         ...input.context,
         invoiceId: invoice.id,
         action: "CreditNoteIssued",
         verb: "CreditNoteIssued",
-        metadata: { creditNoteId: created.id, amount: amount.toString(), currency: invoice.currency },
+        metadata: {
+          creditNoteId: created.id,
+          amount: amount.toString(),
+          currency: invoice.currency,
+        },
       },
       tx,
     );
@@ -1374,6 +1668,34 @@ export async function listExpenseCategoriesService(companyId: string) {
   return listExpenseCategories(companyId);
 }
 
+export async function listExpenseVehicleOptionsService(input: {
+  companyId: string;
+  agencyId: string;
+  search?: string;
+  take?: number;
+}) {
+  return listExpenseVehicleOptions(input);
+}
+
+export async function listExpenseReservationOptionsService(input: {
+  companyId: string;
+  agencyId: string;
+  search?: string;
+  take?: number;
+}) {
+  return listExpenseReservationOptions(input);
+}
+
+export async function getExpenseDefaultsService(input: {
+  companyId: string;
+  agencyId: string;
+}) {
+  const defaults = await getExpenseAgencyDefaults(input);
+  return {
+    currency: defaults?.currency ?? defaults?.company.currency ?? "MAD",
+  };
+}
+
 export async function createExpenseCategoryService(input: {
   companyId: string;
   data: ExpenseCategoryCreateData;
@@ -1391,21 +1713,40 @@ export async function listExpensesService(
     vehicleId?: string;
     reservationId?: string;
     includeDeleted?: boolean;
+    sort?: Parameters<typeof paginateExpenses>[0]["sort"];
   },
 ) {
   return paginateExpenses(input);
 }
 
+export async function getExpenseService(input: {
+  companyId: string;
+  agencyId: string;
+  expenseId: string;
+}) {
+  const expense = await findExpenseById(input);
+  if (!expense) throw createNotFoundError("Expense", input);
+  return expense;
+}
+
+export async function summarizeExpensesService(
+  input: FinanceListInput & { categoryId?: string; vehicleId?: string; reservationId?: string },
+) {
+  return summarizeExpensesByCurrency(input);
+}
+
 export async function createExpenseService(input: {
   context: FinanceServiceContext;
-  data: ExpenseCreateData;
+  data: ExpenseMutationInput;
 }) {
+  const data = await normalizeExpenseMutation(input);
+  const actorId = assertExpenseActor(input.context);
   const expense = await createExpense({
-    ...input.data,
+    ...data,
     id: createId(),
     companyId: input.context.companyId,
     agencyId: input.context.agencyId,
-    recordedBy: input.context.userId ?? "",
+    recordedBy: actorId,
   });
   await publishDomainEvent({
     name: "ExpenseRecorded",
@@ -1421,21 +1762,157 @@ export async function createExpenseService(input: {
 }
 
 export async function updateExpenseService(input: {
-  companyId: string;
-  agencyId: string;
+  context: FinanceServiceContext;
   expenseId: string;
-  data: Parameters<typeof updateExpense>[0]["data"];
+  data: ExpenseMutationInput;
 }) {
-  return updateExpense(input);
+  assertExpenseActor(input.context);
+  const expense = await runInTransaction(async (tx) => {
+    const current = await findExpenseById(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      },
+      tx,
+    );
+    if (!current) {
+      throw createNotFoundError("Expense", {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      });
+    }
+    const data = await normalizeExpenseMutation({
+      context: input.context,
+      data: input.data,
+      db: tx,
+    });
+    const result = await updateExpense(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+        data,
+      },
+      tx,
+    );
+    if (result.count === 0)
+      throw createNotFoundError("Expense", {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      });
+    await writeExpenseAuditActivity(
+      {
+        ...input.context,
+        expenseId: input.expenseId,
+        action: "ExpenseUpdated",
+        verb: "ExpenseUpdated",
+        metadata: {
+          categoryId: { from: current.categoryId, to: data.categoryId },
+          vehicleId: { from: current.vehicleId, to: data.vehicleId },
+          reservationId: { from: current.reservationId, to: data.reservationId },
+          amount: { from: current.amount.toString(), to: data.amount.toString() },
+          currency: { from: current.currency, to: data.currency },
+          occurredAt: {
+            from: current.occurredAt.toISOString().slice(0, 10),
+            to: data.occurredAt.toISOString().slice(0, 10),
+          },
+          documentUrl: { from: current.documentUrl, to: data.documentUrl },
+        },
+      },
+      tx,
+    );
+    const updated = await findExpenseById(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      },
+      tx,
+    );
+    if (!updated) throw createNotFoundError("Expense", input);
+    return updated;
+  });
+
+  await publishDomainEvent({
+    name: "ExpenseUpdated",
+    companyId: expense.companyId,
+    agencyId: expense.agencyId,
+    entityType: "expense",
+    entityId: expense.id,
+    userId: input.context.userId,
+    actorName: input.context.actorName,
+    occurredAt: new Date(),
+  });
+  return expense;
 }
 
 export async function deleteExpenseService(input: {
-  companyId: string;
-  agencyId: string;
+  context: FinanceServiceContext;
   expenseId: string;
-  deletedBy?: string | null;
 }) {
-  return softDeleteExpense(input);
+  const actorId = assertExpenseActor(input.context);
+  await runInTransaction(async (tx) => {
+    const current = await findExpenseById(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      },
+      tx,
+    );
+    if (!current) {
+      throw createNotFoundError("Expense", {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      });
+    }
+    const result = await softDeleteExpense(
+      {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+        deletedBy: actorId,
+      },
+      tx,
+    );
+    if (result.count === 0)
+      throw createNotFoundError("Expense", {
+        companyId: input.context.companyId,
+        agencyId: input.context.agencyId,
+        expenseId: input.expenseId,
+      });
+    await writeExpenseAuditActivity(
+      {
+        ...input.context,
+        expenseId: input.expenseId,
+        action: "ExpenseDeleted",
+        verb: "ExpenseDeleted",
+        metadata: {
+          amount: current.amount.toString(),
+          currency: current.currency,
+          categoryId: current.categoryId,
+          vehicleId: current.vehicleId,
+          reservationId: current.reservationId,
+        },
+      },
+      tx,
+    );
+  });
+  await publishDomainEvent({
+    name: "ExpenseDeleted",
+    companyId: input.context.companyId,
+    agencyId: input.context.agencyId,
+    entityType: "expense",
+    entityId: input.expenseId,
+    userId: input.context.userId,
+    actorName: input.context.actorName,
+    occurredAt: new Date(),
+  });
+  return { expenseId: input.expenseId };
 }
 
 export async function restoreExpenseService(input: {
@@ -1496,8 +1973,13 @@ export const financesService = {
   issueCreditNoteService,
   listCreditNotesForInvoiceService,
   listExpenseCategoriesService,
+  listExpenseVehicleOptionsService,
+  listExpenseReservationOptionsService,
+  getExpenseDefaultsService,
   createExpenseCategoryService,
   listExpensesService,
+  getExpenseService,
+  summarizeExpensesService,
   createExpenseService,
   updateExpenseService,
   deleteExpenseService,

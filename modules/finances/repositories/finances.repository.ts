@@ -15,6 +15,7 @@ export type FinanceListInput = PaginationInput & {
 };
 
 export type InvoiceSort = "recent" | "amount_desc" | "due_asc";
+export type ExpenseSort = "date" | "amount";
 
 const invoiceInclude = {
   lineItems: { orderBy: { sortOrder: "asc" } },
@@ -466,6 +467,15 @@ export async function listExpenseCategories(companyId: string, db: DatabaseClien
   });
 }
 
+export async function findExpenseCategoryById(
+  input: { companyId: string; categoryId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.expenseCategory.findFirst({
+    where: { id: input.categoryId, companyId: input.companyId },
+  });
+}
+
 export async function createExpenseCategory(
   data: Prisma.ExpenseCategoryUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -474,10 +484,17 @@ export async function createExpenseCategory(
 }
 
 export async function paginateExpenses(
-  input: FinanceListInput & { categoryId?: string; vehicleId?: string; reservationId?: string; includeDeleted?: boolean },
+  input: FinanceListInput & {
+    categoryId?: string;
+    vehicleId?: string;
+    reservationId?: string;
+    includeDeleted?: boolean;
+    sort?: ExpenseSort;
+  },
   db: DatabaseClient = prisma,
 ) {
   const pagination = getPagination(input);
+  const search = input.search?.trim();
   const where: Prisma.ExpenseWhereInput = {
     companyId: input.companyId,
     agencyId: input.agencyId,
@@ -486,18 +503,179 @@ export async function paginateExpenses(
     reservationId: input.reservationId,
     ...(input.includeDeleted ? {} : { deletedAt: null }),
     ...(input.from || input.to ? { occurredAt: { gte: input.from, lte: input.to } } : {}),
+    ...(search
+      ? {
+          OR: [
+            { description: { contains: search, mode: "insensitive" } },
+            { provider: { contains: search, mode: "insensitive" } },
+            { reference: { contains: search, mode: "insensitive" } },
+            { category: { name: { contains: search, mode: "insensitive" } } },
+            { vehicle: { plate: { contains: search, mode: "insensitive" } } },
+            { vehicle: { brand: { contains: search, mode: "insensitive" } } },
+            { vehicle: { model: { contains: search, mode: "insensitive" } } },
+            { reservation: { code: { contains: search, mode: "insensitive" } } },
+          ],
+        }
+      : {}),
   };
+  const orderBy: Prisma.ExpenseOrderByWithRelationInput =
+    input.sort === "amount" ? { amount: "desc" } : { occurredAt: "desc" };
   const [data, total] = await Promise.all([
     db.expense.findMany({
       where,
-      include: { category: true, vehicle: true, reservation: true },
-      orderBy: { occurredAt: "desc" },
+      include: { category: true, vehicle: true, reservation: true, recordedByUser: true },
+      orderBy,
       skip: pagination.skip,
       take: pagination.take,
     }),
     db.expense.count({ where }),
   ]);
   return { data, pagination: createPaginationMeta(pagination, total) };
+}
+
+export async function findExpenseById(
+  input: { companyId: string; agencyId: string; expenseId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.expense.findFirst({
+    where: { id: input.expenseId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    include: { category: true, vehicle: true, reservation: true, recordedByUser: true },
+  });
+}
+
+export async function findExpenseVehicleById(
+  input: { companyId: string; agencyId: string; vehicleId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicle.findFirst({
+    where: { id: input.vehicleId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    select: { id: true },
+  });
+}
+
+export async function findExpenseReservationById(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.findFirst({
+    where: { id: input.reservationId, companyId: input.companyId, agencyId: input.agencyId, deletedAt: null },
+    select: { id: true, vehicleId: true },
+  });
+}
+
+export async function getExpenseAgencyDefaults(
+  input: { companyId: string; agencyId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.agency.findFirst({
+    where: { id: input.agencyId, companyId: input.companyId, deletedAt: null },
+    select: { currency: true, company: { select: { currency: true } } },
+  });
+}
+
+export async function listExpenseVehicleOptions(
+  input: { companyId: string; agencyId: string; search?: string; take?: number },
+  db: DatabaseClient = prisma,
+) {
+  const search = input.search?.trim();
+  return db.vehicle.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      ...(search
+        ? {
+            OR: [
+              { code: { contains: search, mode: "insensitive" } },
+              { plate: { contains: search, mode: "insensitive" } },
+              { brand: { contains: search, mode: "insensitive" } },
+              { model: { contains: search, mode: "insensitive" } },
+            ],
+          }
+        : {}),
+    },
+    select: { id: true, brand: true, model: true, plate: true, category: { select: { name: true } } },
+    orderBy: [{ brand: "asc" }, { model: "asc" }],
+    take: input.take ?? 100,
+  });
+}
+
+export async function listExpenseReservationOptions(
+  input: { companyId: string; agencyId: string; search?: string; take?: number },
+  db: DatabaseClient = prisma,
+) {
+  const search = input.search?.trim();
+  return db.reservation.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      ...(search
+        ? {
+            OR: [
+              { code: { contains: search, mode: "insensitive" } },
+              { vehicle: { plate: { contains: search, mode: "insensitive" } } },
+              { vehicle: { brand: { contains: search, mode: "insensitive" } } },
+              { vehicle: { model: { contains: search, mode: "insensitive" } } },
+              { customer: { code: { contains: search, mode: "insensitive" } } },
+              { customer: { individual: { firstName: { contains: search, mode: "insensitive" } } } },
+              { customer: { individual: { lastName: { contains: search, mode: "insensitive" } } } },
+              { customer: { business: { companyName: { contains: search, mode: "insensitive" } } } },
+            ],
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      code: true,
+      vehicleId: true,
+      startsAt: true,
+      endsAt: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+      customer: {
+        select: {
+          code: true,
+          individual: { select: { firstName: true, lastName: true } },
+          business: { select: { companyName: true } },
+        },
+      },
+    },
+    orderBy: { startsAt: "desc" },
+    take: input.take ?? 100,
+  });
+}
+
+export async function summarizeExpensesByCurrency(
+  input: FinanceListInput & { categoryId?: string; vehicleId?: string; reservationId?: string },
+  db: DatabaseClient = prisma,
+) {
+  const search = input.search?.trim();
+  return db.expense.groupBy({
+    by: ["currency"],
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      categoryId: input.categoryId,
+      vehicleId: input.vehicleId,
+      reservationId: input.reservationId,
+      ...(input.from || input.to ? { occurredAt: { gte: input.from, lte: input.to } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { description: { contains: search, mode: "insensitive" } },
+              { provider: { contains: search, mode: "insensitive" } },
+              { reference: { contains: search, mode: "insensitive" } },
+              { category: { name: { contains: search, mode: "insensitive" } } },
+              { vehicle: { plate: { contains: search, mode: "insensitive" } } },
+              { reservation: { code: { contains: search, mode: "insensitive" } } },
+            ],
+          }
+        : {}),
+    },
+    _sum: { amount: true },
+    _count: { _all: true },
+  });
 }
 
 export async function createExpense(data: Prisma.ExpenseUncheckedCreateInput, db: DatabaseClient = prisma) {
@@ -614,8 +792,16 @@ export const financesRepository = {
   findCreditNoteByOriginalInvoice,
   listCreditNotesForInvoice,
   listExpenseCategories,
+  findExpenseCategoryById,
   createExpenseCategory,
   paginateExpenses,
+  findExpenseById,
+  findExpenseVehicleById,
+  findExpenseReservationById,
+  getExpenseAgencyDefaults,
+  listExpenseVehicleOptions,
+  listExpenseReservationOptions,
+  summarizeExpensesByCurrency,
   createExpense,
   updateExpense,
   softDeleteExpense,

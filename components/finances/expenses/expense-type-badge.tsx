@@ -1,8 +1,8 @@
 import { cn } from "@/lib/utils"
-import { expenseTypeStyles, type ExpenseType } from "@/lib/expenses-data"
+import { getExpenseTypeStyle, type ExpenseType } from "@/lib/expenses-data"
 
 export function ExpenseTypeBadge({ type, size = "md" }: { type: ExpenseType; size?: "sm" | "md" }) {
-  const s = expenseTypeStyles[type]
+  const s = getExpenseTypeStyle(type)
   return (
     <span
       className={cn(

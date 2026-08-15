@@ -416,6 +416,7 @@ Every business table carries these columns — no exceptions:
 - Seeded at deploy time. Never created by users. Platform read-only.
 - Format: `{domain}.{action}` (e.g., `'reservations.create'`, `'fleet.delete'`)
 - New permissions added via code deployment, not user UI
+- Expense mutations use explicit finance keys: `finance.expenses.edit` and `finance.expenses.delete`.
 
 **Created By:** System (seed script at deploy).
 

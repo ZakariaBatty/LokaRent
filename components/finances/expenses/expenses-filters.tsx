@@ -11,8 +11,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { expenseTypes, expenseTypeStyles, type ExpenseType } from "@/lib/expenses-data"
-import { cars } from "@/lib/cars-data"
+import { getExpenseTypeStyle } from "@/lib/expenses-data"
+import type { ExpenseCategoryOption, ExpenseVehicleOption } from "./expense-form-panel"
 
 export type ExpensesSortKey = "date" | "amount"
 export type DateRange = "this_month" | "last_month" | "last_30" | "all"
@@ -32,8 +32,8 @@ const dateRangeLabels: Record<DateRange, string> = {
 export function ExpensesFilters({
   search,
   onSearch,
-  typeFilter,
-  onType,
+  categoryFilter,
+  onCategory,
   carFilter,
   onCar,
   dateRange,
@@ -41,12 +41,14 @@ export function ExpensesFilters({
   sort,
   onSort,
   resultCount,
+  categories,
+  vehicles,
   onAdd,
 }: {
   search: string
   onSearch: (v: string) => void
-  typeFilter: ExpenseType | "all"
-  onType: (v: ExpenseType | "all") => void
+  categoryFilter: string | "all"
+  onCategory: (v: string | "all") => void
   carFilter: string | "all"
   onCar: (v: string | "all") => void
   dateRange: DateRange
@@ -54,15 +56,20 @@ export function ExpensesFilters({
   sort: ExpensesSortKey
   onSort: (v: ExpensesSortKey) => void
   resultCount: number
+  categories: ExpenseCategoryOption[]
+  vehicles: ExpenseVehicleOption[]
   onAdd: () => void
 }) {
+  const selectedCategory = categoryFilter === "all"
+    ? null
+    : categories.find((category) => category.id === categoryFilter) ?? null
   const currentTypeLabel =
-    typeFilter === "all" ? "Tous les types" : expenseTypeStyles[typeFilter].label
+    selectedCategory ? getExpenseTypeStyle(selectedCategory.name).label : "Tous les types"
   const currentCarLabel =
     carFilter === "all"
       ? "Toutes les voitures"
       : (() => {
-          const c = cars.find((x) => x.id === carFilter)
+          const c = vehicles.find((x) => x.id === carFilter)
           return c ? `${c.brand} ${c.model}` : "Toutes les voitures"
         })()
 
@@ -93,8 +100,8 @@ export function ExpensesFilters({
           <DropdownMenuTrigger asChild>
             <button className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50">
               <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">Type</span>
-              {typeFilter !== "all" && (
-                <span className={cn("h-2 w-2 rounded-full", expenseTypeStyles[typeFilter].dot)} />
+              {selectedCategory && (
+                <span className={cn("h-2 w-2 rounded-full", getExpenseTypeStyle(selectedCategory.name).dot)} />
               )}
               <span className="max-w-[140px] truncate">{currentTypeLabel}</span>
               <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
@@ -104,24 +111,27 @@ export function ExpensesFilters({
             <DropdownMenuLabel>Filtrer par type</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => onType("all")}
-              className={cn("cursor-pointer", typeFilter === "all" && "bg-indigo-50 text-indigo-700")}
+              onClick={() => onCategory("all")}
+              className={cn("cursor-pointer", categoryFilter === "all" && "bg-indigo-50 text-indigo-700")}
             >
               Tous les types
             </DropdownMenuItem>
-            {expenseTypes.map((t) => (
+            {categories.map((category) => {
+              const t = category.name
+              const style = getExpenseTypeStyle(t)
+              return (
               <DropdownMenuItem
-                key={t}
-                onClick={() => onType(t)}
+                key={category.id}
+                onClick={() => onCategory(category.id)}
                 className={cn(
                   "cursor-pointer gap-2",
-                  typeFilter === t && "bg-indigo-50 text-indigo-700",
+                  categoryFilter === category.id && "bg-indigo-50 text-indigo-700",
                 )}
               >
-                <span className={cn("h-2 w-2 rounded-full", expenseTypeStyles[t].dot)} />
-                {expenseTypeStyles[t].label}
+                <span className={cn("h-2 w-2 rounded-full", style.dot)} />
+                {style.label}
               </DropdownMenuItem>
-            ))}
+            )})}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -143,7 +153,7 @@ export function ExpensesFilters({
             >
               Toutes les voitures
             </DropdownMenuItem>
-            {cars.map((c) => (
+            {vehicles.map((c) => (
               <DropdownMenuItem
                 key={c.id}
                 onClick={() => onCar(c.id)}

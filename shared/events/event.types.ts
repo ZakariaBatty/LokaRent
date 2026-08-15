@@ -21,6 +21,8 @@ export type DomainEventName =
   | "DriverPaymentRecorded"
   | "DriverPricingModelUpdated"
   | "ExpenseRecorded"
+  | "ExpenseUpdated"
+  | "ExpenseDeleted"
   | "InvitationAccepted"
   | "InvitationExpired"
   | "InvitationSent"

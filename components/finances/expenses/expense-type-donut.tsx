@@ -3,9 +3,10 @@
 import { motion } from "motion/react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip as RechartsTooltip } from "recharts"
 import { PieChart as PieChartIcon } from "lucide-react"
-import { expensesByType, expenseTypeStyles, formatMAD, type ExpenseRecord } from "@/lib/expenses-data"
+import { useI18n } from "@/contexts/i18n-context"
+import { expensesByType, formatMoney, getExpenseTypeStyle, type ExpenseRecord } from "@/lib/expenses-data"
 
-function TooltipDot({ active, payload }: any) {
+function TooltipDot({ active, payload, currency }: any) {
   if (!active || !payload || !payload.length) return null
   const item = payload[0]
   return (
@@ -13,15 +14,16 @@ function TooltipDot({ active, payload }: any) {
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ background: item.payload.color }} />
         <span className="text-xs font-medium text-slate-700">
-          {expenseTypeStyles[item.payload.type as keyof typeof expenseTypeStyles]?.label ?? item.payload.type}
+          {getExpenseTypeStyle(item.payload.type).label}
         </span>
       </div>
-      <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatMAD(item.value)}</p>
+      <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatMoney(item.value, currency)}</p>
     </div>
   )
 }
 
-export function ExpenseTypeDonut({ records }: { records: ExpenseRecord[] }) {
+export function ExpenseTypeDonut({ records, currency }: { records: ExpenseRecord[]; currency: string }) {
+  const { t } = useI18n()
   const data = expensesByType(records).sort((a, b) => b.amount - a.amount)
   const total = data.reduce((acc, d) => acc + d.amount, 0)
 
@@ -38,15 +40,15 @@ export function ExpenseTypeDonut({ records }: { records: ExpenseRecord[] }) {
             <PieChartIcon className="h-4 w-4" strokeWidth={2.25} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Répartition par type</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Sur la période sélectionnée</p>
+            <h3 className="text-sm font-semibold text-slate-900">{t("expenses.charts.byTypeTitle")}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">{t("expenses.charts.selectedPeriod")}</p>
           </div>
         </div>
       </div>
 
       {data.length === 0 ? (
         <p className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center text-xs text-slate-500">
-          Aucune donnée
+          {t("expenses.charts.empty")}
         </p>
       ) : (
         <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row sm:items-center">
@@ -67,15 +69,15 @@ export function ExpenseTypeDonut({ records }: { records: ExpenseRecord[] }) {
                     <Cell key={d.type} fill={d.color} />
                   ))}
                 </Pie>
-                <RechartsTooltip content={<TooltipDot />} />
+                <RechartsTooltip content={<TooltipDot currency={currency} />} />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-base font-semibold tabular-nums text-slate-900">
-                {formatMAD(total)}
+                {formatMoney(total, currency)}
               </span>
               <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                Total
+                {t("expenses.charts.total")}
               </span>
             </div>
           </div>
@@ -83,7 +85,7 @@ export function ExpenseTypeDonut({ records }: { records: ExpenseRecord[] }) {
           <div className="flex-1 space-y-2">
             {data.map((d) => {
               const pct = Math.round((d.amount / total) * 100)
-              const label = expenseTypeStyles[d.type as keyof typeof expenseTypeStyles].label
+              const label = getExpenseTypeStyle(d.type).label
               return (
                 <div key={d.type}>
                   <div className="flex items-center justify-between">
@@ -92,7 +94,7 @@ export function ExpenseTypeDonut({ records }: { records: ExpenseRecord[] }) {
                       {label}
                     </span>
                     <span className="text-sm font-semibold tabular-nums text-slate-900">
-                      {formatMAD(d.amount)}
+                      {formatMoney(d.amount, currency)}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
