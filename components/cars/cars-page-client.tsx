@@ -155,6 +155,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
   const [smartFilters, setSmartFilters] = useState(false)
   const [view, setView] = useState<"grid" | "list">("grid")
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null)
+  const [formScope, setFormScope] = useState<"core" | "documents">("core")
   const [editingCar, setEditingCar] = useState<Car | null>(null)
   const [deletingCar, setDeletingCar] = useState<Car | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -219,14 +220,22 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
   }
   const openAddForm = () => {
     setEditingCar(null)
+    setFormScope("core")
     setFormMode("add")
   }
   const openEditForm = (car: Car) => {
     setEditingCar(car)
+    setFormScope("core")
+    setFormMode("edit")
+  }
+  const openDocumentsForm = (car: Car) => {
+    setEditingCar(car)
+    setFormScope("documents")
     setFormMode("edit")
   }
   const closeForm = () => {
     setFormMode(null)
+    setFormScope("core")
     setEditingCar(null)
   }
   const openDelete = (car: Car) => {
@@ -435,6 +444,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
                 car={selectedCar}
                 onClose={() => setSelectedId(null)}
                 onEdit={() => openEditForm(selectedCar)}
+                onEditDocuments={() => openDocumentsForm(selectedCar)}
                 onDelete={() => openDelete(selectedCar)}
                 canDelete={canDelete}
               />
@@ -464,6 +474,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
             >
               <CarFormPanel
                 mode={formMode}
+                scope={formScope}
                 car={editingCar}
                 onClose={closeForm}
                 onSubmit={handleFormSubmit}

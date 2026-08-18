@@ -21,6 +21,14 @@ export type ClientNote = {
   body: string
 }
 
+export type ClientFinance = {
+  currency: string
+  invoiced: number
+  paid: number
+  outstanding: number
+  depositsHeld: number
+}
+
 export type Client = {
   id: string
   type: ClientType
@@ -57,6 +65,7 @@ export type Client = {
   lastRentalDate: string // ISO
   favoriteCar?: string
   monthly: number[] // last 6 months spend
+  finance?: ClientFinance
   // Lifecycle
   createdAt: string // ISO
   blacklistReason?: string

@@ -167,6 +167,8 @@ function revalidateInvoicePaths() {
   revalidatePath("/invoices");
   revalidatePath("/finances");
   revalidatePath("/reservations");
+  revalidatePath("/cars");
+  revalidatePath("/clients");
 }
 
 export async function listInvoicesAction(input: unknown) {

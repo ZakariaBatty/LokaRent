@@ -2,9 +2,11 @@ import { requireCurrentAgencyContext } from "@/shared/auth"
 import { PERMISSIONS, requirePermission } from "@/shared/permissions"
 import { listCustomersService } from "@/modules/clients/services/clients.service"
 import { mapCustomerToClient } from "@/modules/clients/mappers/client.mapper"
+import { listCustomerFinanceSummariesService } from "@/modules/finances/services/finances.service"
 import { ClientsPageClient } from "@/components/clients/clients-page-client"
-import type { ClientStatus, Nationality } from "@/lib/clients-data"
+import type { Client, ClientStatus, Nationality } from "@/lib/clients-data"
 import type { SortKey } from "@/components/clients/clients-filters"
+import type { FinanceReportingCustomerSummary } from "@/modules/finances/services/finances.service"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -63,10 +65,28 @@ function parsePage(value: string | undefined) {
   return Number.isInteger(page) && page > 0 ? page : 1
 }
 
+function applyClientFinance(client: Client, finance?: FinanceReportingCustomerSummary): Client {
+  if (!finance) return client
+
+  return {
+    ...client,
+    totalSpent: finance.paid,
+    monthly: finance.monthlyInvoiced,
+    finance: {
+      currency: finance.currency,
+      invoiced: finance.invoiced,
+      paid: finance.paid,
+      outstanding: finance.outstanding,
+      depositsHeld: finance.depositsHeld,
+    },
+  }
+}
+
 export default async function ClientsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
   const context = await requireCurrentAgencyContext()
   await requirePermission(PERMISSIONS.CLIENTS_VIEW, context)
+  await requirePermission(PERMISSIONS.FINANCE_REPORTS_VIEW, context)
 
   const search = first(params.search)?.trim() ?? ""
   const nationality = parseNationality(first(params.nationality))
@@ -85,11 +105,19 @@ export default async function ClientsPage({ searchParams }: { searchParams: Sear
     orderBy: sort === "lastRental" ? "createdAt" : "updatedAt",
     direction: "desc",
   })
+  const financeSummaries = await listCustomerFinanceSummariesService({
+    companyId: context.companyId,
+    agencyId: context.agencyId,
+    userId: context.userId,
+    customerIds: result.data.map((customer) => customer.id),
+  })
 
   return (
     <ClientsPageClient
       initialResult={{
-        data: result.data.map(mapCustomerToClient),
+        data: result.data.map((customer) =>
+          applyClientFinance(mapCustomerToClient(customer), financeSummaries[customer.id]),
+        ),
         pagination: {
           page: result.pagination.page,
           pageSize: result.pagination.pageSize,

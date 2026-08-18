@@ -25,6 +25,7 @@ import {
   updateVehicleInspectionService,
   updateVehicleInsuranceService,
   updateVehicleMaintenanceService,
+  updateVehicleVignetteService,
   updateVehicleService,
   type FleetServiceContext,
 } from "../services/cars.service";
@@ -430,7 +431,21 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
         !sameDecimal(current.amount, vignetteAmount) ||
         !sameText(current.currency, vignetteCurrency ?? "MAD") ||
         !sameText(current.documentUrl, vignetteDocumentUrl);
-      if (changed && current?.taxYear !== vignetteTaxYear) {
+      if (changed && current?.taxYear === vignetteTaxYear) {
+        await updateVehicleVignetteService({
+          companyId: context.companyId,
+          agencyId: context.agencyId,
+          vignetteId: current.id,
+          data: {
+            taxYear: vignetteTaxYear,
+            paidAt: vignettePaidAt,
+            expiresAt: vignetteExpiresAt,
+            amount: decimal(vignetteAmount),
+            currency: vignetteCurrency ?? "MAD",
+            documentUrl: vignetteDocumentUrl,
+          },
+        });
+      } else if (changed) {
         await createVehicleVignetteService({
           context,
           data: {

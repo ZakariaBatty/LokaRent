@@ -11,6 +11,7 @@ import { StatistiquesTab } from "./tabs/statistiques-tab"
 import { HistoriqueTab } from "./tabs/historique-tab"
 import { NotesTab } from "./tabs/notes-tab"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 type TabKey = "profil" | "stats" | "historique" | "notes"
 
@@ -146,7 +147,7 @@ export function ClientDetailPanel({
           <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-4">
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Locations
+                {fr.clients.finance.rentals}
               </p>
               <p className="text-base font-bold text-slate-900 tabular-nums">
                 {client.totalRentals}
@@ -154,7 +155,7 @@ export function ClientDetailPanel({
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Total dépensé
+                {fr.clients.finance.paid}
               </p>
               <p className="text-base font-bold text-emerald-700 tabular-nums">
                 {formatMAD(client.totalSpent)}
@@ -162,7 +163,7 @@ export function ClientDetailPanel({
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Panier moyen
+                {fr.clients.finance.averagePaid}
               </p>
               <p className="text-base font-bold text-slate-900 tabular-nums">
                 {client.totalRentals > 0
@@ -172,7 +173,7 @@ export function ClientDetailPanel({
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Véhicule favori
+                {fr.clients.finance.favoriteVehicle}
               </p>
               <p className="truncate text-base font-bold text-slate-900">
                 {client.favoriteCar?.split(" ").slice(0, 2).join(" ") ?? "—"}

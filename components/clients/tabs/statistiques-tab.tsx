@@ -4,6 +4,7 @@ import { motion } from "motion/react"
 import { CalendarRange, Car, Crown, Wallet, TrendingUp, Repeat } from "lucide-react"
 import { type Client, formatMAD } from "@/lib/clients-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 const MONTHS_LABEL = ["Janv", "Févr", "Mars", "Avr", "Mai", "Juin"]
 
@@ -46,10 +47,10 @@ function StatCard({
 
 export function StatistiquesTab({ client }: { client: Client }) {
   const max = Math.max(...client.monthly, 1)
-  const avgPerRental = client.totalRentals > 0 ? client.totalSpent / client.totalRentals : 0
   const trend =
     client.monthly[client.monthly.length - 1] - client.monthly[client.monthly.length - 2]
   const trendUp = trend >= 0
+  const finance = client.finance
 
   return (
     <div className="space-y-5">
@@ -57,30 +58,30 @@ export function StatistiquesTab({ client }: { client: Client }) {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           icon={CalendarRange}
-          label="Total locations"
+          label={fr.clients.finance.totalRentals}
           value={`${client.totalRentals}`}
-          hint="depuis l'inscription"
+          hint={fr.clients.finance.sinceRegistration}
           accent="indigo"
         />
         <StatCard
           icon={Wallet}
-          label="Total dépensé"
-          value={formatMAD(client.totalSpent)}
-          hint="lifetime value"
+          label={fr.clients.finance.invoicedAmount}
+          value={formatMAD(finance?.invoiced ?? 0)}
+          hint={fr.clients.finance.invoiced}
           accent="emerald"
         />
         <StatCard
           icon={Repeat}
-          label="Panier moyen"
-          value={formatMAD(Math.round(avgPerRental))}
-          hint="par location"
+          label={fr.clients.finance.paidAmount}
+          value={formatMAD(finance?.paid ?? client.totalSpent)}
+          hint={fr.clients.finance.paid}
           accent="amber"
         />
         <StatCard
           icon={Car}
-          label="Véhicule préféré"
-          value={client.favoriteCar?.split(" ")[0] ?? "—"}
-          hint={client.favoriteCar ?? "Aucun"}
+          label={fr.clients.finance.outstanding}
+          value={formatMAD(finance?.outstanding ?? 0)}
+          hint={fr.clients.finance.depositsHeld}
           accent="rose"
         />
       </div>
@@ -89,8 +90,8 @@ export function StatistiquesTab({ client }: { client: Client }) {
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Activité — 6 derniers mois</h3>
-            <p className="text-xs text-slate-500">Évolution du chiffre d&apos;affaires généré</p>
+            <h3 className="text-sm font-bold text-slate-900">{fr.clients.finance.lastSixMonthsActivity}</h3>
+            <p className="text-xs text-slate-500">{fr.clients.finance.revenueEvolution}</p>
           </div>
           <div
             className={cn(
@@ -147,14 +148,14 @@ export function StatistiquesTab({ client }: { client: Client }) {
               <Crown className="h-3.5 w-3.5" />
             </div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              Fréquence de location
+              {fr.clients.finance.rentalFrequency}
             </p>
           </div>
           <p className="mt-3 text-2xl font-bold text-slate-900 tabular-nums">
             {(client.totalRentals / 12).toFixed(1)}
-            <span className="ml-1 text-sm font-medium text-slate-500">/mois</span>
+            <span className="ml-1 text-sm font-medium text-slate-500">{fr.clients.finance.perMonth}</span>
           </p>
-          <p className="mt-0.5 text-[11px] text-slate-500">en moyenne sur 12 mois</p>
+          <p className="mt-0.5 text-[11px] text-slate-500">{fr.clients.finance.monthlyAverage}</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-indigo-50/50 to-white p-4">
@@ -163,23 +164,13 @@ export function StatistiquesTab({ client }: { client: Client }) {
               <TrendingUp className="h-3.5 w-3.5" />
             </div>
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              Score d&apos;activité
+              {fr.clients.finance.depositsHeld}
             </p>
           </div>
           <p className="mt-3 text-2xl font-bold text-slate-900 tabular-nums">
-            {Math.min(100, Math.round((client.totalRentals / 30) * 100))}
-            <span className="ml-1 text-sm font-medium text-slate-500">/100</span>
+            {formatMAD(finance?.depositsHeld ?? 0)}
           </p>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{
-                width: `${Math.min(100, Math.round((client.totalRentals / 30) * 100))}%`,
-              }}
-              transition={{ duration: 0.8 }}
-              className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-blue-500"
-            />
-          </div>
+          <p className="mt-0.5 text-[11px] text-slate-500">{fr.clients.finance.outstanding}</p>
         </div>
       </section>
     </div>

@@ -68,7 +68,7 @@ export type VehiclePhoto = {
 }
 
 export type Expense = {
-  type: "Maintenance" | "Réparation" | "Assurance" | "Vignette" | "Carburant"
+  type: string
   date: string
   amount: number
   note?: string

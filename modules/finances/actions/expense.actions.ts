@@ -130,6 +130,7 @@ async function getExpenseUploadContext() {
 function revalidateExpensePaths() {
   revalidatePath("/finances");
   revalidatePath("/finances/expenses");
+  revalidatePath("/cars");
 }
 
 export async function listExpensesAction(input: unknown) {

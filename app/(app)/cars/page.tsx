@@ -3,8 +3,10 @@ import { requireCurrentAgencyContext } from "@/shared/auth"
 import { PERMISSIONS, can, requirePermission } from "@/shared/permissions"
 import { listVehicleCategoriesService, listVehiclesService } from "@/modules/cars/services/cars.service"
 import { mapVehicleToCar } from "@/modules/cars/mappers/car.mapper"
+import { getFinanceOverviewReportService } from "@/modules/finances/services/finances.service"
 import { CarsPageClient } from "@/components/cars/cars-page-client"
-import type { CarCategory, CarStatus } from "@/lib/cars-data"
+import type { Car, CarCategory, CarStatus } from "@/lib/cars-data"
+import type { FinanceReportingCar } from "@/modules/finances/services/finances.service"
 
 type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
@@ -62,10 +64,29 @@ function categoryIdForName(categories: Awaited<ReturnType<typeof listVehicleCate
   return categories.find((category) => candidates.includes(category.name))?.id
 }
 
+function periodDays(period: { from: string; to: string }) {
+  return Math.max(1, Math.ceil((new Date(period.to).getTime() - new Date(period.from).getTime()) / 86_400_000))
+}
+
+function applyVehicleFinance(car: Car, finance: FinanceReportingCar | undefined, daysInPeriod: number): Car {
+  if (!finance) return car
+
+  return {
+    ...car,
+    revenue: finance.revenue,
+    expenses: finance.expenses,
+    occupancyRate: finance.occupancyRate,
+    totalDays: Math.round((finance.occupancyRate / 100) * daysInPeriod),
+    recentExpenses: finance.recentExpenses,
+    monthlyRevenue: finance.monthlyRevenue,
+  }
+}
+
 export default async function CarsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
   const context = await requireCurrentAgencyContext()
   await requirePermission(PERMISSIONS.FLEET_VIEW, context)
+  await requirePermission(PERMISSIONS.FINANCE_REPORTS_VIEW, context)
 
   const search = first(params.search)?.trim() ?? ""
   const status = parseUiStatus(first(params.status))
@@ -89,11 +110,21 @@ export default async function CarsPage({ searchParams }: { searchParams: SearchP
     orderBy: "createdAt",
     direction: "desc",
   })
+  const financeReport = await getFinanceOverviewReportService({
+    companyId: context.companyId,
+    agencyId: context.agencyId,
+    userId: context.userId,
+    range: "year",
+  })
+  const financeByVehicle = new Map(financeReport.vehicles.map((vehicle) => [vehicle.id, vehicle]))
+  const daysInFinancePeriod = periodDays(financeReport.period)
 
   return (
     <CarsPageClient
       initialResult={{
-        data: result.data.map(mapVehicleToCar),
+        data: result.data.map((vehicle) =>
+          applyVehicleFinance(mapVehicleToCar(vehicle), financeByVehicle.get(vehicle.id), daysInFinancePeriod),
+        ),
         pagination: result.pagination,
       }}
       initialFilters={{ search, status, category }}

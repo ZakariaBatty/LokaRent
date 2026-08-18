@@ -57,6 +57,7 @@ import {
   listExpenseReservationOptions,
   listExpenseVehicleOptions,
   listFinanceReportingSeries,
+  listFinanceReportingCustomers,
   listFinanceReportingVehicles,
   listFinanceUpcomingChargeForecasts,
   listPayments,
@@ -146,6 +147,16 @@ export type FinanceOverviewReport = {
   cashCollected: number;
   outstanding: number;
   depositsHeld: number;
+};
+
+export type FinanceReportingCustomerSummary = {
+  customerId: string;
+  currency: string;
+  invoiced: number;
+  paid: number;
+  outstanding: number;
+  depositsHeld: number;
+  monthlyInvoiced: number[];
 };
 
 type InvoiceCreateData = Omit<
@@ -392,6 +403,11 @@ function buildMonthlyBuckets(from: Date, to: Date) {
 function buildLastTwelveMonthStarts(to: Date) {
   const end = monthStart(to);
   return Array.from({ length: 12 }, (_, index) => addMonths(end, index - 11));
+}
+
+function buildLastSixMonthStarts(to: Date) {
+  const end = monthStart(to);
+  return Array.from({ length: 6 }, (_, index) => addMonths(end, index - 5));
 }
 
 function daysBetween(from: Date, to: Date) {
@@ -2283,6 +2299,56 @@ export async function getFinanceOverviewReportService(
   };
 }
 
+export async function listCustomerFinanceSummariesService(
+  input: FinanceServiceContext & { customerIds: string[]; currency?: string | null },
+): Promise<Record<string, FinanceReportingCustomerSummary>> {
+  const currencySource = await getFinanceReportingCurrency(input);
+  const currency = (input.currency ?? currencySource?.currency ?? currencySource?.company.currency ?? "MAD")
+    .trim()
+    .toUpperCase();
+  assertCurrency(currency);
+
+  const monthlyStarts = buildLastSixMonthStarts(new Date());
+  const monthlyFrom = monthlyStarts[0] ?? monthStart(new Date());
+  const monthlyTo = addMonths(monthStart(new Date()), 1);
+  const rows = await listFinanceReportingCustomers({
+    companyId: input.companyId,
+    agencyId: input.agencyId,
+    customerIds: input.customerIds,
+    currency,
+    monthlyFrom,
+    monthlyTo,
+  });
+  const monthKeys = monthlyStarts.map((date) => date.toISOString().slice(0, 7));
+  const monthlyByCustomer = new Map<string, Map<string, Prisma.Decimal>>();
+
+  for (const row of rows.monthlyRows) {
+    const key = row.month.toISOString().slice(0, 7);
+    const current = monthlyByCustomer.get(row.customerId) ?? new Map<string, Prisma.Decimal>();
+    current.set(key, decimal(row.invoiceAmount ?? 0).minus(row.creditNoteAmount ?? 0));
+    monthlyByCustomer.set(row.customerId, current);
+  }
+
+  const summaries: Record<string, FinanceReportingCustomerSummary> = {};
+  for (const customerId of input.customerIds) {
+    const totals = rows.totals.find((row) => row.customerId === customerId);
+    const invoiced = decimal(totals?.invoicedAmount ?? 0).minus(totals?.creditNoteAmount ?? 0);
+    const monthlyMap = monthlyByCustomer.get(customerId) ?? new Map<string, Prisma.Decimal>();
+
+    summaries[customerId] = {
+      customerId,
+      currency,
+      invoiced: decimalNumber(invoiced),
+      paid: decimalNumber(totals?.paidAmount),
+      outstanding: decimalNumber(totals?.outstandingAmount),
+      depositsHeld: decimalNumber(totals?.depositsHeldAmount),
+      monthlyInvoiced: monthKeys.map((key) => decimalNumber(monthlyMap.get(key))),
+    };
+  }
+
+  return summaries;
+}
+
 export const financesService = {
   getInvoiceService,
   getInvoiceByReservationService,
@@ -2317,4 +2383,5 @@ export const financesService = {
   recordDriverPaymentService,
   listDriverPaymentsService,
   getFinanceOverviewReportService,
+  listCustomerFinanceSummariesService,
 };

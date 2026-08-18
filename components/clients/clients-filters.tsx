@@ -12,12 +12,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 export type SortKey = "lastRental" | "totalSpent" | "mostActive"
 
 const sortLabels: Record<SortKey, string> = {
   lastRental: "Dernière location",
-  totalSpent: "Total dépensé",
+  totalSpent: fr.clients.finance.paidAmount,
   mostActive: "Plus actifs",
 }
 

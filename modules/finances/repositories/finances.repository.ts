@@ -39,6 +39,15 @@ export type FinanceReportingDateBucket = FinanceReportingInput & {
   buckets: Array<{ key: string; label: string; from: Date; to: Date }>;
 };
 
+export type FinanceReportingCustomerInput = {
+  companyId: string;
+  agencyId: string;
+  customerIds: string[];
+  currency: string;
+  monthlyFrom: Date;
+  monthlyTo: Date;
+};
+
 const validRevenueInvoiceStatuses = [
   InvoiceStatus.issued,
   InvoiceStatus.paid,
@@ -60,6 +69,11 @@ const upcomingMaintenanceStatusSql = Prisma.join(
   [VehicleMaintenanceStatus.scheduled, VehicleMaintenanceStatus.in_progress].map(
     (status) => Prisma.sql`${status}::"VehicleMaintenanceStatus"`,
   ),
+);
+
+const heldDepositStatusSql = Prisma.join(
+  [DepositStatus.held, DepositStatus.partially_released].map(
+    (status) => Prisma.sql`${status}::"DepositStatus"`),
 );
 
 const invoiceInclude = {
@@ -845,6 +859,13 @@ export async function summarizeFinanceReportingTotals(
         agencyId: input.agencyId,
         currency: input.currency,
         issuedAt: { gte: input.from, lt: input.to },
+        originalInvoice: {
+          companyId: input.companyId,
+          agencyId: input.agencyId,
+          deletedAt: null,
+          currency: input.currency,
+          status: { in: [...validRevenueInvoiceStatuses] },
+        },
       },
       _sum: { amount: true },
     }),
@@ -954,6 +975,13 @@ export async function listFinanceReportingSeries(
             agencyId: input.agencyId,
             currency: input.currency,
             issuedAt: { gte: bucket.from, lt: bucket.to },
+            originalInvoice: {
+              companyId: input.companyId,
+              agencyId: input.agencyId,
+              deletedAt: null,
+              currency: input.currency,
+              status: { in: [...validRevenueInvoiceStatuses] },
+            },
           },
           _sum: { amount: true },
         });
@@ -1043,6 +1071,7 @@ export async function listFinanceReportingVehicles(
         AND i.agency_id = ${input.agencyId}::uuid
         AND i.deleted_at IS NULL
         AND i.currency = ${input.currency}
+        AND i.status IN (${validRevenueInvoiceStatusSql})
         AND i.reservation_id IS NOT NULL
         AND r.company_id = ${input.companyId}::uuid
         AND r.agency_id = ${input.agencyId}::uuid
@@ -1159,6 +1188,189 @@ export async function listFinanceReportingVehicles(
     recentExpenseRows,
     monthlyRevenueRows,
   };
+}
+
+export async function listFinanceReportingCustomers(
+  input: FinanceReportingCustomerInput,
+  db: DatabaseClient = prisma,
+) {
+  if (input.customerIds.length === 0) {
+    return { totals: [], monthlyRows: [] };
+  }
+
+  const targetCustomersSql = Prisma.join(
+    input.customerIds.map((customerId) => Prisma.sql`(${customerId}::uuid)`),
+  );
+
+  const [totals, monthlyRows] = await Promise.all([
+    db.$queryRaw<
+      {
+        customerId: string;
+        invoicedAmount: Prisma.Decimal | null;
+        creditNoteAmount: Prisma.Decimal | null;
+        paidAmount: Prisma.Decimal | null;
+        outstandingAmount: Prisma.Decimal | null;
+        depositsHeldAmount: Prisma.Decimal | null;
+      }[]
+    >`
+      WITH target_customers(id) AS (
+        VALUES ${targetCustomersSql}
+      ),
+      invoice_totals AS (
+        SELECT customer_id, COALESCE(SUM(total_amount), 0)::numeric AS amount
+        FROM invoices
+        WHERE company_id = ${input.companyId}::uuid
+          AND agency_id = ${input.agencyId}::uuid
+          AND deleted_at IS NULL
+          AND currency = ${input.currency}
+          AND status IN (${validRevenueInvoiceStatusSql})
+          AND customer_id IN (SELECT id FROM target_customers)
+        GROUP BY customer_id
+      ),
+      credit_totals AS (
+        SELECT i.customer_id, COALESCE(SUM(cn.amount), 0)::numeric AS amount
+        FROM credit_notes cn
+        JOIN invoices i ON i.id = cn.original_invoice_id
+        WHERE cn.company_id = ${input.companyId}::uuid
+          AND cn.agency_id = ${input.agencyId}::uuid
+          AND cn.currency = ${input.currency}
+          AND i.company_id = ${input.companyId}::uuid
+          AND i.agency_id = ${input.agencyId}::uuid
+          AND i.deleted_at IS NULL
+          AND i.currency = ${input.currency}
+          AND i.status IN (${validRevenueInvoiceStatusSql})
+          AND i.customer_id IN (SELECT id FROM target_customers)
+        GROUP BY i.customer_id
+      ),
+      payment_totals AS (
+        SELECT customer_id, COALESCE(SUM(amount), 0)::numeric AS amount
+        FROM payments
+        WHERE company_id = ${input.companyId}::uuid
+          AND agency_id = ${input.agencyId}::uuid
+          AND currency = ${input.currency}
+          AND customer_id IN (SELECT id FROM target_customers)
+        GROUP BY customer_id
+      ),
+      outstanding_totals AS (
+        SELECT customer_id, COALESCE(SUM(balance), 0)::numeric AS amount
+        FROM (
+          SELECT
+            i.customer_id,
+            GREATEST(
+              i.total_amount
+                - COALESCE((
+                  SELECT SUM(p.amount)
+                  FROM payments p
+                  WHERE p.invoice_id = i.id
+                    AND p.company_id = ${input.companyId}::uuid
+                    AND p.agency_id = ${input.agencyId}::uuid
+                    AND p.currency = ${input.currency}
+                ), 0)
+                - COALESCE((
+                  SELECT SUM(cn.amount)
+                  FROM credit_notes cn
+                  WHERE cn.original_invoice_id = i.id
+                    AND cn.company_id = ${input.companyId}::uuid
+                    AND cn.agency_id = ${input.agencyId}::uuid
+                    AND cn.currency = ${input.currency}
+                ), 0),
+              0
+            ) AS balance
+          FROM invoices i
+          WHERE i.company_id = ${input.companyId}::uuid
+            AND i.agency_id = ${input.agencyId}::uuid
+            AND i.deleted_at IS NULL
+            AND i.currency = ${input.currency}
+            AND i.status IN (${validRevenueInvoiceStatusSql})
+            AND i.customer_id IN (SELECT id FROM target_customers)
+        ) invoice_balances
+        GROUP BY customer_id
+      ),
+      deposit_totals AS (
+        SELECT
+          customer_id,
+          COALESCE(SUM(amount), 0)::numeric - COALESCE(SUM(released_amount), 0)::numeric AS amount
+        FROM deposits
+        WHERE company_id = ${input.companyId}::uuid
+          AND agency_id = ${input.agencyId}::uuid
+          AND currency = ${input.currency}
+          AND status IN (${heldDepositStatusSql})
+          AND customer_id IN (SELECT id FROM target_customers)
+        GROUP BY customer_id
+      )
+      SELECT
+        tc.id AS "customerId",
+        COALESCE(it.amount, 0)::numeric AS "invoicedAmount",
+        COALESCE(ct.amount, 0)::numeric AS "creditNoteAmount",
+        COALESCE(pt.amount, 0)::numeric AS "paidAmount",
+        COALESCE(ot.amount, 0)::numeric AS "outstandingAmount",
+        COALESCE(dt.amount, 0)::numeric AS "depositsHeldAmount"
+      FROM target_customers tc
+      LEFT JOIN invoice_totals it ON it.customer_id = tc.id
+      LEFT JOIN credit_totals ct ON ct.customer_id = tc.id
+      LEFT JOIN payment_totals pt ON pt.customer_id = tc.id
+      LEFT JOIN outstanding_totals ot ON ot.customer_id = tc.id
+      LEFT JOIN deposit_totals dt ON dt.customer_id = tc.id
+    `,
+    db.$queryRaw<
+      {
+        customerId: string;
+        month: Date;
+        invoiceAmount: Prisma.Decimal | null;
+        creditNoteAmount: Prisma.Decimal | null;
+      }[]
+    >`
+      WITH target_customers(id) AS (
+        VALUES ${targetCustomersSql}
+      ),
+      invoice_months AS (
+        SELECT
+          customer_id,
+          DATE_TRUNC('month', issued_at)::date AS month,
+          COALESCE(SUM(total_amount), 0)::numeric AS amount
+        FROM invoices
+        WHERE company_id = ${input.companyId}::uuid
+          AND agency_id = ${input.agencyId}::uuid
+          AND deleted_at IS NULL
+          AND currency = ${input.currency}
+          AND status IN (${validRevenueInvoiceStatusSql})
+          AND issued_at >= ${input.monthlyFrom}
+          AND issued_at < ${input.monthlyTo}
+          AND customer_id IN (SELECT id FROM target_customers)
+        GROUP BY customer_id, DATE_TRUNC('month', issued_at)::date
+      ),
+      credit_months AS (
+        SELECT
+          i.customer_id,
+          DATE_TRUNC('month', cn.issued_at)::date AS month,
+          COALESCE(SUM(cn.amount), 0)::numeric AS amount
+        FROM credit_notes cn
+        JOIN invoices i ON i.id = cn.original_invoice_id
+        WHERE cn.company_id = ${input.companyId}::uuid
+          AND cn.agency_id = ${input.agencyId}::uuid
+          AND cn.currency = ${input.currency}
+          AND cn.issued_at >= ${input.monthlyFrom}
+          AND cn.issued_at < ${input.monthlyTo}
+          AND i.company_id = ${input.companyId}::uuid
+          AND i.agency_id = ${input.agencyId}::uuid
+          AND i.deleted_at IS NULL
+          AND i.currency = ${input.currency}
+          AND i.status IN (${validRevenueInvoiceStatusSql})
+          AND i.customer_id IN (SELECT id FROM target_customers)
+        GROUP BY i.customer_id, DATE_TRUNC('month', cn.issued_at)::date
+      )
+      SELECT
+        COALESCE(im.customer_id, cm.customer_id) AS "customerId",
+        COALESCE(im.month, cm.month) AS month,
+        COALESCE(im.amount, 0)::numeric AS "invoiceAmount",
+        COALESCE(cm.amount, 0)::numeric AS "creditNoteAmount"
+      FROM invoice_months im
+      FULL OUTER JOIN credit_months cm ON cm.customer_id = im.customer_id AND cm.month = im.month
+      ORDER BY month ASC
+    `,
+  ]);
+
+  return { totals, monthlyRows };
 }
 
 export async function listFinanceUpcomingChargeForecasts(
@@ -1329,5 +1541,6 @@ export const financesRepository = {
   summarizeFinanceReportingTotals,
   listFinanceReportingSeries,
   listFinanceReportingVehicles,
+  listFinanceReportingCustomers,
   listFinanceUpcomingChargeForecasts,
 };

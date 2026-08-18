@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileText,
   Image,
+  Pencil,
   ShieldCheck,
   Stamp,
   Wrench,
@@ -87,6 +88,7 @@ function DocCard({
   status,
   daysLeft,
   documentUrl,
+  onEdit,
   children,
 }: {
   icon: React.ElementType
@@ -94,6 +96,7 @@ function DocCard({
   status: DocumentStatus
   daysLeft: number
   documentUrl?: string
+  onEdit?: () => void
   children: React.ReactNode
 }) {
   return (
@@ -115,21 +118,33 @@ function DocCard({
             <StatusBadge status={status} daysLeft={daysLeft} />
           </div>
         </div>
-        {documentUrl ? (
-          <a
-            href={documentUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            {fr.fleet.upload.openFile}
-          </a>
-        ) : (
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-            {t.noDocument}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {documentUrl ? (
+            <a
+              href={documentUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              {fr.fleet.upload.openFile}
+            </a>
+          ) : (
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+              {t.noDocument}
+            </span>
+          )}
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {t.edit}
+            </button>
+          )}
+        </div>
       </div>
       <div className="mt-4 space-y-2 text-xs">{children}</div>
       <TimelineBar status={status} daysLeft={daysLeft} />
@@ -137,7 +152,7 @@ function DocCard({
   )
 }
 
-export function DocumentsTab({ car }: { car: Car }) {
+export function DocumentsTab({ car, onEdit }: { car: Car; onEdit?: () => void }) {
   const registration = car.registration
   const docs = [
     car.insurance.status,
@@ -214,6 +229,7 @@ export function DocumentsTab({ car }: { car: Car }) {
           status={car.insurance.status}
           daysLeft={car.insurance.daysLeft}
           documentUrl={car.insurance.documentUrl}
+          onEdit={onEdit}
         >
           <DataRow label={t.company} value={car.insurance.company} />
           <DataRow label={t.policyNumber} value={car.insurance.policyNumber} />
@@ -229,6 +245,7 @@ export function DocumentsTab({ car }: { car: Car }) {
             status={registration.status}
             daysLeft={registration.daysLeft}
             documentUrl={registration.documentUrl}
+            onEdit={onEdit}
           >
             <DataRow label={t.registration} value={registration.number} />
             <DataRow label={t.issuedAt} value={formatDate(registration.issuedAt)} />
@@ -236,7 +253,7 @@ export function DocumentsTab({ car }: { car: Car }) {
             <DataRow label={t.authority} value={registration.issuingAuthority} />
           </DocCard>
         ) : (
-          <EmptyDocCard icon={FileText} title={t.registration} />
+          <EmptyDocCard icon={FileText} title={t.registration} onEdit={onEdit} />
         )}
 
         <DocCard
@@ -245,6 +262,7 @@ export function DocumentsTab({ car }: { car: Car }) {
           status={car.vignette.status}
           daysLeft={car.vignette.daysLeft}
           documentUrl={car.vignette.documentUrl}
+          onEdit={onEdit}
         >
           <DataRow label={t.taxYear} value={car.vignette.year} />
           <DataRow label={t.paidAt} value={car.vignette.paidAt ? formatDate(car.vignette.paidAt) : "-"} />
@@ -258,6 +276,7 @@ export function DocumentsTab({ car }: { car: Car }) {
           status={car.visiteTechnique.status}
           daysLeft={car.visiteTechnique.daysLeft}
           documentUrl={car.visiteTechnique.documentUrl}
+          onEdit={onEdit}
         >
           <DataRow label={t.inspectedAt} value={formatDate(car.visiteTechnique.lastDate)} />
           <DataRow label={t.nextDate} value={formatDate(car.visiteTechnique.nextDate)} />
@@ -279,17 +298,29 @@ function SummaryPill({ label, value }: { label: string; value: number }) {
   )
 }
 
-function EmptyDocCard({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
+function EmptyDocCard({ icon: Icon, title, onEdit }: { icon: React.ElementType; title: string; onEdit?: () => void }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
-          <Icon className="h-5 w-5" />
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+            <Icon className="h-5 w-5" />
+          </div>
+          <div>
+            <h4 className="text-sm font-bold text-slate-900">{title}</h4>
+            <p className="text-xs text-slate-500">{t.noRecord}</p>
+          </div>
         </div>
-        <div>
-          <h4 className="text-sm font-bold text-slate-900">{title}</h4>
-          <p className="text-xs text-slate-500">{t.noRecord}</p>
-        </div>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-indigo-100 bg-indigo-50 px-2.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            {t.edit}
+          </button>
+        )}
       </div>
     </div>
   )

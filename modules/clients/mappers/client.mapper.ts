@@ -110,9 +110,9 @@ export function mapCustomerToClient(customer: CustomerForClient): Client {
     contactPersonName: customer.business?.contactPersonName ?? undefined,
     contactPersonPhone: customer.business?.contactPersonPhone ?? undefined,
     totalRentals: summary?.totalRentals ?? 0,
-    totalSpent: summary?.totalSpent ?? 0,
+    totalSpent: 0,
     lastRentalDate: toIso(summary?.lastRentalDate) ?? createdAt,
-    monthly: summary?.monthly ?? [0, 0, 0, 0, 0, 0],
+    monthly: [0, 0, 0, 0, 0, 0],
     createdAt,
     blacklistReason: activeBlacklistEntry?.reason,
     reservations: summary?.reservations.map((reservation) => ({
