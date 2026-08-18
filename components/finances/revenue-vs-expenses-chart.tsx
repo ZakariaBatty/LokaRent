@@ -13,22 +13,23 @@ import {
   YAxis,
 } from "recharts"
 import { TrendingUp } from "lucide-react"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { FinanceReportingSeriesPoint } from "@/modules/finances/services/finances.service"
 
-function CustomTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload, label, currency, t }: any) {
   if (!active || !payload || !payload.length) return null
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
-      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{label} 2026</p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{label}</p>
       <div className="mt-1 space-y-1">
         {payload.map((p: any) => (
           <div key={p.dataKey} className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
             <span className="text-xs font-medium text-slate-600">
-              {p.dataKey === "revenue" ? "Revenus" : "Charges"}
+              {p.dataKey === "revenue" ? t("finances.chart.revenue") : t("finances.chart.expenses")}
             </span>
             <span className="ml-auto text-xs font-semibold text-slate-900 tabular-nums">
-              {p.value.toLocaleString("fr-FR")} DH
+              {p.value.toLocaleString("fr-FR")} {currency}
             </span>
           </div>
         ))}
@@ -53,12 +54,18 @@ function CustomLegend({ payload }: any) {
   )
 }
 
-export function RevenueVsExpensesChart() {
-  const { agencyData } = useAgency()
-  const revenueVsExpensesData = agencyData.financeSummary.revenueVsExpenses
-  const lastMonth = revenueVsExpensesData[revenueVsExpensesData.length - 1]
+export function RevenueVsExpensesChart({
+  data,
+  currency,
+}: {
+  data: FinanceReportingSeriesPoint[]
+  currency: string
+}) {
+  const { t } = useI18n()
+  const revenueVsExpensesData = data.length > 0 ? data : [{ month: "-", revenue: 0, expenses: 0 }]
+  const lastMonth = revenueVsExpensesData[revenueVsExpensesData.length - 1] ?? { revenue: 0, expenses: 0 }
   const profit = lastMonth.revenue - lastMonth.expenses
-  const margin = Math.round((profit / lastMonth.revenue) * 100)
+  const margin = lastMonth.revenue > 0 ? Math.round((profit / lastMonth.revenue) * 100) : 0
 
   return (
     <motion.div
@@ -69,34 +76,34 @@ export function RevenueVsExpensesChart() {
     >
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Revenus vs Charges</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Évolution sur 6 mois</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("finances.chart.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{t("finances.chart.subtitle")}</p>
         </div>
         <div className="rounded-lg bg-emerald-50 px-2.5 py-1.5 ring-1 ring-inset ring-emerald-100">
           <div className="flex items-center gap-1 text-xs font-medium text-emerald-700">
             <TrendingUp className="h-3 w-3" />
-            Marge {margin}%
+            {t("finances.chart.margin")} {margin}%
           </div>
         </div>
       </div>
 
       <div className="mt-5 grid grid-cols-3 gap-4 border-b border-slate-100 pb-4">
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Revenus</p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t("finances.chart.revenue")}</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums text-blue-600">
-            {lastMonth.revenue.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">DH</span>
+            {lastMonth.revenue.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">{currency}</span>
           </p>
         </div>
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Charges</p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t("finances.chart.expenses")}</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums text-amber-600">
-            {lastMonth.expenses.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">DH</span>
+            {lastMonth.expenses.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">{currency}</span>
           </p>
         </div>
         <div>
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Profit</p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t("finances.chart.profit")}</p>
           <p className="mt-0.5 text-lg font-semibold tabular-nums text-emerald-700">
-            {profit.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">DH</span>
+            {profit.toLocaleString("fr-FR")} <span className="text-xs text-slate-400">{currency}</span>
           </p>
         </div>
       </div>
@@ -122,7 +129,7 @@ export function RevenueVsExpensesChart() {
               tick={{ fill: "#94a3b8", fontSize: 11 }}
               tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ stroke: "#e2e8f0", strokeWidth: 1 }} />
+            <Tooltip content={<CustomTooltip currency={currency} t={t} />} cursor={{ stroke: "#e2e8f0", strokeWidth: 1 }} />
             <Legend content={<CustomLegend />} />
             <Area
               key="area-revenue"
@@ -148,7 +155,7 @@ export function RevenueVsExpensesChart() {
               key="line-revenue"
               type="monotone"
               dataKey="revenue"
-              name="Revenus"
+              name={t("finances.chart.revenue")}
               stroke="#3b82f6"
               strokeWidth={2.5}
               dot={{ r: 4, fill: "#3b82f6", strokeWidth: 2, stroke: "#fff" }}
@@ -160,7 +167,7 @@ export function RevenueVsExpensesChart() {
               key="line-expenses"
               type="monotone"
               dataKey="expenses"
-              name="Charges"
+              name={t("finances.chart.expenses")}
               stroke="#f59e0b"
               strokeWidth={2.5}
               dot={{ r: 4, fill: "#f59e0b", strokeWidth: 2, stroke: "#fff" }}

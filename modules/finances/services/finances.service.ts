@@ -34,6 +34,7 @@ import {
   findInvoiceById,
   findInvoiceByIdForUpdate,
   findInvoiceByReservation,
+  getFinanceReportingCurrency,
   findCreditNoteByOriginalInvoice,
   findDepositByIdForUpdate,
   findExpenseById,
@@ -55,12 +56,16 @@ import {
   listExpenseCategories,
   listExpenseReservationOptions,
   listExpenseVehicleOptions,
+  listFinanceReportingSeries,
+  listFinanceReportingVehicles,
+  listFinanceUpcomingChargeForecasts,
   listPayments,
   paginateExpenses,
   paginateInvoices,
   restoreExpense,
   softDeleteInvoice,
   softDeleteExpense,
+  summarizeFinanceReportingTotals,
   summarizeExpensesByCurrency,
   updateDeposit,
   updateExpense,
@@ -73,6 +78,74 @@ export type FinanceServiceContext = {
   agencyId: string;
   userId?: string | null;
   actorName?: string;
+};
+
+export type FinanceReportingRange = "this_month" | "last_month" | "quarter" | "year" | "custom";
+
+export type FinanceReportingSummary = {
+  totalRevenue: number;
+  totalExpenses: number;
+  netProfit: number;
+  profitabilityRate: number;
+  revenueDelta: number;
+  expensesDelta: number;
+  profitDelta: number;
+  profitabilityDelta: number;
+  cashCollected: number;
+  outstanding: number;
+  depositsHeld: number;
+};
+
+export type FinanceReportingSeriesPoint = {
+  month: string;
+  revenue: number;
+  expenses: number;
+};
+
+export type FinanceReportingCarExpense = {
+  type: string;
+  date: string;
+  amount: number;
+  note?: string;
+};
+
+export type FinanceReportingCar = {
+  id: string;
+  brand: string;
+  model: string;
+  plate: string;
+  category: string;
+  revenue: number;
+  expenses: number;
+  profit: number;
+  occupancyRate: number;
+  roi: null;
+  monthlyRevenue: number[];
+  recentExpenses: FinanceReportingCarExpense[];
+};
+
+export type FinanceUpcomingChargeForecast = {
+  id: string;
+  type: "insurance" | "vignette" | "inspection" | "maintenance";
+  carLabel: string;
+  plate: string;
+  dueDate: string;
+  daysUntil: number;
+  amount: number;
+  urgency: "high" | "medium" | "low";
+};
+
+export type FinanceOverviewReport = {
+  range: FinanceReportingRange;
+  currency: string;
+  period: { from: string; to: string };
+  summary: FinanceReportingSummary;
+  revenueVsExpenses: FinanceReportingSeriesPoint[];
+  vehicles: FinanceReportingCar[];
+  upcomingCharges: FinanceUpcomingChargeForecast[];
+  cashCollected: number;
+  outstanding: number;
+  depositsHeld: number;
 };
 
 type InvoiceCreateData = Omit<
@@ -217,6 +290,112 @@ function decimal(value: unknown) {
   return value instanceof Prisma.Decimal
     ? value
     : new Prisma.Decimal(value as string | number);
+}
+
+function decimalNumber(value: Prisma.Decimal.Value | null | undefined) {
+  return Number(decimal(value ?? 0).toFixed(2));
+}
+
+function ratioPercent(numerator: Prisma.Decimal, denominator: Prisma.Decimal) {
+  if (denominator.equals(0)) return new Prisma.Decimal(0);
+  return numerator.mul(100).div(denominator);
+}
+
+function deltaPercent(current: Prisma.Decimal, previous: Prisma.Decimal) {
+  if (previous.equals(0)) return current.equals(0) ? new Prisma.Decimal(0) : new Prisma.Decimal(100);
+  return current.minus(previous).mul(100).div(previous);
+}
+
+function startOfDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+
+function addDays(value: Date, days: number) {
+  const next = new Date(value);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function addMonths(value: Date, months: number) {
+  const next = new Date(value);
+  next.setMonth(next.getMonth() + months);
+  return next;
+}
+
+function monthStart(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), 1);
+}
+
+function monthLabel(value: Date) {
+  return new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(value).replace(".", "");
+}
+
+function resolveFinanceReportingPeriod(input: {
+  range?: FinanceReportingRange;
+  customFrom?: Date | null;
+  customTo?: Date | null;
+}) {
+  let range = input.range ?? "this_month";
+  const today = startOfDay(new Date());
+  let from: Date;
+  let to: Date;
+
+  if (range === "last_month") {
+    from = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    to = new Date(today.getFullYear(), today.getMonth(), 1);
+  } else if (range === "quarter") {
+    from = new Date(today.getFullYear(), today.getMonth() - 2, 1);
+    to = addDays(today, 1);
+  } else if (range === "year") {
+    from = new Date(today.getFullYear(), 0, 1);
+    to = addDays(today, 1);
+  } else if (range === "custom" && input.customFrom && input.customTo) {
+    from = startOfDay(input.customFrom);
+    to = addDays(startOfDay(input.customTo), 1);
+  } else {
+    range = "this_month";
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+    to = addDays(today, 1);
+  }
+
+  if (to <= from) {
+    range = "this_month";
+    from = new Date(today.getFullYear(), today.getMonth(), 1);
+    to = addDays(today, 1);
+  }
+
+  const duration = to.getTime() - from.getTime();
+  const previousTo = from;
+  const previousFrom = new Date(from.getTime() - duration);
+
+  return { range, from, to, previousFrom, previousTo };
+}
+
+function buildMonthlyBuckets(from: Date, to: Date) {
+  const buckets: Array<{ key: string; label: string; from: Date; to: Date }> = [];
+  let cursor = monthStart(from);
+  while (cursor < to) {
+    const bucketFrom = cursor < from ? from : cursor;
+    const nextMonth = addMonths(cursor, 1);
+    const bucketTo = nextMonth > to ? to : nextMonth;
+    buckets.push({
+      key: cursor.toISOString().slice(0, 7),
+      label: monthLabel(cursor),
+      from: bucketFrom,
+      to: bucketTo,
+    });
+    cursor = nextMonth;
+  }
+  return buckets.length > 0 ? buckets : [{ key: from.toISOString().slice(0, 7), label: monthLabel(from), from, to }];
+}
+
+function buildLastTwelveMonthStarts(to: Date) {
+  const end = monthStart(to);
+  return Array.from({ length: 12 }, (_, index) => addMonths(end, index - 11));
+}
+
+function daysBetween(from: Date, to: Date) {
+  return Math.max(1, Math.ceil((to.getTime() - from.getTime()) / 86_400_000));
 }
 
 function taxAmountFor(totalPrice: Prisma.Decimal, taxRate: Prisma.Decimal) {
@@ -1953,6 +2132,157 @@ export async function listDriverPaymentsService(
   return listDriverPayments(input);
 }
 
+export async function getFinanceOverviewReportService(
+  input: FinanceServiceContext & {
+    range?: FinanceReportingRange;
+    customFrom?: Date | null;
+    customTo?: Date | null;
+    currency?: string | null;
+  },
+): Promise<FinanceOverviewReport> {
+  const currencySource = await getFinanceReportingCurrency(input);
+  const currency = (input.currency ?? currencySource?.currency ?? currencySource?.company.currency ?? "MAD")
+    .trim()
+    .toUpperCase();
+  assertCurrency(currency);
+
+  const period = resolveFinanceReportingPeriod(input);
+  const scope = {
+    companyId: input.companyId,
+    agencyId: input.agencyId,
+    from: period.from,
+    to: period.to,
+    currency,
+  };
+  const previousScope = { ...scope, from: period.previousFrom, to: period.previousTo };
+  const buckets = buildMonthlyBuckets(period.from, period.to);
+  const twelveMonthStarts = buildLastTwelveMonthStarts(period.to);
+  const forecastFrom = startOfDay(new Date());
+  const forecastTo = addDays(forecastFrom, 31);
+
+  const [totals, previousTotals, series, vehicleData, forecasts] = await Promise.all([
+    summarizeFinanceReportingTotals(scope),
+    summarizeFinanceReportingTotals(previousScope),
+    listFinanceReportingSeries({ ...scope, buckets }),
+    listFinanceReportingVehicles({
+      ...scope,
+      monthlyFrom: twelveMonthStarts[0] ?? monthStart(period.from),
+    }),
+    listFinanceUpcomingChargeForecasts({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      from: forecastFrom,
+      to: forecastTo,
+      currency,
+    }),
+  ]);
+
+  const invoicedRevenue = decimal(totals.invoicedAmount ?? 0).minus(totals.creditNoteAmount ?? 0);
+  const actualExpenses = decimal(totals.expenseAmount ?? 0);
+  const netProfit = invoicedRevenue.minus(actualExpenses);
+  const previousRevenue = decimal(previousTotals.invoicedAmount ?? 0).minus(previousTotals.creditNoteAmount ?? 0);
+  const previousExpenses = decimal(previousTotals.expenseAmount ?? 0);
+  const previousProfit = previousRevenue.minus(previousExpenses);
+  const profitability = ratioPercent(netProfit, invoicedRevenue);
+  const previousProfitability = ratioPercent(previousProfit, previousRevenue);
+
+  const revenueVsExpenses = series.map((point) => ({
+    month: point.label,
+    revenue: decimalNumber(decimal(point.invoiceAmount ?? 0).minus(point.creditNoteAmount ?? 0)),
+    expenses: decimalNumber(point.expenseAmount),
+  }));
+
+  const vehicleRevenue = new Map(vehicleData.revenueRows.map((row) => [row.vehicleId, decimal(row.amount ?? 0)]));
+  const vehicleCredits = new Map(vehicleData.creditRows.map((row) => [row.vehicleId, decimal(row.amount ?? 0)]));
+  const vehicleExpenses = new Map(vehicleData.expenseRows.map((row) => [row.vehicleId, decimal(row._sum.amount ?? 0)]));
+  const vehicleOccupancy = new Map(vehicleData.occupancyRows.map((row) => [row.vehicleId, decimal(row.reservedDays ?? 0)]));
+  const expensesByVehicle = new Map<string, FinanceReportingCarExpense[]>();
+  for (const row of vehicleData.recentExpenseRows) {
+    const current = expensesByVehicle.get(row.vehicleId) ?? [];
+    current.push({
+      type: row.type,
+      date: row.date.toISOString(),
+      amount: decimalNumber(row.amount),
+      note: row.note ?? undefined,
+    });
+    expensesByVehicle.set(row.vehicleId, current);
+  }
+
+  const monthKeys = twelveMonthStarts.map((date) => date.toISOString().slice(0, 7));
+  const monthlyRevenueByVehicle = new Map<string, Map<string, Prisma.Decimal>>();
+  for (const row of vehicleData.monthlyRevenueRows) {
+    const key = row.month.toISOString().slice(0, 7);
+    const current = monthlyRevenueByVehicle.get(row.vehicleId) ?? new Map<string, Prisma.Decimal>();
+    current.set(key, decimal(row.amount ?? 0));
+    monthlyRevenueByVehicle.set(row.vehicleId, current);
+  }
+
+  const periodDays = daysBetween(period.from, period.to);
+  const vehicles = vehicleData.vehicles.map((vehicle) => {
+    const revenue = (vehicleRevenue.get(vehicle.id) ?? decimal(0)).minus(vehicleCredits.get(vehicle.id) ?? 0);
+    const expenses = vehicleExpenses.get(vehicle.id) ?? decimal(0);
+    const profit = revenue.minus(expenses);
+    const reservedDays = vehicleOccupancy.get(vehicle.id) ?? decimal(0);
+    const occupancyRate = Math.max(0, Math.min(100, Math.round(Number(reservedDays.mul(100).div(periodDays).toFixed(0)))));
+    const monthlyMap = monthlyRevenueByVehicle.get(vehicle.id) ?? new Map<string, Prisma.Decimal>();
+
+    return {
+      id: vehicle.id,
+      brand: vehicle.brand,
+      model: vehicle.model,
+      plate: vehicle.plate,
+      category: vehicle.category.name,
+      revenue: decimalNumber(revenue),
+      expenses: decimalNumber(expenses),
+      profit: decimalNumber(profit),
+      occupancyRate,
+      roi: null,
+      monthlyRevenue: monthKeys.map((key) => decimalNumber(monthlyMap.get(key))),
+      recentExpenses: expensesByVehicle.get(vehicle.id) ?? [],
+    };
+  });
+
+  const upcomingCharges = forecasts.map((forecast) => {
+    const due = startOfDay(forecast.dueDate);
+    const daysUntil = Math.max(0, Math.ceil((due.getTime() - forecastFrom.getTime()) / 86_400_000));
+    return {
+      id: forecast.id,
+      type: forecast.type,
+      carLabel: `${forecast.brand} ${forecast.model}`,
+      plate: forecast.plate,
+      dueDate: due.toISOString(),
+      daysUntil,
+      amount: decimalNumber(forecast.amount),
+      urgency: daysUntil <= 7 ? "high" : daysUntil <= 21 ? "medium" : "low",
+    } satisfies FinanceUpcomingChargeForecast;
+  });
+
+  return {
+    range: period.range,
+    currency,
+    period: { from: period.from.toISOString(), to: period.to.toISOString() },
+    summary: {
+      totalRevenue: decimalNumber(invoicedRevenue),
+      totalExpenses: decimalNumber(actualExpenses),
+      netProfit: decimalNumber(netProfit),
+      profitabilityRate: decimalNumber(profitability),
+      revenueDelta: decimalNumber(deltaPercent(invoicedRevenue, previousRevenue)),
+      expensesDelta: decimalNumber(deltaPercent(actualExpenses, previousExpenses)),
+      profitDelta: decimalNumber(deltaPercent(netProfit, previousProfit)),
+      profitabilityDelta: decimalNumber(profitability.minus(previousProfitability)),
+      cashCollected: decimalNumber(totals.cashCollectedAmount),
+      outstanding: decimalNumber(totals.outstandingAmount),
+      depositsHeld: decimalNumber(totals.depositHeldAmount),
+    },
+    revenueVsExpenses,
+    vehicles,
+    upcomingCharges,
+    cashCollected: decimalNumber(totals.cashCollectedAmount),
+    outstanding: decimalNumber(totals.outstandingAmount),
+    depositsHeld: decimalNumber(totals.depositHeldAmount),
+  };
+}
+
 export const financesService = {
   getInvoiceService,
   getInvoiceByReservationService,
@@ -1986,4 +2316,5 @@ export const financesService = {
   restoreExpenseService,
   recordDriverPaymentService,
   listDriverPaymentsService,
+  getFinanceOverviewReportService,
 };

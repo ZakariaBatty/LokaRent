@@ -4,9 +4,9 @@ import { motion } from "motion/react"
 import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Trophy } from "lucide-react"
 import { type CarFinance } from "@/lib/finances-data"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
 
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload, currency, t }: any) {
   if (!active || !payload || !payload.length) return null
   const car: CarFinance = payload[0].payload
   return (
@@ -17,20 +17,20 @@ function CustomTooltip({ active, payload }: any) {
       <p className="text-[10px] font-medium text-slate-400">{car.plate}</p>
       <div className="mt-1.5 space-y-0.5">
         <div className="flex items-center gap-3">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Revenus</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">{t("finances.chart.revenue")}</span>
           <span className="ml-auto text-xs font-semibold text-slate-900 tabular-nums">
-            {car.revenue.toLocaleString("fr-FR")} DH
+            {car.revenue.toLocaleString("fr-FR")} {currency}
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">Profit</span>
+          <span className="text-[10px] uppercase tracking-wider text-slate-400">{t("finances.chart.profit")}</span>
           <span
             className={`ml-auto text-xs font-semibold tabular-nums ${
               car.profit >= 0 ? "text-emerald-700" : "text-rose-700"
             }`}
           >
             {car.profit >= 0 ? "+" : ""}
-            {car.profit.toLocaleString("fr-FR")} DH
+            {car.profit.toLocaleString("fr-FR")} {currency}
           </span>
         </div>
       </div>
@@ -38,26 +38,12 @@ function CustomTooltip({ active, payload }: any) {
   )
 }
 
-export function RevenuePerCarChart() {
-  const { agencyData } = useAgency()
-  const topCars: CarFinance[] = agencyData.cars
+export function RevenuePerCarChart({ rows, currency }: { rows: CarFinance[]; currency: string }) {
+  const { t } = useI18n()
+  const topCars: CarFinance[] = rows
     .slice()
     .sort((a, b) => b.revenue - a.revenue)
     .slice(0, 8)
-    .map((c) => ({
-      id: c.id,
-      brand: c.brand,
-      model: c.model,
-      plate: c.plate,
-      category: c.category,
-      revenue: c.revenue,
-      expenses: c.expenses,
-      profit: c.revenue - c.expenses,
-      occupancyRate: c.occupancyRate,
-      roi: c.expenses > 0 ? Math.round(((c.revenue - c.expenses) / c.expenses) * 100) : 0,
-      monthlyRevenue: c.monthlyRevenue,
-      recentExpenses: c.recentExpenses,
-    }))
   const data = topCars.map((c) => ({
     ...c,
     label: `${c.brand.slice(0, 3)} ${c.model.slice(0, 6)}`,
@@ -72,8 +58,8 @@ export function RevenuePerCarChart() {
     >
       <div className="flex items-start justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Revenus par véhicule</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Top 8 véhicules les plus rentables</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("finances.vehicleChart.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{t("finances.vehicleChart.subtitle")}</p>
         </div>
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-600 ring-1 ring-inset ring-amber-100">
           <Trophy className="h-4 w-4" strokeWidth={2.25} />
@@ -114,7 +100,7 @@ export function RevenuePerCarChart() {
               tick={{ fill: "#475569", fontSize: 11, fontWeight: 500 }}
               width={92}
             />
-            <Tooltip content={<CustomTooltip />} cursor={{ fill: "#f8fafc" }} />
+            <Tooltip content={<CustomTooltip currency={currency} t={t} />} cursor={{ fill: "#f8fafc" }} />
             <Bar dataKey="revenue" radius={[0, 8, 8, 0]} maxBarSize={26}>
               {data.map((_, i) => (
                 <Cell key={i} fill={i === 0 ? "url(#topCarGradLeader)" : "url(#topCarGrad)"} />

@@ -3,55 +3,67 @@
 import { motion } from "motion/react"
 import { ArrowDownRight, ArrowUpRight, Percent, TrendingUp, Wallet, Wrench } from "lucide-react"
 import { CountUp } from "@/components/app/count-up"
-import { formatMAD } from "@/lib/finances-data"
 import { cn } from "@/lib/utils"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { FinanceReportingSummary } from "@/modules/finances/services/finances.service"
 
-export function FinancesSummaryCards() {
-  const { agencyData } = useAgency()
-  const fs = agencyData.financeSummary
+type SummaryCard = {
+  id: string
+  label: string
+  value: number
+  suffix: string
+  delta: number
+  invertedDelta?: boolean
+  icon: typeof Wallet
+  accent: { iconBg: string; spark: string }
+  highlight?: boolean
+  decimals?: number
+}
 
-  const cards = [
+export function FinancesSummaryCards({ summary, currency }: { summary: FinanceReportingSummary; currency: string }) {
+  const { t } = useI18n()
+
+  const cards: SummaryCard[] = [
     {
       id: "revenue",
-      label: "Revenus totaux",
-      value: fs.totalRevenue,
-      suffix: " DH",
-      delta: fs.revenueDelta,
+      label: t("finances.cards.totalRevenue"),
+      value: summary.totalRevenue,
+      suffix: ` ${currency}`,
+      delta: summary.revenueDelta,
       icon: Wallet,
       accent: { iconBg: "bg-blue-50 text-blue-600 ring-blue-100", spark: "#3b82f6" },
     },
     {
       id: "expenses",
-      label: "Charges totales",
-      value: fs.totalExpenses,
-      suffix: " DH",
-      delta: fs.expensesDelta,
+      label: t("finances.cards.totalExpenses"),
+      value: summary.totalExpenses,
+      suffix: ` ${currency}`,
+      delta: summary.expensesDelta,
       invertedDelta: true,
       icon: Wrench,
       accent: { iconBg: "bg-amber-50 text-amber-600 ring-amber-100", spark: "#f59e0b" },
     },
     {
       id: "profit",
-      label: "Profit net",
-      value: fs.netProfit,
-      suffix: " DH",
-      delta: fs.profitDelta,
+      label: t("finances.cards.netProfit"),
+      value: summary.netProfit,
+      suffix: ` ${currency}`,
+      delta: summary.profitDelta,
       icon: TrendingUp,
       accent: { iconBg: "bg-emerald-50 text-emerald-600 ring-emerald-100", spark: "#10b981" },
       highlight: true,
     },
     {
       id: "profitability",
-      label: "Taux de rentabilité",
-      value: fs.profitabilityRate,
+      label: t("finances.cards.profitabilityRate"),
+      value: summary.profitabilityRate,
       suffix: " %",
-      delta: fs.profitabilityDelta,
+      delta: summary.profitabilityDelta,
       icon: Percent,
       accent: { iconBg: "bg-violet-50 text-violet-600 ring-violet-100", spark: "#8b5cf6" },
       decimals: 1,
     },
-  ] as const
+  ]
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -123,7 +135,7 @@ export function FinancesSummaryCards() {
                 {c.delta > 0 ? "+" : ""}
                 {c.delta}%
               </span>
-              <span className="text-xs text-slate-400">vs période précédente</span>
+              <span className="text-xs text-slate-400">{t("finances.cards.vsPrevious")}</span>
             </div>
           </motion.div>
         )

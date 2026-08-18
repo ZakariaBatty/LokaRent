@@ -4,6 +4,7 @@ import { motion } from "motion/react"
 import { CalendarRange } from "lucide-react"
 import { dateRangeOptions, type DateRange } from "@/lib/finances-data"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/contexts/i18n-context"
 
 export function FinancesDateRange({
   value,
@@ -12,6 +13,8 @@ export function FinancesDateRange({
   value: DateRange
   onChange: (v: DateRange) => void
 }) {
+  const { t } = useI18n()
+
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3">
@@ -19,8 +22,8 @@ export function FinancesDateRange({
           <CalendarRange className="h-4 w-4" strokeWidth={2.25} />
         </div>
         <div>
-          <h1 className="text-base font-semibold text-slate-900">Finances</h1>
-          <p className="text-xs text-slate-500">Performance financière et rentabilité par véhicule</p>
+          <h1 className="text-base font-semibold text-slate-900">{t("navigation.finances")}</h1>
+          <p className="text-xs text-slate-500">{t("finances.header.subtitle")}</p>
         </div>
       </div>
 
@@ -43,7 +46,7 @@ export function FinancesDateRange({
                   transition={{ type: "spring", stiffness: 380, damping: 30 }}
                 />
               )}
-              {opt.label}
+              {t(opt.labelKey)}
             </button>
           )
         })}

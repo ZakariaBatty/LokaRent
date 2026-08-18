@@ -1,4 +1,14 @@
-import { CustomerStatus, CustomerType, DepositStatus, InvoiceStatus, InvoiceType, Prisma, prisma } from "@lokarent/db";
+import {
+  CustomerStatus,
+  CustomerType,
+  DepositStatus,
+  InvoiceStatus,
+  InvoiceType,
+  Prisma,
+  ReservationStatus,
+  VehicleMaintenanceStatus,
+  prisma,
+} from "@lokarent/db";
 import {
   createPaginationMeta,
   getPagination,
@@ -16,6 +26,41 @@ export type FinanceListInput = PaginationInput & {
 
 export type InvoiceSort = "recent" | "amount_desc" | "due_asc";
 export type ExpenseSort = "date" | "amount";
+
+export type FinanceReportingInput = {
+  companyId: string;
+  agencyId: string;
+  from: Date;
+  to: Date;
+  currency: string;
+};
+
+export type FinanceReportingDateBucket = FinanceReportingInput & {
+  buckets: Array<{ key: string; label: string; from: Date; to: Date }>;
+};
+
+const validRevenueInvoiceStatuses = [
+  InvoiceStatus.issued,
+  InvoiceStatus.paid,
+  InvoiceStatus.partially_paid,
+  InvoiceStatus.overdue,
+] as const;
+
+const validRevenueInvoiceStatusSql = Prisma.join(
+  validRevenueInvoiceStatuses.map((status) => Prisma.sql`${status}::"InvoiceStatus"`),
+);
+
+const occupiedReservationStatusSql = Prisma.join(
+  [ReservationStatus.confirmed, ReservationStatus.active, ReservationStatus.completed].map(
+    (status) => Prisma.sql`${status}::"ReservationStatus"`,
+  ),
+);
+
+const upcomingMaintenanceStatusSql = Prisma.join(
+  [VehicleMaintenanceStatus.scheduled, VehicleMaintenanceStatus.in_progress].map(
+    (status) => Prisma.sql`${status}::"VehicleMaintenanceStatus"`,
+  ),
+);
 
 const invoiceInclude = {
   lineItems: { orderBy: { sortOrder: "asc" } },
@@ -761,6 +806,477 @@ export async function getInvoicePaymentSummary(
   return { invoice, paidAmount: payments._sum.amount, creditedAmount: creditNotes._sum.amount };
 }
 
+export async function getFinanceReportingCurrency(
+  input: { companyId: string; agencyId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.agency.findFirst({
+    where: { id: input.agencyId, companyId: input.companyId, deletedAt: null },
+    select: { currency: true, company: { select: { currency: true } } },
+  });
+}
+
+export async function summarizeFinanceReportingTotals(
+  input: FinanceReportingInput,
+  db: DatabaseClient = prisma,
+) {
+  const [
+    invoiced,
+    creditNotes,
+    cashCollected,
+    expenses,
+    depositsHeld,
+    outstanding,
+  ] = await Promise.all([
+    db.invoice.aggregate({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+        currency: input.currency,
+        status: { in: [...validRevenueInvoiceStatuses] },
+        issuedAt: { gte: input.from, lt: input.to },
+      },
+      _sum: { totalAmount: true },
+    }),
+    db.creditNote.aggregate({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        currency: input.currency,
+        issuedAt: { gte: input.from, lt: input.to },
+      },
+      _sum: { amount: true },
+    }),
+    db.payment.aggregate({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        currency: input.currency,
+        paidAt: { gte: input.from, lt: input.to },
+      },
+      _sum: { amount: true },
+    }),
+    db.expense.aggregate({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+        currency: input.currency,
+        occurredAt: { gte: input.from, lt: input.to },
+      },
+      _sum: { amount: true },
+    }),
+    db.deposit.aggregate({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        currency: input.currency,
+        status: { in: [DepositStatus.held, DepositStatus.partially_released] },
+      },
+      _sum: { amount: true, releasedAmount: true },
+    }),
+    db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+      SELECT COALESCE(SUM(invoice_totals.balance), 0)::numeric AS amount
+      FROM (
+        SELECT
+          i.id,
+          GREATEST(
+            i.total_amount
+              - COALESCE((
+                SELECT SUM(p.amount)
+                FROM payments p
+                WHERE p.invoice_id = i.id
+                  AND p.company_id = ${input.companyId}::uuid
+                  AND p.agency_id = ${input.agencyId}::uuid
+                  AND p.currency = ${input.currency}
+              ), 0)
+              - COALESCE((
+                SELECT SUM(cn.amount)
+                FROM credit_notes cn
+                WHERE cn.original_invoice_id = i.id
+                  AND cn.company_id = ${input.companyId}::uuid
+                  AND cn.agency_id = ${input.agencyId}::uuid
+                  AND cn.currency = ${input.currency}
+              ), 0),
+            0
+          ) AS balance
+        FROM invoices i
+        WHERE i.company_id = ${input.companyId}::uuid
+          AND i.agency_id = ${input.agencyId}::uuid
+          AND i.deleted_at IS NULL
+          AND i.currency = ${input.currency}
+          AND i.status IN (${validRevenueInvoiceStatusSql})
+          AND i.issued_at >= ${input.from}
+          AND i.issued_at < ${input.to}
+      ) invoice_totals
+    `,
+  ]);
+
+  return {
+    invoicedAmount: invoiced._sum.totalAmount,
+    creditNoteAmount: creditNotes._sum.amount,
+    cashCollectedAmount: cashCollected._sum.amount,
+    expenseAmount: expenses._sum.amount,
+    depositHeldAmount: (depositsHeld._sum.amount ?? new Prisma.Decimal(0)).minus(
+      depositsHeld._sum.releasedAmount ?? new Prisma.Decimal(0),
+    ),
+    outstandingAmount: outstanding[0]?.amount ?? null,
+  };
+}
+
+export async function listFinanceReportingSeries(
+  input: FinanceReportingDateBucket,
+  db: DatabaseClient = prisma,
+) {
+  const [invoiceRows, creditRows, expenseRows] = await Promise.all([
+    Promise.all(
+      input.buckets.map(async (bucket) => {
+        const row = await db.invoice.aggregate({
+          where: {
+            companyId: input.companyId,
+            agencyId: input.agencyId,
+            deletedAt: null,
+            currency: input.currency,
+            status: { in: [...validRevenueInvoiceStatuses] },
+            issuedAt: { gte: bucket.from, lt: bucket.to },
+          },
+          _sum: { totalAmount: true },
+        });
+        return { key: bucket.key, amount: row._sum.totalAmount };
+      }),
+    ),
+    Promise.all(
+      input.buckets.map(async (bucket) => {
+        const row = await db.creditNote.aggregate({
+          where: {
+            companyId: input.companyId,
+            agencyId: input.agencyId,
+            currency: input.currency,
+            issuedAt: { gte: bucket.from, lt: bucket.to },
+          },
+          _sum: { amount: true },
+        });
+        return { key: bucket.key, amount: row._sum.amount };
+      }),
+    ),
+    Promise.all(
+      input.buckets.map(async (bucket) => {
+        const row = await db.expense.aggregate({
+          where: {
+            companyId: input.companyId,
+            agencyId: input.agencyId,
+            deletedAt: null,
+            currency: input.currency,
+            occurredAt: { gte: bucket.from, lt: bucket.to },
+          },
+          _sum: { amount: true },
+        });
+        return { key: bucket.key, amount: row._sum.amount };
+      }),
+    ),
+  ]);
+
+  return input.buckets.map((bucket) => ({
+    ...bucket,
+    invoiceAmount: invoiceRows.find((row) => row.key === bucket.key)?.amount ?? null,
+    creditNoteAmount: creditRows.find((row) => row.key === bucket.key)?.amount ?? null,
+    expenseAmount: expenseRows.find((row) => row.key === bucket.key)?.amount ?? null,
+  }));
+}
+
+export async function listFinanceReportingVehicles(
+  input: FinanceReportingInput & { monthlyFrom: Date },
+  db: DatabaseClient = prisma,
+) {
+  const [
+    vehicles,
+    revenueRows,
+    creditRows,
+    expenseRows,
+    occupancyRows,
+    recentExpenseRows,
+    monthlyRevenueRows,
+  ] = await Promise.all([
+    db.vehicle.findMany({
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        brand: true,
+        model: true,
+        plate: true,
+        category: { select: { name: true } },
+      },
+      orderBy: [{ brand: "asc" }, { model: "asc" }, { plate: "asc" }],
+    }),
+    db.$queryRaw<{ vehicleId: string; amount: Prisma.Decimal | null }[]>`
+      SELECT r.vehicle_id AS "vehicleId", COALESCE(SUM(i.total_amount), 0)::numeric AS amount
+      FROM invoices i
+      JOIN reservations r ON r.id = i.reservation_id
+      WHERE i.company_id = ${input.companyId}::uuid
+        AND i.agency_id = ${input.agencyId}::uuid
+        AND i.deleted_at IS NULL
+        AND i.currency = ${input.currency}
+        AND i.status IN (${validRevenueInvoiceStatusSql})
+        AND i.issued_at >= ${input.from}
+        AND i.issued_at < ${input.to}
+        AND r.company_id = ${input.companyId}::uuid
+        AND r.agency_id = ${input.agencyId}::uuid
+        AND r.deleted_at IS NULL
+      GROUP BY r.vehicle_id
+    `,
+    db.$queryRaw<{ vehicleId: string; amount: Prisma.Decimal | null }[]>`
+      SELECT r.vehicle_id AS "vehicleId", COALESCE(SUM(cn.amount), 0)::numeric AS amount
+      FROM credit_notes cn
+      JOIN invoices i ON i.id = cn.original_invoice_id
+      JOIN reservations r ON r.id = i.reservation_id
+      WHERE cn.company_id = ${input.companyId}::uuid
+        AND cn.agency_id = ${input.agencyId}::uuid
+        AND cn.currency = ${input.currency}
+        AND cn.issued_at >= ${input.from}
+        AND cn.issued_at < ${input.to}
+        AND i.company_id = ${input.companyId}::uuid
+        AND i.agency_id = ${input.agencyId}::uuid
+        AND i.deleted_at IS NULL
+        AND i.currency = ${input.currency}
+        AND i.reservation_id IS NOT NULL
+        AND r.company_id = ${input.companyId}::uuid
+        AND r.agency_id = ${input.agencyId}::uuid
+        AND r.deleted_at IS NULL
+      GROUP BY r.vehicle_id
+    `,
+    db.expense.groupBy({
+      by: ["vehicleId"],
+      where: {
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+        currency: input.currency,
+        vehicleId: { not: null },
+        occurredAt: { gte: input.from, lt: input.to },
+      },
+      _sum: { amount: true },
+    }),
+    db.$queryRaw<{ vehicleId: string; reservedDays: Prisma.Decimal | null }[]>`
+      SELECT
+        vehicle_id AS "vehicleId",
+        COALESCE(
+          SUM(
+            EXTRACT(
+              EPOCH FROM (
+                LEAST(ends_at, ${input.to})
+                - GREATEST(starts_at, ${input.from})
+              )
+            ) / 86400
+          ),
+          0
+        )::numeric AS "reservedDays"
+      FROM reservations
+      WHERE company_id = ${input.companyId}::uuid
+        AND agency_id = ${input.agencyId}::uuid
+        AND deleted_at IS NULL
+        AND status IN (${occupiedReservationStatusSql})
+        AND starts_at < ${input.to}
+        AND ends_at > ${input.from}
+      GROUP BY vehicle_id
+    `,
+    db.$queryRaw<
+      {
+        vehicleId: string;
+        type: string;
+        date: Date;
+        amount: Prisma.Decimal;
+        note: string | null;
+      }[]
+    >`
+      SELECT "vehicleId", type, date, amount, note
+      FROM (
+        SELECT
+          e.vehicle_id AS "vehicleId",
+          c.name AS type,
+          e.occurred_at AS date,
+          e.amount,
+          e.description AS note,
+          ROW_NUMBER() OVER (PARTITION BY e.vehicle_id ORDER BY e.occurred_at DESC, e.created_at DESC) AS rn
+        FROM expenses e
+        JOIN expense_categories c ON c.id = e.category_id
+        WHERE e.company_id = ${input.companyId}::uuid
+          AND e.agency_id = ${input.agencyId}::uuid
+          AND e.deleted_at IS NULL
+          AND e.currency = ${input.currency}
+          AND e.vehicle_id IS NOT NULL
+          AND e.occurred_at >= ${input.from}
+          AND e.occurred_at < ${input.to}
+      ) ranked
+      WHERE rn <= 5
+      ORDER BY date DESC
+    `,
+    db.$queryRaw<{ vehicleId: string; month: Date; amount: Prisma.Decimal | null }[]>`
+      SELECT
+        r.vehicle_id AS "vehicleId",
+        DATE_TRUNC('month', i.issued_at)::date AS month,
+        (
+          COALESCE(SUM(i.total_amount), 0)
+          - COALESCE(SUM(credits.amount), 0)
+        )::numeric AS amount
+      FROM invoices i
+      JOIN reservations r ON r.id = i.reservation_id
+      LEFT JOIN LATERAL (
+        SELECT SUM(cn.amount) AS amount
+        FROM credit_notes cn
+        WHERE cn.original_invoice_id = i.id
+          AND cn.company_id = ${input.companyId}::uuid
+          AND cn.agency_id = ${input.agencyId}::uuid
+          AND cn.currency = ${input.currency}
+          AND cn.issued_at >= ${input.monthlyFrom}
+          AND cn.issued_at < ${input.to}
+      ) credits ON true
+      WHERE i.company_id = ${input.companyId}::uuid
+        AND i.agency_id = ${input.agencyId}::uuid
+        AND i.deleted_at IS NULL
+        AND i.currency = ${input.currency}
+        AND i.status IN (${validRevenueInvoiceStatusSql})
+        AND i.issued_at >= ${input.monthlyFrom}
+        AND i.issued_at < ${input.to}
+        AND i.reservation_id IS NOT NULL
+        AND r.company_id = ${input.companyId}::uuid
+        AND r.agency_id = ${input.agencyId}::uuid
+        AND r.deleted_at IS NULL
+      GROUP BY r.vehicle_id, DATE_TRUNC('month', i.issued_at)::date
+    `,
+  ]);
+
+  return {
+    vehicles,
+    revenueRows,
+    creditRows,
+    expenseRows,
+    occupancyRows,
+    recentExpenseRows,
+    monthlyRevenueRows,
+  };
+}
+
+export async function listFinanceUpcomingChargeForecasts(
+  input: { companyId: string; agencyId: string; from: Date; to: Date; currency: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.$queryRaw<
+    {
+      id: string;
+      type: "insurance" | "vignette" | "inspection" | "maintenance";
+      vehicleId: string;
+      brand: string;
+      model: string;
+      plate: string;
+      dueDate: Date;
+      amount: Prisma.Decimal;
+    }[]
+  >`
+    SELECT * FROM (
+      SELECT
+        vi.id,
+        'insurance'::text AS type,
+        v.id AS "vehicleId",
+        v.brand,
+        v.model,
+        v.plate,
+        vi.expires_at AS "dueDate",
+        vi.premium_amount AS amount
+      FROM vehicle_insurances vi
+      JOIN vehicles v ON v.id = vi.vehicle_id
+      WHERE vi.company_id = ${input.companyId}::uuid
+        AND vi.agency_id = ${input.agencyId}::uuid
+        AND vi.deleted_at IS NULL
+        AND v.company_id = ${input.companyId}::uuid
+        AND v.agency_id = ${input.agencyId}::uuid
+        AND v.deleted_at IS NULL
+        AND vi.currency = ${input.currency}
+        AND vi.premium_amount IS NOT NULL
+        AND vi.expires_at >= ${input.from}
+        AND vi.expires_at < ${input.to}
+
+      UNION ALL
+
+      SELECT
+        vv.id,
+        'vignette'::text AS type,
+        v.id AS "vehicleId",
+        v.brand,
+        v.model,
+        v.plate,
+        vv.expires_at AS "dueDate",
+        vv.amount
+      FROM vehicle_vignettes vv
+      JOIN vehicles v ON v.id = vv.vehicle_id
+      WHERE vv.company_id = ${input.companyId}::uuid
+        AND vv.agency_id = ${input.agencyId}::uuid
+        AND v.company_id = ${input.companyId}::uuid
+        AND v.agency_id = ${input.agencyId}::uuid
+        AND v.deleted_at IS NULL
+        AND vv.currency = ${input.currency}
+        AND vv.amount IS NOT NULL
+        AND vv.expires_at >= ${input.from}
+        AND vv.expires_at < ${input.to}
+
+      UNION ALL
+
+      SELECT
+        vins.id,
+        'inspection'::text AS type,
+        v.id AS "vehicleId",
+        v.brand,
+        v.model,
+        v.plate,
+        vins.expires_at AS "dueDate",
+        vins.cost AS amount
+      FROM vehicle_inspections vins
+      JOIN vehicles v ON v.id = vins.vehicle_id
+      WHERE vins.company_id = ${input.companyId}::uuid
+        AND vins.agency_id = ${input.agencyId}::uuid
+        AND vins.deleted_at IS NULL
+        AND v.company_id = ${input.companyId}::uuid
+        AND v.agency_id = ${input.agencyId}::uuid
+        AND v.deleted_at IS NULL
+        AND vins.currency = ${input.currency}
+        AND vins.cost IS NOT NULL
+        AND vins.expires_at >= ${input.from}
+        AND vins.expires_at < ${input.to}
+
+      UNION ALL
+
+      SELECT
+        vm.id,
+        'maintenance'::text AS type,
+        v.id AS "vehicleId",
+        v.brand,
+        v.model,
+        v.plate,
+        COALESCE(vm.next_due_at, vm.performed_at) AS "dueDate",
+        vm.cost AS amount
+      FROM vehicle_maintenances vm
+      JOIN vehicles v ON v.id = vm.vehicle_id
+      WHERE vm.company_id = ${input.companyId}::uuid
+        AND vm.agency_id = ${input.agencyId}::uuid
+        AND vm.deleted_at IS NULL
+        AND v.company_id = ${input.companyId}::uuid
+        AND v.agency_id = ${input.agencyId}::uuid
+        AND v.deleted_at IS NULL
+        AND vm.status IN (${upcomingMaintenanceStatusSql})
+        AND vm.currency_code = ${input.currency}
+        AND vm.cost IS NOT NULL
+        AND COALESCE(vm.next_due_at, vm.performed_at) >= ${input.from}
+        AND COALESCE(vm.next_due_at, vm.performed_at) < ${input.to}
+    ) forecasts
+    ORDER BY "dueDate" ASC, amount DESC
+    LIMIT 12
+  `;
+}
+
 export const financesRepository = {
   findInvoiceById,
   findInvoiceByReservation,
@@ -809,4 +1325,9 @@ export const financesRepository = {
   createDriverPayment,
   listDriverPayments,
   getInvoicePaymentSummary,
+  getFinanceReportingCurrency,
+  summarizeFinanceReportingTotals,
+  listFinanceReportingSeries,
+  listFinanceReportingVehicles,
+  listFinanceUpcomingChargeForecasts,
 };
