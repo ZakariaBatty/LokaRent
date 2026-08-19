@@ -13,12 +13,28 @@ import {
   XAxis,
   YAxis,
 } from "recharts"
-import { formatMAD, monthlyRevenue } from "@/lib/reports-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { FinanceReportingSeriesPoint } from "@/modules/finances/services/finances.service"
 
-export function ReportsRevenueTrendChart() {
-  const total = monthlyRevenue.reduce((s, d) => s + d.revenue, 0)
-  const last = monthlyRevenue[monthlyRevenue.length - 1]?.revenue ?? 0
-  const prev = monthlyRevenue[monthlyRevenue.length - 2]?.revenue ?? 0
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function ReportsRevenueTrendChart({
+  data,
+  currency,
+}: {
+  data: FinanceReportingSeriesPoint[]
+  currency: string
+}) {
+  const { t } = useI18n()
+  const total = data.reduce((s, d) => s + d.revenue, 0)
+  const last = data[data.length - 1]?.revenue ?? 0
+  const prev = data[data.length - 2]?.revenue ?? 0
   const trend = prev > 0 ? ((last - prev) / prev) * 100 : 0
 
   return (
@@ -30,12 +46,12 @@ export function ReportsRevenueTrendChart() {
     >
       <div className="flex flex-col gap-3 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Évolution Revenus / Charges</h3>
-          <p className="mt-0.5 text-xs text-slate-500">12 derniers mois</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("reports.charts.revenueExpensesTitle")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{t("reports.charts.periodEvolution")}</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="text-right">
-            <div className="text-lg font-bold tabular-nums text-slate-900">{formatMAD(total)}</div>
+            <div className="text-lg font-bold tabular-nums text-slate-900">{formatMoney(total, currency)}</div>
             <div
               className={`mt-0.5 inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                 trend >= 0 ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"
@@ -51,7 +67,7 @@ export function ReportsRevenueTrendChart() {
       <div className="p-3">
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={monthlyRevenue} margin={{ top: 16, right: 16, bottom: 8, left: 8 }}>
+            <ComposedChart data={data} margin={{ top: 16, right: 16, bottom: 8, left: 8 }}>
               <defs>
                 <linearGradient id="reports-rev-gradient" x1="0" x2="0" y1="0" y2="1">
                   <stop offset="0%" stopColor="#6366f1" stopOpacity={0.28} />
@@ -88,18 +104,18 @@ export function ReportsRevenueTrendChart() {
                       {rev !== undefined && (
                         <div className="mt-1 flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-indigo-500" />
-                          <span className="text-xs text-slate-600">Revenus</span>
+                          <span className="text-xs text-slate-600">{t("reports.labels.revenue")}</span>
                           <span className="ml-auto text-xs font-semibold text-slate-900">
-                            {formatMAD(rev)}
+                            {formatMoney(rev, currency)}
                           </span>
                         </div>
                       )}
                       {exp !== undefined && (
                         <div className="mt-1 flex items-center gap-2">
                           <span className="h-2 w-2 rounded-full bg-amber-500" />
-                          <span className="text-xs text-slate-600">Charges</span>
+                          <span className="text-xs text-slate-600">{t("reports.labels.expenses")}</span>
                           <span className="ml-auto text-xs font-semibold text-slate-900">
-                            {formatMAD(exp)}
+                            {formatMoney(exp, currency)}
                           </span>
                         </div>
                       )}
@@ -129,7 +145,7 @@ export function ReportsRevenueTrendChart() {
               <Line
                 type="monotone"
                 dataKey="revenue"
-                name="Revenus"
+                name={t("reports.labels.revenue")}
                 stroke="#6366f1"
                 strokeWidth={2.4}
                 dot={{ r: 3, fill: "#6366f1", strokeWidth: 2, stroke: "#ffffff" }}
@@ -138,7 +154,7 @@ export function ReportsRevenueTrendChart() {
               <Line
                 type="monotone"
                 dataKey="expenses"
-                name="Charges"
+                name={t("reports.labels.expenses")}
                 stroke="#f59e0b"
                 strokeWidth={2}
                 strokeDasharray="4 3"
