@@ -2,27 +2,23 @@
 
 import { motion } from "motion/react"
 import { ArrowRight } from "lucide-react"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardRentalRow } from "@/modules/dashboard/services/dashboard.service"
 
-export function ActiveRentals() {
-  const { agencyData } = useAgency()
-  // Build active rentals from car reservation histories
-  const activeRentals = agencyData.cars
-    .flatMap((car) =>
-      car.reservations
-        .filter((r) => r.status === "active")
-        .map((r) => ({
-          id: r.id,
-          client: r.clientName,
-          avatar: r.clientInitials,
-          vehicle: `${car.brand} ${car.model}`,
-          plate: car.plate,
-          start: new Date(r.startDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }),
-          end: new Date(r.endDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }),
-          amount: `${r.amount.toLocaleString("fr-FR")} DH`,
-          status: "En cours",
-        }))
-    )
+function formatDate(value: string) {
+  return new Date(value).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })
+}
+
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function ActiveRentals({ rows, currency }: { rows: DashboardRentalRow[]; currency: string }) {
+  const { t } = useI18n()
 
   return (
     <motion.div
@@ -33,11 +29,13 @@ export function ActiveRentals() {
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Locations actives</h3>
-          <p className="mt-0.5 text-xs text-slate-500">{activeRentals.length} contrats en cours</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("dashboard.activeRentals.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {rows.length} {t("dashboard.activeRentals.currentContracts")}
+          </p>
         </div>
         <button className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900">
-          Voir tout
+          {t("dashboard.actions.viewAll")}
           <ArrowRight className="h-3 w-3" />
         </button>
       </div>
@@ -47,21 +45,21 @@ export function ActiveRentals() {
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
               <th className="px-6 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Client
+                {t("dashboard.activeRentals.client")}
               </th>
               <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Véhicule
+                {t("dashboard.activeRentals.vehicle")}
               </th>
               <th className="px-4 py-3 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Période
+                {t("dashboard.activeRentals.period")}
               </th>
               <th className="px-6 py-3 text-right text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                Montant
+                {t("dashboard.activeRentals.amount")}
               </th>
             </tr>
           </thead>
           <tbody>
-            {activeRentals.map((rental, i) => (
+            {rows.map((rental, i) => (
               <motion.tr
                 key={rental.id}
                 initial={{ opacity: 0 }}
@@ -75,8 +73,8 @@ export function ActiveRentals() {
                       <span className="text-[10px] font-semibold text-slate-700">{rental.avatar}</span>
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{rental.client}</p>
-                      <p className="text-[10px] text-slate-400">{rental.id}</p>
+                      <p className="text-sm font-medium text-slate-900">{rental.client || t("dashboard.labels.client")}</p>
+                      <p className="text-[10px] text-slate-400">{rental.code}</p>
                     </div>
                   </div>
                 </td>
@@ -86,15 +84,15 @@ export function ActiveRentals() {
                 </td>
                 <td className="px-4 py-3.5">
                   <p className="text-sm text-slate-700">
-                    {rental.start} <span className="text-slate-300">→</span> {rental.end}
+                    {formatDate(rental.start)} <span className="text-slate-300">→</span> {formatDate(rental.end)}
                   </p>
                   <span className="mt-0.5 inline-flex items-center gap-1 rounded-md bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
                     <span className="h-1 w-1 rounded-full bg-emerald-500" />
-                    {rental.status}
+                    {t("dashboard.activeRentals.inProgress")}
                   </span>
                 </td>
                 <td className="px-6 py-3.5 text-right">
-                  <span className="text-sm font-semibold text-slate-900">{rental.amount}</span>
+                  <span className="text-sm font-semibold text-slate-900">{formatMoney(rental.amount, currency)}</span>
                 </td>
               </motion.tr>
             ))}
