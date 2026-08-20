@@ -862,9 +862,9 @@ export async function listDriverPayments(
       agencyId: input.agencyId,
       driverId: input.driverId,
       reservationId: input.reservationId,
-      ...(input.from || input.to ? { createdAt: { gte: input.from, lte: input.to } } : {}),
+      ...(input.from || input.to ? { paidAt: { gte: input.from, lte: input.to } } : {}),
     },
-    orderBy: { createdAt: "desc" },
+    orderBy: { paidAt: "desc" },
   });
 }
 

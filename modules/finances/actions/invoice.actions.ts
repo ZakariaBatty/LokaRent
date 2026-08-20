@@ -166,6 +166,7 @@ async function getActionContext(
 function revalidateInvoicePaths() {
   revalidatePath("/invoices");
   revalidatePath("/finances");
+  revalidatePath("/reports");
   revalidatePath("/reservations");
   revalidatePath("/cars");
   revalidatePath("/clients");

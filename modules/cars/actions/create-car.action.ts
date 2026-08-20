@@ -87,6 +87,13 @@ async function getActionContext(permission: (typeof PERMISSIONS)[keyof typeof PE
   } satisfies FleetServiceContext;
 }
 
+function revalidateFleetFinancePaths() {
+  revalidatePath("/cars");
+  revalidatePath("/dashboard");
+  revalidatePath("/finances");
+  revalidatePath("/reports");
+}
+
 function decimal(value?: number) {
   return value === undefined ? undefined : new Prisma.Decimal(value);
 }
@@ -283,9 +290,7 @@ export async function updateVehicleDocumentAction(input: unknown): Promise<CarAc
       }
     }
 
-    revalidatePath("/cars");
-    revalidatePath("/finances");
-    revalidatePath("/reports");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -426,7 +431,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
         },
       });
     }
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: vehicle.id };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -726,7 +731,7 @@ export async function createVehicleInsuranceAction(input: unknown): Promise<CarA
       context,
       data: { ...parsed.data, premiumAmount: decimal(parsed.data.premiumAmount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -739,7 +744,7 @@ export async function createVehicleRegistrationAction(input: unknown): Promise<C
   try {
     const context = await getActionContext(PERMISSIONS.FLEET_EDIT);
     await createVehicleRegistrationService({ context, data: parsed.data });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -755,7 +760,7 @@ export async function createVehicleVignetteAction(input: unknown): Promise<CarAc
       context,
       data: { ...parsed.data, amount: decimal(parsed.data.amount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -771,7 +776,7 @@ export async function createVehicleInspectionAction(input: unknown): Promise<Car
       context,
       data: { ...parsed.data, cost: decimal(parsed.data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -800,7 +805,7 @@ export async function createVehicleMaintenanceAction(input: unknown): Promise<Ca
       context,
       data: { ...parsed.data, cost: decimal(parsed.data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -832,7 +837,7 @@ export async function updateVehicleInsuranceAction(input: unknown): Promise<CarA
       insuranceId,
       data: { ...data, premiumAmount: decimal(data.premiumAmount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -851,7 +856,7 @@ export async function updateVehicleInspectionAction(input: unknown): Promise<Car
       inspectionId,
       data: { ...data, cost: decimal(data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -870,7 +875,7 @@ export async function updateVehicleMaintenanceAction(input: unknown): Promise<Ca
       maintenanceId,
       data: { ...data, cost: decimal(data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
