@@ -137,6 +137,19 @@ async function sumExpenseAmount(input: FinanceReportingInput, db: DatabaseClient
   return rows[0]?.amount ?? null;
 }
 
+async function sumDriverPaymentAmount(input: FinanceReportingInput, db: DatabaseClient = prisma) {
+  const rows = await db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(COALESCE(dp.net_amount, dp.gross_amount)), 0)::numeric AS amount
+    FROM driver_payments dp
+    WHERE dp.company_id = ${input.companyId}::uuid
+      AND dp.agency_id = ${input.agencyId}::uuid
+      AND dp.currency = ${input.currency}
+      AND dp.paid_at >= ${input.from}
+      AND dp.paid_at < ${input.to}
+  `;
+  return rows[0]?.amount ?? null;
+}
+
 const invoiceInclude = {
   lineItems: { orderBy: { sortOrder: "asc" } },
   payments: { orderBy: { paidAt: "desc" } },
@@ -900,6 +913,7 @@ export async function summarizeFinanceReportingTotals(
     creditNotes,
     cashCollected,
     expenses,
+    driverPayments,
     depositsHeld,
     outstanding,
   ] = await Promise.all([
@@ -907,6 +921,7 @@ export async function summarizeFinanceReportingTotals(
     sumCreditNoteAmount(input, db),
     sumCashCollectedAmount(input, db),
     sumExpenseAmount(input, db),
+    sumDriverPaymentAmount(input, db),
     db.deposit.aggregate({
       where: {
         companyId: input.companyId,
@@ -957,7 +972,7 @@ export async function summarizeFinanceReportingTotals(
     invoicedAmount: invoiced,
     creditNoteAmount: creditNotes,
     cashCollectedAmount: cashCollected,
-    expenseAmount: expenses,
+    expenseAmount: (expenses ?? new Prisma.Decimal(0)).plus(driverPayments ?? new Prisma.Decimal(0)),
     depositHeldAmount: (depositsHeld._sum.amount ?? new Prisma.Decimal(0)).minus(
       depositsHeld._sum.releasedAmount ?? new Prisma.Decimal(0),
     ),
@@ -969,7 +984,7 @@ export async function listFinanceReportingSeries(
   input: FinanceReportingDateBucket,
   db: DatabaseClient = prisma,
 ) {
-  const [invoiceRows, creditRows, expenseRows] = await Promise.all([
+  const [invoiceRows, creditRows, expenseRows, driverPaymentRows] = await Promise.all([
     Promise.all(
       input.buckets.map(async (bucket) => {
         const amount = await sumInvoicedAmount({ ...input, from: bucket.from, to: bucket.to }, db);
@@ -988,13 +1003,21 @@ export async function listFinanceReportingSeries(
         return { key: bucket.key, amount };
       }),
     ),
+    Promise.all(
+      input.buckets.map(async (bucket) => {
+        const amount = await sumDriverPaymentAmount({ ...input, from: bucket.from, to: bucket.to }, db);
+        return { key: bucket.key, amount };
+      }),
+    ),
   ]);
 
   return input.buckets.map((bucket) => ({
     ...bucket,
     invoiceAmount: invoiceRows.find((row) => row.key === bucket.key)?.amount ?? null,
     creditNoteAmount: creditRows.find((row) => row.key === bucket.key)?.amount ?? null,
-    expenseAmount: expenseRows.find((row) => row.key === bucket.key)?.amount ?? null,
+    expenseAmount: (expenseRows.find((row) => row.key === bucket.key)?.amount ?? new Prisma.Decimal(0)).plus(
+      driverPaymentRows.find((row) => row.key === bucket.key)?.amount ?? new Prisma.Decimal(0),
+    ),
   }));
 }
 
@@ -1007,6 +1030,7 @@ export async function listFinanceReportingVehicles(
     revenueRows,
     creditRows,
     expenseRows,
+    driverPaymentRows,
     occupancyRows,
     recentExpenseRows,
     monthlyRevenueRows,
@@ -1075,6 +1099,20 @@ export async function listFinanceReportingVehicles(
       },
       _sum: { amount: true },
     }),
+    db.$queryRaw<{ vehicleId: string; amount: Prisma.Decimal | null }[]>`
+      SELECT r.vehicle_id AS "vehicleId", COALESCE(SUM(COALESCE(dp.net_amount, dp.gross_amount)), 0)::numeric AS amount
+      FROM driver_payments dp
+      JOIN reservations r ON r.id = dp.reservation_id
+      WHERE dp.company_id = ${input.companyId}::uuid
+        AND dp.agency_id = ${input.agencyId}::uuid
+        AND dp.currency = ${input.currency}
+        AND dp.paid_at >= ${input.from}
+        AND dp.paid_at < ${input.to}
+        AND r.company_id = ${input.companyId}::uuid
+        AND r.agency_id = ${input.agencyId}::uuid
+        AND r.deleted_at IS NULL
+      GROUP BY r.vehicle_id
+    `,
     db.$queryRaw<{ vehicleId: string; reservedDays: Prisma.Decimal | null }[]>`
       SELECT
         vehicle_id AS "vehicleId",
@@ -1169,6 +1207,7 @@ export async function listFinanceReportingVehicles(
     revenueRows,
     creditRows,
     expenseRows,
+    driverPaymentRows,
     occupancyRows,
     recentExpenseRows,
     monthlyRevenueRows,

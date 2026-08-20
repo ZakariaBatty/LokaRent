@@ -364,9 +364,15 @@ function resolveFinanceReportingPeriod(input: {
   } else if (range === "year") {
     from = new Date(today.getFullYear(), 0, 1);
     to = addDays(today, 1);
-  } else if (range === "custom" && input.customFrom && input.customTo) {
+  } else if (range === "custom") {
+    if (!input.customFrom || !input.customTo) {
+      throw createValidationError("FINANCE_REPORT_INVALID_CUSTOM_RANGE");
+    }
     from = startOfDay(input.customFrom);
     to = addDays(startOfDay(input.customTo), 1);
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || to <= from) {
+      throw createValidationError("FINANCE_REPORT_INVALID_CUSTOM_RANGE");
+    }
   } else {
     range = "this_month";
     from = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -2215,6 +2221,9 @@ export async function getFinanceOverviewReportService(
   const vehicleRevenue = new Map(vehicleData.revenueRows.map((row) => [row.vehicleId, decimal(row.amount ?? 0)]));
   const vehicleCredits = new Map(vehicleData.creditRows.map((row) => [row.vehicleId, decimal(row.amount ?? 0)]));
   const vehicleExpenses = new Map(vehicleData.expenseRows.map((row) => [row.vehicleId, decimal(row._sum.amount ?? 0)]));
+  const vehicleDriverPayments = new Map(
+    vehicleData.driverPaymentRows.map((row) => [row.vehicleId, decimal(row.amount ?? 0)]),
+  );
   const vehicleOccupancy = new Map(vehicleData.occupancyRows.map((row) => [row.vehicleId, decimal(row.reservedDays ?? 0)]));
   const expensesByVehicle = new Map<string, FinanceReportingCarExpense[]>();
   for (const row of vehicleData.recentExpenseRows) {
@@ -2240,7 +2249,7 @@ export async function getFinanceOverviewReportService(
   const periodDays = daysBetween(period.from, period.to);
   const vehicles = vehicleData.vehicles.map((vehicle) => {
     const revenue = (vehicleRevenue.get(vehicle.id) ?? decimal(0)).minus(vehicleCredits.get(vehicle.id) ?? 0);
-    const expenses = vehicleExpenses.get(vehicle.id) ?? decimal(0);
+    const expenses = (vehicleExpenses.get(vehicle.id) ?? decimal(0)).plus(vehicleDriverPayments.get(vehicle.id) ?? 0);
     const profit = revenue.minus(expenses);
     const reservedDays = vehicleOccupancy.get(vehicle.id) ?? decimal(0);
     const occupancyRate = Math.max(0, Math.min(100, Math.round(Number(reservedDays.mul(100).div(periodDays).toFixed(0)))));

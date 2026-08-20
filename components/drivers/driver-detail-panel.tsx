@@ -6,7 +6,7 @@ import { X, Pencil, Trash2, User, Wallet, History, Phone, Mail } from "lucide-re
 import { type Driver, statusConfig, paymentTypeConfig, formatMAD, driverFullName } from "@/lib/drivers-data"
 import { WhatsAppShareButton } from "@/components/communication/whatsapp-share-button"
 import { DriverProfilTab } from "./tabs/driver-profil-tab"
-import { DriverPaiementTab } from "./tabs/driver-paiement-tab"
+import { DriverPaiementTab, type DriverPaymentDraft } from "./tabs/driver-paiement-tab"
 import { DriverHistoriqueTab } from "./tabs/driver-historique-tab"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
@@ -36,12 +36,14 @@ export function DriverDetailPanel({
   onClose,
   onEdit,
   onDelete,
+  onRecordPayment,
   canDelete = true,
 }: {
   driver: Driver
   onClose: () => void
   onEdit: () => void
   onDelete: () => void
+  onRecordPayment?: (driver: Driver, draft: DriverPaymentDraft) => Promise<boolean>
   canDelete?: boolean
 }) {
   const [activeTab, setActiveTab] = useState<TabKey>("profil")
@@ -196,7 +198,12 @@ export function DriverDetailPanel({
             className="p-5"
           >
             {activeTab === "profil" && <DriverProfilTab driver={driver} />}
-            {activeTab === "paiement" && <DriverPaiementTab driver={driver} />}
+            {activeTab === "paiement" && (
+              <DriverPaiementTab
+                driver={driver}
+                onRecordPayment={onRecordPayment ? (draft) => onRecordPayment(driver, draft) : undefined}
+              />
+            )}
             {activeTab === "historique" && <DriverHistoriqueTab driver={driver} />}
           </motion.div>
         </AnimatePresence>

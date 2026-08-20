@@ -33,6 +33,7 @@ export function CarDetailPanel({
   onClose,
   onEdit,
   onEditDocuments,
+  onSaveDocument,
   onDelete,
   canDelete = false,
 }: {
@@ -40,6 +41,7 @@ export function CarDetailPanel({
   onClose: () => void
   onEdit?: () => void
   onEditDocuments?: () => void
+  onSaveDocument?: Parameters<typeof DocumentsTab>[0]["onSaveDocument"]
   onDelete?: () => void
   canDelete?: boolean
 }) {
@@ -196,7 +198,9 @@ export function CarDetailPanel({
             className="p-5"
           >
             {activeTab === "infos" && <InfosTab car={car} />}
-            {activeTab === "documents" && <DocumentsTab car={car} onEdit={onEditDocuments ?? onEdit} />}
+            {activeTab === "documents" && (
+              <DocumentsTab car={car} onEdit={onEditDocuments ?? onEdit} onSaveDocument={onSaveDocument} />
+            )}
             {activeTab === "finances" && <FinancesTab car={car} />}
             {activeTab === "historique" && <HistoriqueTab car={car} />}
           </motion.div>

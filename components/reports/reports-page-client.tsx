@@ -17,6 +17,7 @@ import type { ReportsOverview, ReportsPeriod } from "@/modules/reports/services/
 
 export function ReportsPageClient({ report }: { report: ReportsOverview }) {
   const [period, setPeriod] = useState<ReportsPeriod>(report.period)
+  const [customRange, setCustomRange] = useState({ from: "", to: "" })
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -25,17 +26,43 @@ export function ReportsPageClient({ report }: { report: ReportsOverview }) {
     setPeriod(report.period)
   }, [report.period])
 
+  useEffect(() => {
+    setCustomRange({
+      from: searchParams.get("from") ?? "",
+      to: searchParams.get("to") ?? "",
+    })
+  }, [searchParams])
+
   function handlePeriodChange(nextPeriod: ReportsPeriod) {
     setPeriod(nextPeriod)
     const params = new URLSearchParams(searchParams.toString())
     if (nextPeriod === "this_month") params.delete("range")
     else params.set("range", nextPeriod)
+    if (nextPeriod !== "custom") {
+      params.delete("from")
+      params.delete("to")
+    }
     router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false })
+  }
+
+  function applyCustomRange() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("range", "custom")
+    params.set("from", customRange.from)
+    params.set("to", customRange.to)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
   return (
     <div className="space-y-5">
-      <ReportsToolbar period={period} onPeriodChange={handlePeriodChange} />
+      <ReportsToolbar
+        period={period}
+        onPeriodChange={handlePeriodChange}
+        customFrom={customRange.from}
+        customTo={customRange.to}
+        onCustomChange={setCustomRange}
+        onCustomApply={applyCustomRange}
+      />
 
       <ReportsSummaryCards kpi={report.kpi} currency={report.currency} />
 

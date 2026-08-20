@@ -9,9 +9,17 @@ import { useI18n } from "@/contexts/i18n-context"
 export function FinancesDateRange({
   value,
   onChange,
+  customFrom,
+  customTo,
+  onCustomChange,
+  onCustomApply,
 }: {
   value: DateRange
   onChange: (v: DateRange) => void
+  customFrom: string
+  customTo: string
+  onCustomChange: (range: { from: string; to: string }) => void
+  onCustomApply: () => void
 }) {
   const { t } = useI18n()
 
@@ -51,6 +59,31 @@ export function FinancesDateRange({
           )
         })}
       </div>
+      {value === "custom" && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 bg-white p-2 shadow-sm">
+          <input
+            type="date"
+            value={customFrom}
+            onChange={(event) => onCustomChange({ from: event.target.value, to: customTo })}
+            className="h-8 rounded-lg border border-slate-200 px-2 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            aria-label={t("finances.range.startDate")}
+          />
+          <input
+            type="date"
+            value={customTo}
+            onChange={(event) => onCustomChange({ from: customFrom, to: event.target.value })}
+            className="h-8 rounded-lg border border-slate-200 px-2 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+            aria-label={t("finances.range.endDate")}
+          />
+          <button
+            type="button"
+            onClick={onCustomApply}
+            className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-500"
+          >
+            {t("finances.range.apply")}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

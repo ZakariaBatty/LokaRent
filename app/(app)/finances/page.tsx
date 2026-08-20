@@ -15,7 +15,10 @@ function parseRange(value: string | undefined): FinanceReportingRange {
 
 function parseDate(value: string | undefined) {
   if (!value) return undefined
-  const date = new Date(value)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value)
   return Number.isNaN(date.getTime()) ? undefined : date
 }
 

@@ -74,6 +74,7 @@ function mapAssignment(assignment: DriverWithDetails["reservationAssignments"][n
   const reservation = assignment.reservation;
   return {
     id: assignment.id,
+    reservationId: reservation.id,
     reservationCode: reservation.code,
     clientName: customerName(assignment),
     carLabel: `${reservation.vehicle.brand} ${reservation.vehicle.model} ${reservation.vehicle.year}`,

@@ -10,19 +10,24 @@ import type {
 import type { VehicleWithFleetDetails } from "../repositories/cars.repository";
 
 function toIsoDate(value: Date | string | null | undefined) {
-  if (!value) return new Date(0).toISOString();
+  if (!value) return "";
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function daysUntil(value: Date | string | null | undefined) {
-  if (!value) return 0;
+  if (!value) return null;
   return Math.ceil((new Date(value).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-function documentStatus(daysLeft: number): DocumentStatus {
+function documentStatus(daysLeft: number | null): DocumentStatus {
+  if (daysLeft === null) return "unknown";
   if (daysLeft < 0) return "expired";
   if (daysLeft <= 30) return "warning";
   return "ok";
+}
+
+function documentDaysLeft(daysLeft: number | null) {
+  return daysLeft ?? 0;
 }
 
 function mapStatus(status: VehicleStatus): CarStatus {
@@ -169,7 +174,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: insurance?.currency ?? undefined,
       documentUrl: insurance?.documentUrl ?? undefined,
       status: documentStatus(insuranceDays),
-      daysLeft: insuranceDays,
+      daysLeft: documentDaysLeft(insuranceDays),
     },
     registration: registration
       ? {
@@ -179,7 +184,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
           issuingAuthority: registration.issuingAuthority ?? undefined,
           documentUrl: registration.documentUrl ?? undefined,
           status: documentStatus(registrationDays),
-          daysLeft: registrationDays,
+          daysLeft: documentDaysLeft(registrationDays),
         }
       : null,
     vignette: {
@@ -190,7 +195,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: vignette?.currency ?? undefined,
       documentUrl: vignette?.documentUrl ?? undefined,
       status: documentStatus(vignetteDays),
-      daysLeft: vignetteDays,
+      daysLeft: documentDaysLeft(vignetteDays),
     },
     visiteTechnique: {
       lastDate: toIsoDate(inspection?.inspectedAt),
@@ -201,7 +206,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: inspection?.currency ?? undefined,
       documentUrl: inspection?.documentUrl ?? undefined,
       status: documentStatus(inspectionDays),
-      daysLeft: inspectionDays,
+      daysLeft: documentDaysLeft(inspectionDays),
     },
     carteGriseUploaded: Boolean(registration?.documentUrl),
     creditAuto: null,

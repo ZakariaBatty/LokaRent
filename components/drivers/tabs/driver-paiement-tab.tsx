@@ -1,5 +1,7 @@
 "use client"
 
+import { useState } from "react"
+import type React from "react"
 import { Wallet, Clock, TrendingUp, ArrowUpRight, History } from "lucide-react"
 import { type Driver, formatMAD, formatDate, paymentTypeConfig } from "@/lib/drivers-data"
 import { cn } from "@/lib/utils"
@@ -12,8 +14,48 @@ const entryTypeConfig: Record<string, { label: string; color: string }> = {
   advance: { label: fr.drivers.payments.advance, color: "bg-amber-50 text-amber-700 border-amber-200" },
 }
 
-export function DriverPaiementTab({ driver }: { driver: Driver }) {
+export type DriverPaymentDraft = {
+  reservationId: string
+  paidAt: string
+  amount: number | ""
+  notes: string
+}
+
+function todayInput() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+export function DriverPaiementTab({
+  driver,
+  onRecordPayment,
+}: {
+  driver: Driver
+  onRecordPayment?: (draft: DriverPaymentDraft) => Promise<boolean>
+}) {
   const pt = paymentTypeConfig[driver.paymentType]
+  const [formOpen, setFormOpen] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [draft, setDraft] = useState<DriverPaymentDraft>({
+    reservationId: "",
+    paidAt: todayInput(),
+    amount: "",
+    notes: "",
+  })
+
+  async function submitPayment(event: React.FormEvent) {
+    event.preventDefault()
+    if (!onRecordPayment || draft.amount === "" || Number(draft.amount) <= 0) return
+    setSaving(true)
+    try {
+      const ok = await onRecordPayment(draft)
+      if (ok) {
+        setFormOpen(false)
+        setDraft({ reservationId: "", paidAt: todayInput(), amount: "", notes: "" })
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -120,10 +162,93 @@ export function DriverPaiementTab({ driver }: { driver: Driver }) {
 
       {/* Payment history */}
       <section className="rounded-2xl border border-slate-200 bg-white">
-        <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
-          <Clock className="h-3.5 w-3.5 text-slate-400" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">{fr.drivers.payments.history}</h3>
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-3">
+          <div className="flex items-center gap-2">
+            <Clock className="h-3.5 w-3.5 text-slate-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">{fr.drivers.payments.history}</h3>
+          </div>
+          {onRecordPayment && (
+            <button
+              type="button"
+              onClick={() => setFormOpen((open) => !open)}
+              className="inline-flex h-8 items-center rounded-lg border border-blue-100 bg-blue-50 px-2.5 text-[11px] font-semibold text-blue-700 transition hover:bg-blue-100"
+            >
+              {fr.drivers.payments.addPayment}
+            </button>
+          )}
         </div>
+        {formOpen && (
+          <form onSubmit={submitPayment} className="grid gap-3 border-b border-slate-100 bg-slate-50/60 px-5 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-600">{fr.drivers.payments.paidAt}</span>
+                <input
+                  type="date"
+                  value={draft.paidAt}
+                  onChange={(event) => setDraft((current) => ({ ...current, paidAt: event.target.value }))}
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  required
+                />
+              </label>
+              <label className="space-y-1">
+                <span className="text-[11px] font-semibold text-slate-600">{fr.drivers.payments.amount}</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.amount}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      amount: event.target.value === "" ? "" : Number(event.target.value),
+                    }))
+                  }
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+                  required
+                />
+              </label>
+            </div>
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-slate-600">{fr.drivers.payments.assignment}</span>
+              <select
+                value={draft.reservationId}
+                onChange={(event) => setDraft((current) => ({ ...current, reservationId: event.target.value }))}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+              >
+                <option value="">{fr.drivers.payments.noAssignment}</option>
+                {driver.assignments.map((assignment) => (
+                  <option key={assignment.id} value={assignment.reservationId}>
+                    {assignment.reservationCode} - {assignment.clientName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-slate-600">{fr.drivers.payments.notes}</span>
+              <input
+                value={draft.notes}
+                onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))}
+                className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-900 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setFormOpen(false)}
+                className="inline-flex h-8 items-center rounded-lg border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                {fr.drivers.payments.cancel}
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex h-8 items-center rounded-lg bg-blue-600 px-3 text-[11px] font-semibold text-white transition hover:bg-blue-500 disabled:opacity-60"
+              >
+                {saving ? fr.drivers.payments.saving : fr.drivers.payments.submit}
+              </button>
+            </div>
+          </form>
+        )}
         {driver.paymentHistory.length === 0 ? (
           <p className="px-5 py-6 text-center text-sm text-slate-400">{fr.drivers.payments.empty}</p>
         ) : (

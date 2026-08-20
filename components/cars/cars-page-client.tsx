@@ -7,7 +7,7 @@ import { Plus, Car as CarIcon } from "lucide-react"
 import { toast } from "sonner"
 import { type Car, type CarStatus, type CarCategory } from "@/lib/cars-data"
 import type { CarListDto } from "@/modules/cars/dto/car-response.dto"
-import { createCarAction, deleteCarAction, updateCarAction } from "@/modules/cars/actions/create-car.action"
+import { createCarAction, deleteCarAction, updateCarAction, updateVehicleDocumentAction } from "@/modules/cars/actions/create-car.action"
 import { mapUiFuel, mapUiStatus } from "@/modules/cars/mappers/car.mapper"
 import { CarsFilters } from "@/components/cars/cars-filters"
 import { CarCard } from "@/components/cars/car-card"
@@ -19,6 +19,9 @@ import { CarFormPanel, type CarFormDraft } from "@/components/cars/car-form-pane
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
+
+type DocumentType = "insurance" | "registration" | "vignette" | "inspection"
+type DocumentDraft = Record<string, string | number | undefined>
 
 type Props = {
   initialResult: CarListDto
@@ -257,6 +260,21 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
     router.refresh()
     return true
   }
+
+  const handleDocumentSave = async (car: Car, documentType: DocumentType, draft: DocumentDraft) => {
+    const result = await updateVehicleDocumentAction({
+      vehicleId: car.id,
+      documentType,
+      ...draft,
+    })
+    if (!result.success) {
+      toast.error(actionMessage(result.messageKey))
+      return false
+    }
+    toast.success(fr.fleet.vehicleUpdated)
+    router.refresh()
+    return true
+  }
   const confirmDelete = async () => {
     if (!deletingCar) return false
     const result = await deleteCarAction({ vehicleId: deletingCar.id })
@@ -445,6 +463,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
                 onClose={() => setSelectedId(null)}
                 onEdit={() => openEditForm(selectedCar)}
                 onEditDocuments={() => openDocumentsForm(selectedCar)}
+                onSaveDocument={(documentType, draft) => handleDocumentSave(selectedCar, documentType, draft)}
                 onDelete={() => openDelete(selectedCar)}
                 canDelete={canDelete}
               />

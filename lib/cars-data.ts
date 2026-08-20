@@ -2,7 +2,7 @@ export type CarStatus = "disponible" | "louee" | "maintenance" | "hors_service"
 export type CarCategory = "Citadine" | "Berline" | "SUV" | "Utilitaire"
 export type FuelType = "Essence" | "Diesel" | "Hybride"
 
-export type DocumentStatus = "ok" | "warning" | "expired"
+export type DocumentStatus = "ok" | "warning" | "expired" | "unknown"
 
 export type CarDocument = {
   status: DocumentStatus
@@ -12,8 +12,8 @@ export type CarDocument = {
 export type Insurance = {
   company: string
   policyNumber?: string
-  startDate: string
-  endDate: string
+  startDate?: string
+  endDate?: string
   premiumAmount?: number
   currency?: string
   documentUrl?: string
@@ -34,7 +34,7 @@ export type Registration = {
 export type Vignette = {
   year: number
   paidAt?: string
-  endDate: string
+  endDate?: string
   amount?: number
   currency?: string
   documentUrl?: string
@@ -43,8 +43,8 @@ export type Vignette = {
 }
 
 export type VisiteTechnique = {
-  lastDate: string
-  nextDate: string
+  lastDate?: string
+  nextDate?: string
   result?: string
   center?: string
   cost?: number

@@ -15,6 +15,7 @@ import type { FinanceOverviewReport } from "@/modules/finances/services/finances
 
 export function FinancesPageClient({ report }: { report: FinanceOverviewReport }) {
   const [range, setRange] = useState<DateRange>(report.range)
+  const [customRange, setCustomRange] = useState({ from: "", to: "" })
   const [selected, setSelected] = useState<CarFinance | null>(null)
   const router = useRouter()
   const pathname = usePathname()
@@ -24,19 +25,45 @@ export function FinancesPageClient({ report }: { report: FinanceOverviewReport }
     setRange(report.range)
   }, [report.range])
 
+  useEffect(() => {
+    setCustomRange({
+      from: searchParams.get("from") ?? "",
+      to: searchParams.get("to") ?? "",
+    })
+  }, [searchParams])
+
   function handleRangeChange(nextRange: DateRange) {
     setRange(nextRange)
     setSelected(null)
     const params = new URLSearchParams(searchParams.toString())
     if (nextRange === "this_month") params.delete("range")
     else params.set("range", nextRange)
+    if (nextRange !== "custom") {
+      params.delete("from")
+      params.delete("to")
+    }
     router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`, { scroll: false })
+  }
+
+  function applyCustomRange() {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("range", "custom")
+    params.set("from", customRange.from)
+    params.set("to", customRange.to)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
   return (
     <div className="space-y-6">
       {/* Header + date range */}
-      <FinancesDateRange value={range} onChange={handleRangeChange} />
+      <FinancesDateRange
+        value={range}
+        onChange={handleRangeChange}
+        customFrom={customRange.from}
+        customTo={customRange.to}
+        onCustomChange={setCustomRange}
+        onCustomApply={applyCustomRange}
+      />
 
       {/* Summary cards */}
       <FinancesSummaryCards summary={report.summary} currency={report.currency} />
