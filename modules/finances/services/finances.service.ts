@@ -341,6 +341,10 @@ function monthLabel(value: Date) {
   return new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(value).replace(".", "");
 }
 
+function monthKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function resolveFinanceReportingPeriod(input: {
   range?: FinanceReportingRange;
   customFrom?: Date | null;
@@ -390,14 +394,14 @@ function buildMonthlyBuckets(from: Date, to: Date) {
     const nextMonth = addMonths(cursor, 1);
     const bucketTo = nextMonth > to ? to : nextMonth;
     buckets.push({
-      key: cursor.toISOString().slice(0, 7),
+      key: monthKey(cursor),
       label: monthLabel(cursor),
       from: bucketFrom,
       to: bucketTo,
     });
     cursor = nextMonth;
   }
-  return buckets.length > 0 ? buckets : [{ key: from.toISOString().slice(0, 7), label: monthLabel(from), from, to }];
+  return buckets.length > 0 ? buckets : [{ key: monthKey(from), label: monthLabel(from), from, to }];
 }
 
 function buildLastTwelveMonthStarts(to: Date) {
@@ -2224,10 +2228,10 @@ export async function getFinanceOverviewReportService(
     expensesByVehicle.set(row.vehicleId, current);
   }
 
-  const monthKeys = twelveMonthStarts.map((date) => date.toISOString().slice(0, 7));
+  const monthKeys = twelveMonthStarts.map(monthKey);
   const monthlyRevenueByVehicle = new Map<string, Map<string, Prisma.Decimal>>();
   for (const row of vehicleData.monthlyRevenueRows) {
-    const key = row.month.toISOString().slice(0, 7);
+    const key = monthKey(row.month);
     const current = monthlyRevenueByVehicle.get(row.vehicleId) ?? new Map<string, Prisma.Decimal>();
     current.set(key, decimal(row.amount ?? 0));
     monthlyRevenueByVehicle.set(row.vehicleId, current);
@@ -2319,11 +2323,11 @@ export async function listCustomerFinanceSummariesService(
     monthlyFrom,
     monthlyTo,
   });
-  const monthKeys = monthlyStarts.map((date) => date.toISOString().slice(0, 7));
+  const monthKeys = monthlyStarts.map(monthKey);
   const monthlyByCustomer = new Map<string, Map<string, Prisma.Decimal>>();
 
   for (const row of rows.monthlyRows) {
-    const key = row.month.toISOString().slice(0, 7);
+    const key = monthKey(row.month);
     const current = monthlyByCustomer.get(row.customerId) ?? new Map<string, Prisma.Decimal>();
     current.set(key, decimal(row.invoiceAmount ?? 0).minus(row.creditNoteAmount ?? 0));
     monthlyByCustomer.set(row.customerId, current);

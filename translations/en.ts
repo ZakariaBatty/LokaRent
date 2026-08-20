@@ -178,6 +178,14 @@ export default {
     editReservation: 'Edit Reservation',
     deleteReservation: 'Delete Reservation',
     pickupLocation: 'Pickup Location',
+    kpi: {
+      total: 'Total',
+      active: 'Active',
+      bookedValue: 'Booked value',
+      confirmation: 'Confirmation',
+      cancellations: 'Cancellations',
+      overdue: 'Overdue',
+    },
     returnLocation: 'Return Location',
     pricePerDay: 'Price per day',
     driver: 'Driver',
@@ -891,6 +899,7 @@ export default {
       vehicle: 'Vehicle',
       days: 'Days',
       trend: 'Trend',
+      unavailable: 'N/A',
     },
     trends: {
       up: 'Up',

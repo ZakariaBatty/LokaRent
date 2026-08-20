@@ -135,6 +135,10 @@ function monthLabel(value: Date) {
   return value.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "");
 }
 
+function monthKey(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}`;
+}
+
 function dateLabel(value: Date) {
   return value.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
@@ -228,10 +232,10 @@ export async function getDashboardOverviewService(input: DashboardServiceContext
   const previousBookedValue = decimalNumber(bookedValue.previous);
   const bookedValueDelta = deltaPercent(currentBookedValue, previousBookedValue);
   const months = Array.from({ length: 6 }, (_, index) => addMonths(chartFrom, index));
-  const seriesByMonth = new Map(seriesRows.map((row) => [row.month.toISOString().slice(0, 7), decimalNumber(row.amount)]));
+  const seriesByMonth = new Map(seriesRows.map((row) => [monthKey(row.month), decimalNumber(row.amount)]));
   const bookedValueSeries = months.map((month) => ({
     month: monthLabel(month),
-    value: seriesByMonth.get(month.toISOString().slice(0, 7)) ?? 0,
+    value: seriesByMonth.get(monthKey(month)) ?? 0,
   }));
 
   const expiringDocumentCount =

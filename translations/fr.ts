@@ -178,6 +178,14 @@ export default {
     editReservation: 'Modifier la réservation',
     deleteReservation: 'Supprimer la réservation',
     pickupLocation: 'Lieu de retrait',
+    kpi: {
+      total: 'Total',
+      active: 'En cours',
+      bookedValue: 'Valeur réservée',
+      confirmation: 'Confirmation',
+      cancellations: 'Annulations',
+      overdue: 'Retards',
+    },
     returnLocation: 'Lieu de retour',
     pricePerDay: 'Prix par jour',
     driver: 'Chauffeur',
@@ -891,6 +899,7 @@ export default {
       vehicle: 'Véhicule',
       days: 'Jours',
       trend: 'Tendance',
+      unavailable: 'N/D',
     },
     trends: {
       up: 'Hausse',

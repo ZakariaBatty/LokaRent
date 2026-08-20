@@ -76,6 +76,67 @@ const heldDepositStatusSql = Prisma.join(
     (status) => Prisma.sql`${status}::"DepositStatus"`),
 );
 
+async function sumInvoicedAmount(input: FinanceReportingInput, db: DatabaseClient = prisma) {
+  const rows = await db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(i.total_amount), 0)::numeric AS amount
+    FROM invoices i
+    WHERE i.company_id = ${input.companyId}::uuid
+      AND i.agency_id = ${input.agencyId}::uuid
+      AND i.deleted_at IS NULL
+      AND i.currency = ${input.currency}
+      AND i.status IN (${validRevenueInvoiceStatusSql})
+      AND i.issued_at >= ${input.from}
+      AND i.issued_at < ${input.to}
+  `;
+  return rows[0]?.amount ?? null;
+}
+
+async function sumCreditNoteAmount(input: FinanceReportingInput, db: DatabaseClient = prisma) {
+  const rows = await db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(cn.amount), 0)::numeric AS amount
+    FROM credit_notes cn
+    JOIN invoices i ON i.id = cn.original_invoice_id
+    WHERE cn.company_id = ${input.companyId}::uuid
+      AND cn.agency_id = ${input.agencyId}::uuid
+      AND cn.currency = ${input.currency}
+      AND cn.issued_at >= ${input.from}
+      AND cn.issued_at < ${input.to}
+      AND i.company_id = ${input.companyId}::uuid
+      AND i.agency_id = ${input.agencyId}::uuid
+      AND i.deleted_at IS NULL
+      AND i.currency = ${input.currency}
+      AND i.status IN (${validRevenueInvoiceStatusSql})
+  `;
+  return rows[0]?.amount ?? null;
+}
+
+async function sumCashCollectedAmount(input: FinanceReportingInput, db: DatabaseClient = prisma) {
+  const rows = await db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(p.amount), 0)::numeric AS amount
+    FROM payments p
+    WHERE p.company_id = ${input.companyId}::uuid
+      AND p.agency_id = ${input.agencyId}::uuid
+      AND p.currency = ${input.currency}
+      AND p.paid_at >= ${input.from}
+      AND p.paid_at < ${input.to}
+  `;
+  return rows[0]?.amount ?? null;
+}
+
+async function sumExpenseAmount(input: FinanceReportingInput, db: DatabaseClient = prisma) {
+  const rows = await db.$queryRaw<{ amount: Prisma.Decimal | null }[]>`
+    SELECT COALESCE(SUM(e.amount), 0)::numeric AS amount
+    FROM expenses e
+    WHERE e.company_id = ${input.companyId}::uuid
+      AND e.agency_id = ${input.agencyId}::uuid
+      AND e.deleted_at IS NULL
+      AND e.currency = ${input.currency}
+      AND e.occurred_at >= ${input.from}
+      AND e.occurred_at < ${input.to}
+  `;
+  return rows[0]?.amount ?? null;
+}
+
 const invoiceInclude = {
   lineItems: { orderBy: { sortOrder: "asc" } },
   payments: { orderBy: { paidAt: "desc" } },
@@ -842,52 +903,10 @@ export async function summarizeFinanceReportingTotals(
     depositsHeld,
     outstanding,
   ] = await Promise.all([
-    db.invoice.aggregate({
-      where: {
-        companyId: input.companyId,
-        agencyId: input.agencyId,
-        deletedAt: null,
-        currency: input.currency,
-        status: { in: [...validRevenueInvoiceStatuses] },
-        issuedAt: { gte: input.from, lt: input.to },
-      },
-      _sum: { totalAmount: true },
-    }),
-    db.creditNote.aggregate({
-      where: {
-        companyId: input.companyId,
-        agencyId: input.agencyId,
-        currency: input.currency,
-        issuedAt: { gte: input.from, lt: input.to },
-        originalInvoice: {
-          companyId: input.companyId,
-          agencyId: input.agencyId,
-          deletedAt: null,
-          currency: input.currency,
-          status: { in: [...validRevenueInvoiceStatuses] },
-        },
-      },
-      _sum: { amount: true },
-    }),
-    db.payment.aggregate({
-      where: {
-        companyId: input.companyId,
-        agencyId: input.agencyId,
-        currency: input.currency,
-        paidAt: { gte: input.from, lt: input.to },
-      },
-      _sum: { amount: true },
-    }),
-    db.expense.aggregate({
-      where: {
-        companyId: input.companyId,
-        agencyId: input.agencyId,
-        deletedAt: null,
-        currency: input.currency,
-        occurredAt: { gte: input.from, lt: input.to },
-      },
-      _sum: { amount: true },
-    }),
+    sumInvoicedAmount(input, db),
+    sumCreditNoteAmount(input, db),
+    sumCashCollectedAmount(input, db),
+    sumExpenseAmount(input, db),
     db.deposit.aggregate({
       where: {
         companyId: input.companyId,
@@ -935,10 +954,10 @@ export async function summarizeFinanceReportingTotals(
   ]);
 
   return {
-    invoicedAmount: invoiced._sum.totalAmount,
-    creditNoteAmount: creditNotes._sum.amount,
-    cashCollectedAmount: cashCollected._sum.amount,
-    expenseAmount: expenses._sum.amount,
+    invoicedAmount: invoiced,
+    creditNoteAmount: creditNotes,
+    cashCollectedAmount: cashCollected,
+    expenseAmount: expenses,
     depositHeldAmount: (depositsHeld._sum.amount ?? new Prisma.Decimal(0)).minus(
       depositsHeld._sum.releasedAmount ?? new Prisma.Decimal(0),
     ),
@@ -953,54 +972,20 @@ export async function listFinanceReportingSeries(
   const [invoiceRows, creditRows, expenseRows] = await Promise.all([
     Promise.all(
       input.buckets.map(async (bucket) => {
-        const row = await db.invoice.aggregate({
-          where: {
-            companyId: input.companyId,
-            agencyId: input.agencyId,
-            deletedAt: null,
-            currency: input.currency,
-            status: { in: [...validRevenueInvoiceStatuses] },
-            issuedAt: { gte: bucket.from, lt: bucket.to },
-          },
-          _sum: { totalAmount: true },
-        });
-        return { key: bucket.key, amount: row._sum.totalAmount };
+        const amount = await sumInvoicedAmount({ ...input, from: bucket.from, to: bucket.to }, db);
+        return { key: bucket.key, amount };
       }),
     ),
     Promise.all(
       input.buckets.map(async (bucket) => {
-        const row = await db.creditNote.aggregate({
-          where: {
-            companyId: input.companyId,
-            agencyId: input.agencyId,
-            currency: input.currency,
-            issuedAt: { gte: bucket.from, lt: bucket.to },
-            originalInvoice: {
-              companyId: input.companyId,
-              agencyId: input.agencyId,
-              deletedAt: null,
-              currency: input.currency,
-              status: { in: [...validRevenueInvoiceStatuses] },
-            },
-          },
-          _sum: { amount: true },
-        });
-        return { key: bucket.key, amount: row._sum.amount };
+        const amount = await sumCreditNoteAmount({ ...input, from: bucket.from, to: bucket.to }, db);
+        return { key: bucket.key, amount };
       }),
     ),
     Promise.all(
       input.buckets.map(async (bucket) => {
-        const row = await db.expense.aggregate({
-          where: {
-            companyId: input.companyId,
-            agencyId: input.agencyId,
-            deletedAt: null,
-            currency: input.currency,
-            occurredAt: { gte: bucket.from, lt: bucket.to },
-          },
-          _sum: { amount: true },
-        });
-        return { key: bucket.key, amount: row._sum.amount };
+        const amount = await sumExpenseAmount({ ...input, from: bucket.from, to: bucket.to }, db);
+        return { key: bucket.key, amount };
       }),
     ),
   ]);

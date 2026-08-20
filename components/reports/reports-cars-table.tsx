@@ -31,8 +31,8 @@ export function ReportsCarsTable({ rows, currency }: { rows: ReportsVehicleRow[]
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
   const sorted = [...rows].sort((a, b) => {
-    const av = a[sortKey] as number
-    const bv = b[sortKey] as number
+    const av = a[sortKey] ?? Number.NEGATIVE_INFINITY
+    const bv = b[sortKey] ?? Number.NEGATIVE_INFINITY
     return sortDir === "desc" ? bv - av : av - bv
   })
 
@@ -174,14 +174,16 @@ export function ReportsCarsTable({ rows, currency }: { rows: ReportsVehicleRow[]
                   <td className="px-3 py-3">
                     <span
                       className={`text-xs font-semibold tabular-nums ${
-                        c.roi >= 30
+                        c.roi === null
+                          ? "text-slate-400"
+                          : c.roi >= 30
                           ? "text-emerald-600"
                           : c.roi >= 15
                             ? "text-amber-600"
                             : "text-rose-600"
                       }`}
                     >
-                      {c.roi.toFixed(1)}%
+                      {c.roi === null ? t("reports.vehicleTable.unavailable") : `${c.roi.toFixed(1)}%`}
                     </span>
                   </td>
                   <td className="px-5 py-3 text-right">

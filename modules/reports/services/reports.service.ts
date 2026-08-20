@@ -46,7 +46,7 @@ export type ReportsVehicleRow = {
   revenue: number;
   expenses: number;
   profit: number;
-  roi: number;
+  roi: number | null;
   occupancy: number;
   avgRevenuePerDay: number;
   trend: "up" | "down" | "flat";
@@ -221,7 +221,6 @@ export async function getReportsOverviewService(
     const operations = operationByVehicle.get(vehicle.id);
     const daysRented = Math.round(decimalNumber(operations?.daysRented));
     const daysAvailable = Math.max(0, periodDayCount - daysRented);
-    const roi = vehicle.expenses > 0 ? Number(((vehicle.profit * 100) / vehicle.expenses).toFixed(1)) : 0;
 
     return {
       id: vehicle.id,
@@ -235,7 +234,7 @@ export async function getReportsOverviewService(
       revenue: vehicle.revenue,
       expenses: vehicle.expenses,
       profit: vehicle.profit,
-      roi,
+      roi: null,
       occupancy: vehicle.occupancyRate,
       avgRevenuePerDay: daysRented > 0 ? Math.round(vehicle.revenue / daysRented) : 0,
       trend: vehicle.profit > 0 ? "up" : vehicle.profit < 0 ? "down" : "flat",

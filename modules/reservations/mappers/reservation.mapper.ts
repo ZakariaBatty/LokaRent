@@ -132,10 +132,10 @@ function additionalDriverName(extras: ReservationPayload["extras"]) {
 export function mapReservationToUi(reservation: ReservationPayload): Reservation {
   const name = customerName(reservation.customer);
   const driverAssignment = reservation.driverAssignments[0];
-  const total = Number(reservation.totalAmount);
   const advance = Number(reservation.advanceAmount);
   const authorizedDriver = reservation.authorizedDrivers[0];
   const currentPricingSnapshot = reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? null;
+  const total = Number(currentPricingSnapshot?.totalAmount ?? reservation.totalAmount);
   const currentContract = reservation.contracts[0];
   const depositSummary = mapDepositSummary(reservation);
   return {
