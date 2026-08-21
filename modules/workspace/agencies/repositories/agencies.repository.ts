@@ -164,15 +164,19 @@ export async function hasActiveAgencyMembership(
 }
 
 export async function getCompanyUsageCounts(companyId: string, db: DatabaseClient = prisma) {
-  const [agencies, users, vehicles, reservations, customers] = await Promise.all([
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const [agencies, users, vehicles, reservations, reservationsThisMonth, customers] = await Promise.all([
     db.agency.count({ where: { companyId, deletedAt: null } }),
     db.user.count({ where: { companyId, deletedAt: null } }),
     db.vehicle.count({ where: { companyId, deletedAt: null } }),
     db.reservation.count({ where: { companyId, deletedAt: null } }),
+    db.reservation.count({ where: { companyId, deletedAt: null, createdAt: { gte: monthStart } } }),
     db.customer.count({ where: { companyId, deletedAt: null } }),
   ]);
 
-  return { agencies, users, vehicles, reservations, customers };
+  return { agencies, users, vehicles, reservations, reservationsThisMonth, customers };
 }
 
 export const agenciesRepository = {
