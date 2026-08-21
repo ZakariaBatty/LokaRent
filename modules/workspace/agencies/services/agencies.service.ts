@@ -1,4 +1,12 @@
-import { createId, createNotFoundError, publishDomainEvent } from "@/shared";
+import type { Prisma } from "@lokarent/db";
+import {
+  createId,
+  createNotFoundError,
+  publishDomainEvent,
+  runInTransaction,
+  writeActivityLog,
+  writeAuditLog,
+} from "@/shared";
 import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 import {
   createAgency,
@@ -22,6 +30,69 @@ export type WorkspaceActor = {
 
 type CompanyCreateData = Omit<Parameters<typeof createCompany>[0], "id">;
 type AgencyCreateData = Omit<Parameters<typeof createAgency>[0], "id" | "companyId">;
+
+function toJsonValue(value: unknown): Prisma.InputJsonValue | null {
+  if (value === undefined || value === null) return null;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+function safeAgencySnapshot(agency: {
+  id: string;
+  name: string;
+  code: string;
+  status: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: unknown;
+}): Prisma.InputJsonObject {
+  return {
+    id: agency.id,
+    name: agency.name,
+    code: agency.code,
+    status: agency.status,
+    phone: agency.phone ?? null,
+    email: agency.email ?? null,
+    address: toJsonValue(agency.address),
+  };
+}
+
+async function writeWorkspaceAgencyLogs(
+  input: WorkspaceActor & {
+    companyId: string;
+    agencyId: string;
+    action: "AgencyCreated" | "AgencyUpdated" | "AgencyDeactivated";
+    changes: Prisma.InputJsonObject;
+    db: Parameters<typeof writeAuditLog>[1];
+  },
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      action: input.action,
+      entityType: "agency",
+      entityId: input.agencyId,
+      changes: input.changes,
+    },
+    input.db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "agency",
+      entityId: input.agencyId,
+      verb: input.action,
+      metadata: input.changes,
+    },
+    input.db,
+  );
+}
 
 export async function getCompanyService(input: { companyId: string }) {
   const company = await findCompanyById(input);
@@ -116,11 +187,24 @@ export async function createAgencyService(
     requestedIncrement: 1,
   });
 
-  const agency = await createAgency({
-    ...input.data,
-    id: createId(),
-    companyId: input.companyId,
+  const agency = await runInTransaction(async (db) => {
+    const created = await createAgency({
+      ...input.data,
+      id: createId(),
+      companyId: input.companyId,
+    }, db);
+    await writeWorkspaceAgencyLogs({
+      companyId: created.companyId,
+      agencyId: created.id,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyCreated",
+      changes: { after: safeAgencySnapshot(created) },
+      db,
+    });
+    return created;
   });
+
   await publishDomainEvent({
     name: "AgencyCreated",
     companyId: agency.companyId,
@@ -141,19 +225,60 @@ export async function updateAgencyService(
     data: Parameters<typeof updateAgency>[0]["data"];
   },
 ) {
-  await getAgencyService(input);
-  await updateAgency(input);
-  return getAgencyService(input);
+  const result = await runInTransaction(async (db) => {
+    const before = await findAgencyById(input, db);
+    if (!before) throw createNotFoundError("Agency", input);
+    await updateAgency(input, db);
+    const after = await findAgencyById(input, db);
+    if (!after) throw createNotFoundError("Agency", input);
+    await writeWorkspaceAgencyLogs({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyUpdated",
+      changes: {
+        before: safeAgencySnapshot(before),
+        after: safeAgencySnapshot(after),
+      },
+      db,
+    });
+    return after;
+  });
+  return result;
 }
 
 export async function deactivateAgencyService(
   input: WorkspaceActor & { companyId: string; agencyId: string },
 ) {
-  await getAgencyService(input);
-  const result = await softDeleteAgency({
-    ...input,
-    deletedBy: input.userId ?? null,
+  const result = await runInTransaction(async (db) => {
+    const before = await findAgencyById(input, db);
+    if (!before) throw createNotFoundError("Agency", input);
+    const deleted = await softDeleteAgency({
+      ...input,
+      deletedBy: input.userId ?? null,
+    }, db);
+    const after = await findAgencyById({ ...input, includeDeleted: true }, db);
+    await writeWorkspaceAgencyLogs({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyDeactivated",
+      changes: {
+        before: safeAgencySnapshot(before),
+        after: after
+          ? {
+              ...safeAgencySnapshot(after),
+              deletedAt: after.deletedAt?.toISOString() ?? null,
+            }
+          : null,
+      },
+      db,
+    });
+    return deleted;
   });
+
   await publishDomainEvent({
     name: "AgencyDeactivated",
     companyId: input.companyId,

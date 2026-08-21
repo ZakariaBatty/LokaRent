@@ -7,10 +7,7 @@ import {
   Car,
   ChevronsLeft,
   ChevronsRight,
-  Crown,
-  HardDrive,
   PanelLeftClose,
-  PanelRightClose,
 } from "lucide-react"
 import { navItems, secondaryNav } from "@/lib/dashboard-data"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -46,88 +43,6 @@ function CollapsedAgencyBadge() {
     </Tooltip>
   )
 }
-
-/** Plan + fleet usage widget at the bottom of the sidebar */
-function PlanWidget({ collapsed }: { collapsed: boolean }) {
-  const { activeAgency, agencyData } = useAgency()
-  const plan = activeAgency?.plan ?? 'PRO'
-  const planLabel = plan.charAt(0) + plan.slice(1).toLowerCase()
-  const planPrice = plan === 'STARTER' ? '199 DH/mo' : plan === 'BUSINESS' ? 'Sur devis' : '599 DH/mo'
-  const planMax = plan === 'STARTER' ? 20 : plan === 'BUSINESS' ? 200 : 50
-  const carCount = activeAgency && 'vehicleCount' in activeAgency
-    ? activeAgency.vehicleCount
-    : agencyData.cars.length
-  const pct = Math.min(100, Math.round((carCount / planMax) * 100))
-
-  return (
-    <div className="relative space-y-2 p-2.5 pt-3">
-      <AnimatePresence mode="wait" initial={false}>
-        {collapsed ? (
-          <motion.div
-            key="collapsed-plan"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="flex justify-center"
-          >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-amber-50 to-amber-100/50 ring-1 ring-inset ring-amber-200/60 transition-transform hover:scale-105">
-                  <Crown className="h-4 w-4 text-amber-500" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right" className="font-medium">
-                Plan {planLabel} · {carCount} / {planMax} véhicules
-              </TooltipContent>
-            </Tooltip>
-          </motion.div>
-        ) : (
-          <motion.div
-            key={`expanded-plan-${activeAgency?.id}`}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.2 }}
-            className="relative overflow-hidden rounded-xl border border-slate-200/70 bg-gradient-to-br from-blue-50/60 via-white to-indigo-50/40 p-3 shadow-[0_1px_2px_rgba(15,23,42,0.03)]"
-          >
-            <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-blue-500/10 blur-2xl" />
-            <div className="relative flex items-center gap-1.5">
-              <Crown className="h-3.5 w-3.5 text-amber-500" />
-              <span className="text-xs font-semibold text-slate-900">Plan {planLabel}</span>
-              <span className="ml-auto text-[10px] font-medium text-slate-500">{planPrice}</span>
-            </div>
-            <div className="relative mt-3 space-y-1.5">
-              <div className="flex items-center justify-between text-[10px]">
-                <span className="flex items-center gap-1 text-slate-500">
-                  <HardDrive className="h-3 w-3" />
-                  Flotte
-                </span>
-                <span className="font-semibold text-slate-700">{carCount} / {planMax}</span>
-              </div>
-              <div className="h-1 overflow-hidden rounded-full bg-slate-100">
-                <motion.div
-                  key={`bar-${activeAgency?.id}`}
-                  initial={{ width: 0 }}
-                  animate={{ width: `${pct}%` }}
-                  transition={{ duration: 1.2, ease: "easeOut", delay: 0.3 }}
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500"
-                />
-              </div>
-            </div>
-            {plan !== 'BUSINESS' && (
-              <button className="relative mt-3 flex w-full items-center justify-center rounded-md bg-gradient-to-r from-blue-600 to-indigo-600 py-1.5 text-[11px] font-semibold text-white shadow-sm shadow-blue-500/20 transition-all hover:shadow-md hover:shadow-blue-500/30">
-                Améliorer
-              </button>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
-
 
 type SidebarBodyProps = {
   collapsed: boolean
@@ -277,8 +192,6 @@ function SidebarBody({ collapsed, onHide, onToggleCollapse, showControls = true 
           </ul>
         </nav>
 
-        {/* Bottom: plan + usage */}
-        <PlanWidget collapsed={collapsed} />
       </div>
     </TooltipProvider>
   )

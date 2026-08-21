@@ -86,6 +86,7 @@ export async function assignWorkspaceMemberAgencyAction(input: unknown): Promise
       companyId: context.companyId,
       agencyId: parsed.data.agencyId,
       userId: context.userId,
+      actorName: "Workspace",
       data: {
         userId: parsed.data.userId,
         roleId: parsed.data.roleId,
@@ -115,6 +116,8 @@ export async function updateWorkspaceMemberAgencyRoleAction(input: unknown): Pro
       companyId: context.companyId,
       agencyId: parsed.data.agencyId,
       membershipId: parsed.data.membershipId,
+      userId: context.userId,
+      actorName: "Workspace",
       data: { roleId: parsed.data.roleId },
     });
     revalidateWorkspaceMembers();
@@ -139,6 +142,7 @@ export async function removeWorkspaceMemberAgencyAction(input: unknown): Promise
       agencyId: parsed.data.agencyId,
       membershipId: parsed.data.membershipId,
       userId: context.userId,
+      actorName: "Workspace",
     });
     revalidateWorkspaceMembers();
     return { success: true };
@@ -167,6 +171,7 @@ export async function removeWorkspaceMemberAction(input: unknown): Promise<Works
           agencyId: membership.agencyId,
           membershipId: membership.id,
           userId: context.userId,
+          actorName: "Workspace",
         }),
       ),
     );
@@ -174,6 +179,7 @@ export async function removeWorkspaceMemberAction(input: unknown): Promise<Works
       companyId: context.companyId,
       membershipId: parsed.data.membershipId,
       userId: context.userId,
+      actorName: "Workspace",
     });
     revalidateWorkspaceMembers();
     return { success: true };

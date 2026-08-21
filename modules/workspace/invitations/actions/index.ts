@@ -88,6 +88,7 @@ export async function createWorkspaceInvitationAction(input: unknown): Promise<W
       companyId: context.companyId,
       agencyId,
       userId: context.userId,
+      actorName: "Workspace",
       data: {
         email: parsed.data.email.toLowerCase(),
         roleId: parsed.data.roleId,
@@ -115,6 +116,8 @@ export async function revokeWorkspaceInvitationAction(input: unknown): Promise<W
     await revokeInvitationService({
       companyId: context.companyId,
       invitationId: parsed.data.invitationId,
+      userId: context.userId,
+      actorName: "Workspace",
     });
     revalidateWorkspaceInvitations();
     return { success: true };

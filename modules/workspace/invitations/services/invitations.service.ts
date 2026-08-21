@@ -49,6 +49,67 @@ export type InvitationActor = {
 type InvitationCreateData = Omit<Parameters<typeof createInvitation>[0], "id" | "companyId" | "agencyId" | "invitedBy">;
 type PublicInvitation = NonNullable<Awaited<ReturnType<typeof findInvitationByTokenHashOnly>>>;
 
+function safeInvitationSnapshot(invitation: {
+  id: string;
+  companyId: string;
+  agencyId?: string | null;
+  email: string;
+  roleId: string;
+  invitedBy: string;
+  status: string;
+  expiresAt: Date;
+  acceptedAt?: Date | null;
+}) {
+  return {
+    id: invitation.id,
+    companyId: invitation.companyId,
+    agencyId: invitation.agencyId ?? null,
+    email: invitation.email,
+    roleId: invitation.roleId,
+    invitedBy: invitation.invitedBy,
+    status: invitation.status,
+    expiresAt: invitation.expiresAt.toISOString(),
+    acceptedAt: invitation.acceptedAt?.toISOString() ?? null,
+  } satisfies Prisma.InputJsonObject;
+}
+
+async function writeWorkspaceInvitationLogs(input: InvitationActor & {
+  companyId: string;
+  agencyId?: string | null;
+  invitationId: string;
+  action: "InvitationCreated" | "InvitationRevoked";
+  changes: Prisma.InputJsonObject;
+  db: Parameters<typeof writeAuditLog>[1];
+}) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId ?? null,
+      userId: input.userId,
+      action: input.action,
+      entityType: "invitation",
+      entityId: input.invitationId,
+      changes: input.changes,
+    },
+    input.db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId ?? null,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "invitation",
+      entityId: input.invitationId,
+      verb: input.action,
+      metadata: input.changes,
+    },
+    input.db,
+  );
+}
+
 export function normalizeInvitationEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -317,14 +378,28 @@ export async function createInvitationService(
   if (existingUser) {
     throw createValidationError("Email already belongs to this company");
   }
-  const invitation = await createInvitation({
-    ...input.data,
-    email: normalizedEmail,
-    id: createId(),
-    companyId: input.companyId,
-    agencyId: input.agencyId ?? null,
-    invitedBy: input.userId ?? "",
+  const invitation = await runInTransaction(async (db) => {
+    const created = await createInvitation({
+      ...input.data,
+      email: normalizedEmail,
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId ?? null,
+      invitedBy: input.userId ?? "",
+    }, db);
+    await writeWorkspaceInvitationLogs({
+      companyId: created.companyId,
+      agencyId: created.agencyId,
+      invitationId: created.id,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "InvitationCreated",
+      changes: { after: safeInvitationSnapshot(created) },
+      db,
+    });
+    return created;
   });
+
   await publishDomainEvent({
     name: "InvitationSent",
     companyId: invitation.companyId,
@@ -444,14 +519,35 @@ export async function createInvitedAccountAndAcceptInvitationService(input: {
 export async function revokeInvitationService(input: {
   companyId: string;
   invitationId: string;
+  userId?: string | null;
+  actorName?: string;
 }) {
-  const invitation = await getInvitationService(input);
-  if (invitation.status !== "pending") {
-    throw createValidationError("Only pending invitations can be revoked");
-  }
-  return updateInvitation({
-    ...input,
-    data: { status: "revoked" },
+  return runInTransaction(async (db) => {
+    const invitation = await findInvitationById(input, db);
+    if (!invitation) throw createNotFoundError("Invitation", input);
+    if (invitation.status !== "pending") {
+      throw createValidationError("Only pending invitations can be revoked");
+    }
+    const before = safeInvitationSnapshot(invitation);
+    const result = await updateInvitation({
+      ...input,
+      data: { status: "revoked" },
+    }, db);
+    const updated = await findInvitationById(input, db);
+    await writeWorkspaceInvitationLogs({
+      companyId: input.companyId,
+      agencyId: invitation.agencyId,
+      invitationId: invitation.id,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "InvitationRevoked",
+      changes: {
+        before,
+        after: updated ? safeInvitationSnapshot(updated) : null,
+      },
+      db,
+    });
+    return result;
   });
 }
 
