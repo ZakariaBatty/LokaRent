@@ -359,6 +359,13 @@ const readonlyPermissions = [
 export const companyDefaultSeed: CompanyDefaultSeed = {
   roles: [
     {
+      name: "member",
+      description: "Internal company membership role without workspace administration access",
+      scope: RoleScope.company,
+      isSystem: true,
+      permissions: [],
+    },
+    {
       name: "owner",
       description: "Company owner with workspace and all-agency access",
       scope: RoleScope.company,

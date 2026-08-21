@@ -21,7 +21,9 @@ export default async function InvitationsPage() {
 
   const data: WorkspaceInvitationsData = {
     agencies: agencies.map((agency) => ({ id: agency.id, name: agency.name })),
-    companyRoles: roles.filter((role) => role.scope === "company").map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
+    companyRoles: roles
+      .filter((role) => role.scope === "company" && !["owner", "member"].includes(role.name.toLowerCase()))
+      .map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
     agencyRoles: roles.filter((role) => role.scope === "agency").map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
     invitations: invitations.map((invitation) => ({
       id: invitation.id,

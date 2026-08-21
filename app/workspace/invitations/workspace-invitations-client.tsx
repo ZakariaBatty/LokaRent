@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "motion/react";
-import { Building2, Clock, Mail, Plus, Send, Trash2, X } from "lucide-react";
+import { Building2, Clock, Copy, Mail, Plus, Send, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { createWorkspaceInvitationAction, revokeWorkspaceInvitationAction } from "@/modules/workspace/invitations/actions";
 import { cn } from "@/lib/utils";
@@ -296,12 +296,14 @@ function InvitationPanel({
   const [agencyId, setAgencyId] = useState(agencies[0]?.id ?? "");
   const availableRoles = scope === "agency" ? agencyRoles : companyRoles;
   const [roleId, setRoleId] = useState(availableRoles[0]?.id ?? "");
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const hasConfiguration = scope === "agency" ? agencies.length > 0 && agencyRoles.length > 0 : companyRoles.length > 0;
 
   const changeScope = (nextScope: RoleScope) => {
     setScope(nextScope);
     setRoleId((nextScope === "agency" ? agencyRoles : companyRoles)[0]?.id ?? "");
+    setInviteUrl(null);
   };
 
   const submit = () => {
@@ -314,13 +316,19 @@ function InvitationPanel({
       });
       if (result.success) {
         toast.success(labels.messages.created, { description: labels.messages.noEmailSent });
+        setInviteUrl(result.inviteUrl ?? null);
         setEmail("");
-        onClose();
         router.refresh();
       } else {
         toast.error(errorMessage(result.message, labels));
       }
     });
+  };
+
+  const copyInviteUrl = async () => {
+    if (!inviteUrl) return;
+    await navigator.clipboard.writeText(inviteUrl);
+    toast.success(labels.messages.linkCopied);
   };
 
   return (
@@ -376,6 +384,19 @@ function InvitationPanel({
                 <p className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-xs leading-relaxed text-amber-700">
                   {labels.panel.expiryNotice}
                 </p>
+              )}
+              {inviteUrl && (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3">
+                  <p className="text-xs font-semibold text-emerald-900">{labels.panel.inviteLinkTitle}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-emerald-700">{labels.panel.inviteLinkDescription}</p>
+                  <div className="mt-3 flex gap-2">
+                    <input readOnly value={inviteUrl} className="input-base text-xs" />
+                    <button type="button" onClick={copyInviteUrl} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700">
+                      <Copy className="h-3.5 w-3.5" />
+                      {labels.actions.copyLink}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
             <div className="flex gap-2.5 border-t border-slate-100 px-6 py-4">

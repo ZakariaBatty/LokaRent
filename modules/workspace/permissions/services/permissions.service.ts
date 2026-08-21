@@ -283,6 +283,7 @@ export async function ensureCompanySystemRolesService(input: { companyId: string
   const permissions = await listPermissions();
   const allPermissionKeys = permissions.map((permission) => permission.key);
   const templates = [
+    { name: "member", scope: "company" as const, permissions: [] },
     { name: "owner", scope: "company" as const, permissions: allPermissionKeys },
     {
       name: "admin",

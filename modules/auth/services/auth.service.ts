@@ -163,6 +163,7 @@ export async function registerOwnerService(input: RegisterOwnerServiceInput) {
     const agencyId = createId();
     const userId = createId();
     const ownerRoleId = createId();
+    const memberRoleId = createId();
     const adminRoleId = createId();
 
     const company = await createCompany(
@@ -240,6 +241,17 @@ export async function registerOwnerService(input: RegisterOwnerServiceInput) {
         companyId,
         name: "owner",
         description: "Company owner with workspace and all-agency access",
+        scope: "company",
+        isSystem: true,
+      },
+      tx,
+    );
+    await createRole(
+      {
+        id: memberRoleId,
+        companyId,
+        name: "member",
+        description: "Internal company membership role without workspace administration access",
         scope: "company",
         isSystem: true,
       },

@@ -1512,6 +1512,7 @@ export default {
         agency: 'Agency',
       },
       roles: {
+        member: 'Member',
         owner: 'Owner',
         admin: 'Admin',
         accountant: 'Accountant',
@@ -1703,6 +1704,7 @@ export default {
         save: 'Save invitation',
         cancel: 'Cancel',
         revoke: 'Revoke',
+        copyLink: 'Copy',
       },
       empty: {
         title: 'No invitations',
@@ -1719,6 +1721,8 @@ export default {
         title: 'New invitation',
         description: 'Persisted without automatic email delivery',
         expiryNotice: 'The invitation will be valid for 7 days. Real email delivery remains for a later phase.',
+        inviteLinkTitle: 'Invitation link',
+        inviteLinkDescription: 'Copy this link now. The raw token will not be shown again after closing.',
       },
       scope: {
         company: 'Workspace',
@@ -1748,6 +1752,7 @@ export default {
       messages: {
         created: 'Invitation saved.',
         revoked: 'Invitation revoked.',
+        linkCopied: 'Link copied.',
         noEmailSent: 'No email was sent automatically.',
         noAgencies: 'No active agency is available.',
         noAgencyRoles: 'No valid agency role is configured.',
@@ -1864,6 +1869,64 @@ export default {
         driver_pricing_rule: 'Driver pricing',
         invoice: 'Invoice',
       },
+    },
+  },
+
+  invite: {
+    title: 'You are invited to LokaRent',
+    description: 'Review the invitation details, then sign in or create your account.',
+    context: {
+      company: 'Company',
+      agency: 'Agency',
+      role: 'Role',
+      email: 'Invited email',
+      expires: 'Expires',
+    },
+    fields: {
+      fullName: 'Full name',
+      email: 'Email address',
+      password: 'Password',
+      confirmPassword: 'Confirm password',
+      rememberMe: 'Remember me',
+    },
+    actions: {
+      createAccept: 'Create account and accept',
+      signInAccept: 'Sign in and accept',
+      accept: 'Accept invitation',
+      accepting: 'Accepting...',
+      goToLogin: 'Go to sign in',
+    },
+    newUser: {
+      title: 'Create your account with the invited email.',
+    },
+    existing: {
+      title: 'An account already exists for this email.',
+      signedIn: 'You are signed in with the correct account. You can accept this invitation.',
+    },
+    states: {
+      invalidTitle: 'Invitation not found',
+      invalidDescription: 'This link is invalid or can no longer be used. Ask for a new invitation.',
+      acceptedTitle: 'Invitation already accepted',
+      acceptedDescription: 'This invitation has already been used. Sign in to access your workspace.',
+      expiredTitle: 'Invitation expired',
+      expiredDescription: 'This invitation has expired. Ask your administrator to create a new one.',
+      revokedTitle: 'Invitation revoked',
+      revokedDescription: 'This invitation was revoked. Contact your administrator.',
+    },
+    messages: {
+      generic: 'Unable to process this invitation.',
+      validation: 'Check the entered information.',
+      invalid: 'Invalid invitation.',
+      expired: 'Invitation expired.',
+      revoked: 'Invitation revoked.',
+      alreadyAccepted: 'Invitation already accepted.',
+      emailMismatch: 'The signed-in account does not match the invited email.',
+      companyMismatch: 'This account already belongs to another company.',
+      accountExists: 'An account already exists for this email. Sign in to accept.',
+      planLimit: 'The plan user limit has been reached.',
+      invalidConfiguration: 'This invitation configuration is not valid.',
+      signInRequired: 'Sign in to accept this invitation.',
+      signInFailed: 'Unable to sign in with these credentials.',
     },
   },
 

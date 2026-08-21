@@ -49,6 +49,27 @@ export async function updateCompanyMembership(
   });
 }
 
+export async function restoreCompanyMembershipAsActive(
+  input: {
+    companyId: string;
+    membershipId: string;
+    roleId: string;
+    roleScope: "company";
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.companyMembership.update({
+    where: { id: input.membershipId },
+    data: {
+      roleId: input.roleId,
+      roleScope: input.roleScope,
+      status: "active",
+      deletedAt: null,
+      deletedBy: null,
+    },
+  });
+}
+
 export async function softDeleteCompanyMembership(
   input: { companyId: string; membershipId: string; deletedBy?: string | null },
   db: DatabaseClient = prisma,
@@ -140,6 +161,24 @@ export async function createAgencyMembership(
   return db.agencyMembership.create({ data });
 }
 
+export async function upsertAgencyMembership(
+  data: Prisma.AgencyMembershipUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.agencyMembership.upsert({
+    where: { userId_agencyId: { userId: data.userId, agencyId: data.agencyId } },
+    create: data,
+    update: {
+      roleId: data.roleId,
+      roleScope: data.roleScope,
+      status: data.status,
+      joinedAt: data.joinedAt,
+      deletedAt: null,
+      deletedBy: null,
+    },
+  });
+}
+
 export async function updateAgencyMembership(
   input: {
     companyId: string;
@@ -180,12 +219,14 @@ export const membersRepository = {
   listCompanyMemberships,
   createCompanyMembership,
   updateCompanyMembership,
+  restoreCompanyMembershipAsActive,
   softDeleteCompanyMembership,
   findAgencyMembership,
   listAgencyMemberships,
   listCompanyAgencyMemberships,
   listUserAgencyMemberships,
   createAgencyMembership,
+  upsertAgencyMembership,
   updateAgencyMembership,
   softDeleteAgencyMembership,
 };

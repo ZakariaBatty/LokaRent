@@ -21,6 +21,13 @@ export async function findInvitationByTokenHash(
   });
 }
 
+export async function findInvitationByTokenHashOnly(tokenHash: string, db: DatabaseClient = prisma) {
+  return db.invitation.findUnique({
+    where: { tokenHash },
+    include: { company: true, agency: true, role: true },
+  });
+}
+
 export async function listInvitations(
   input: { companyId: string; agencyId?: string | null },
   db: DatabaseClient = prisma,
@@ -49,10 +56,22 @@ export async function updateInvitation(
   });
 }
 
+export async function acceptPendingInvitation(
+  input: { companyId: string; invitationId: string; acceptedAt: Date },
+  db: DatabaseClient = prisma,
+) {
+  return db.invitation.updateMany({
+    where: { id: input.invitationId, companyId: input.companyId, status: "pending" },
+    data: { status: "accepted", acceptedAt: input.acceptedAt },
+  });
+}
+
 export const invitationsRepository = {
   findInvitationById,
   findInvitationByTokenHash,
+  findInvitationByTokenHashOnly,
   listInvitations,
   createInvitation,
   updateInvitation,
+  acceptPendingInvitation,
 };

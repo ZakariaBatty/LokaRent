@@ -1,6 +1,6 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { getAgencyService, getCompanyService, getCompanyUsageCountsService } from "@/modules/workspace/agencies/services/agencies.service";
@@ -11,11 +11,13 @@ import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
 import {
   createInvitationService,
+  generateInvitationToken,
+  hashInvitationToken,
   revokeInvitationService,
 } from "../services/invitations.service";
 
 export type WorkspaceInvitationActionResult =
-  | { success: true }
+  | { success: true; inviteUrl?: string }
   | { success: false; message: string; code?: string };
 
 const createInvitationSchema = z.object({
@@ -48,6 +50,15 @@ function revalidateWorkspaceInvitations() {
   revalidatePath("/workspace/invitations");
 }
 
+async function getInviteBaseUrl() {
+  const headerList = await headers();
+  const origin = headerList.get("origin");
+  if (origin) return origin;
+  const host = headerList.get("host");
+  const protocol = headerList.get("x-forwarded-proto") ?? "http";
+  return host ? `${protocol}://${host}` : process.env.BETTER_AUTH_URL ?? "";
+}
+
 export async function createWorkspaceInvitationAction(input: unknown): Promise<WorkspaceInvitationActionResult> {
   const parsed = createInvitationSchema.safeParse(input);
   if (!parsed.success) return { success: false, message: "workspace.invitations.messages.validation" };
@@ -72,6 +83,7 @@ export async function createWorkspaceInvitationAction(input: unknown): Promise<W
       getPlanLimitService({ planId: company.planId, limitKey: "max_users" }),
     ]);
 
+    const rawToken = generateInvitationToken();
     await createInvitationService({
       companyId: context.companyId,
       agencyId,
@@ -79,7 +91,7 @@ export async function createWorkspaceInvitationAction(input: unknown): Promise<W
       data: {
         email: parsed.data.email.toLowerCase(),
         roleId: parsed.data.roleId,
-        tokenHash: randomBytes(32).toString("hex"),
+        tokenHash: hashInvitationToken(rawToken),
         status: "pending",
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
@@ -87,7 +99,8 @@ export async function createWorkspaceInvitationAction(input: unknown): Promise<W
       maxUsers: maxUsersLimit ? Number(maxUsersLimit.limitValue) : undefined,
     });
     revalidateWorkspaceInvitations();
-    return { success: true };
+    const baseUrl = await getInviteBaseUrl();
+    return { success: true, inviteUrl: `${baseUrl}/invite/${rawToken}` };
   } catch (error) {
     return resultForError(error);
   }

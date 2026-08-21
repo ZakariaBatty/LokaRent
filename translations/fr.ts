@@ -1512,6 +1512,7 @@ export default {
         agency: 'Agence',
       },
       roles: {
+        member: 'Membre',
         owner: 'Propriétaire',
         admin: 'Administrateur',
         accountant: 'Comptable',
@@ -1703,6 +1704,7 @@ export default {
         save: 'Enregistrer l’invitation',
         cancel: 'Annuler',
         revoke: 'Révoquer',
+        copyLink: 'Copier',
       },
       empty: {
         title: 'Aucune invitation',
@@ -1719,6 +1721,8 @@ export default {
         title: 'Nouvelle invitation',
         description: 'Persistance sans envoi email automatique',
         expiryNotice: 'L’invitation sera valide 7 jours. L’envoi email réel reste à connecter dans une phase ultérieure.',
+        inviteLinkTitle: 'Lien d’invitation',
+        inviteLinkDescription: 'Copiez ce lien maintenant. Le jeton brut ne sera plus affiché après fermeture.',
       },
       scope: {
         company: 'Workspace',
@@ -1748,6 +1752,7 @@ export default {
       messages: {
         created: 'Invitation enregistrée.',
         revoked: 'Invitation révoquée.',
+        linkCopied: 'Lien copié.',
         noEmailSent: 'Aucun email n’a été envoyé automatiquement.',
         noAgencies: 'Aucune agence active n’est disponible.',
         noAgencyRoles: 'Aucun rôle agence valide n’est configuré.',
@@ -1864,6 +1869,64 @@ export default {
         driver_pricing_rule: 'Tarif conducteur',
         invoice: 'Facture',
       },
+    },
+  },
+
+  invite: {
+    title: 'Vous êtes invité sur LokaRent',
+    description: 'Vérifiez les détails de l’invitation, puis connectez-vous ou créez votre compte.',
+    context: {
+      company: 'Société',
+      agency: 'Agence',
+      role: 'Rôle',
+      email: 'Email invité',
+      expires: 'Expiration',
+    },
+    fields: {
+      fullName: 'Nom complet',
+      email: 'Adresse email',
+      password: 'Mot de passe',
+      confirmPassword: 'Confirmer le mot de passe',
+      rememberMe: 'Se souvenir de moi',
+    },
+    actions: {
+      createAccept: 'Créer le compte et accepter',
+      signInAccept: 'Se connecter et accepter',
+      accept: 'Accepter l’invitation',
+      accepting: 'Acceptation...',
+      goToLogin: 'Aller à la connexion',
+    },
+    newUser: {
+      title: 'Créez votre compte avec l’email invité.',
+    },
+    existing: {
+      title: 'Un compte existe déjà pour cet email.',
+      signedIn: 'Vous êtes connecté avec le bon compte. Vous pouvez accepter cette invitation.',
+    },
+    states: {
+      invalidTitle: 'Invitation introuvable',
+      invalidDescription: 'Ce lien est invalide ou ne peut plus être utilisé. Demandez une nouvelle invitation.',
+      acceptedTitle: 'Invitation déjà acceptée',
+      acceptedDescription: 'Cette invitation a déjà été utilisée. Connectez-vous pour accéder à votre espace.',
+      expiredTitle: 'Invitation expirée',
+      expiredDescription: 'Cette invitation a expiré. Demandez à votre administrateur d’en créer une nouvelle.',
+      revokedTitle: 'Invitation révoquée',
+      revokedDescription: 'Cette invitation a été révoquée. Contactez votre administrateur.',
+    },
+    messages: {
+      generic: 'Impossible de traiter cette invitation.',
+      validation: 'Vérifiez les informations saisies.',
+      invalid: 'Invitation invalide.',
+      expired: 'Invitation expirée.',
+      revoked: 'Invitation révoquée.',
+      alreadyAccepted: 'Invitation déjà acceptée.',
+      emailMismatch: 'Le compte connecté ne correspond pas à l’email invité.',
+      companyMismatch: 'Ce compte appartient déjà à une autre société.',
+      accountExists: 'Un compte existe déjà pour cet email. Connectez-vous pour accepter.',
+      planLimit: 'La limite utilisateurs du plan est atteinte.',
+      invalidConfiguration: 'La configuration de cette invitation n’est pas valide.',
+      signInRequired: 'Connectez-vous pour accepter cette invitation.',
+      signInFailed: 'Connexion impossible avec ces identifiants.',
     },
   },
 
