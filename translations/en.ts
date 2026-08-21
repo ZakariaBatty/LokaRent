@@ -63,6 +63,13 @@ export default {
     helpCenter: 'Help Center',
   },
 
+  sidebar: {
+    planWidget: {
+      plan: 'Plan',
+      upgrade: 'Upgrade',
+    },
+  },
+
   dashboard: {
     title: 'Dashboard',
     totalFleet: 'Total Fleet',

@@ -63,6 +63,13 @@ export default {
     helpCenter: 'Centre d\'aide',
   },
 
+  sidebar: {
+    planWidget: {
+      plan: 'Plan',
+      upgrade: 'Mettre à niveau',
+    },
+  },
+
   dashboard: {
     title: 'Tableau de bord',
     totalFleet: 'Flotte totale',

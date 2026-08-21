@@ -4,6 +4,7 @@ import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { AppShell } from "@/components/app/app-shell"
+import { getSidebarPlanUsageData } from "@/components/app/sidebar-plan-data"
 import {
   listCurrentAgencyOptions,
   requireCurrentAgencyContext,
@@ -24,7 +25,10 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
   }
 
   const agencyContext = await requireCurrentAgencyContext()
-  const agencies = await listCurrentAgencyOptions()
+  const [agencies, planUsage] = await Promise.all([
+    listCurrentAgencyOptions(),
+    getSidebarPlanUsageData(companyContext),
+  ])
 
   return (
     <AgencyProvider initialAgencies={agencies} initialAgencyId={agencyContext.agencyId}>
@@ -43,7 +47,7 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
             }}
           />
 
-          <AppSidebar />
+          <AppSidebar planUsage={planUsage} />
           <AppShell header={<AppHeader />}>{children}</AppShell>
         </div>
       </SidebarProvider>
