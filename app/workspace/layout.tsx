@@ -4,7 +4,11 @@ import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { AppShell } from "@/components/app/app-shell"
-import { requireCurrentCompanyOwnerContext } from "@/shared/auth"
+import {
+  listCurrentAgencyOptions,
+  requireCurrentAgencyContext,
+  requireCurrentCompanyOwnerContext,
+} from "@/shared/auth"
 import { redirect } from "next/navigation"
 
 export default async function WorkspaceLayout({ children }: { children: ReactNode }) {
@@ -19,8 +23,11 @@ export default async function WorkspaceLayout({ children }: { children: ReactNod
     redirect("/blocked-account")
   }
 
+  const agencyContext = await requireCurrentAgencyContext()
+  const agencies = await listCurrentAgencyOptions()
+
   return (
-    <AgencyProvider>
+    <AgencyProvider initialAgencies={agencies} initialAgencyId={agencyContext.agencyId}>
       <SidebarProvider>
         <div className="relative min-h-screen overflow-hidden text-slate-900">
           {/* Light premium ambient background */}

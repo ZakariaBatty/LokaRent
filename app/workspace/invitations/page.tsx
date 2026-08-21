@@ -21,7 +21,8 @@ export default async function InvitationsPage() {
 
   const data: WorkspaceInvitationsData = {
     agencies: agencies.map((agency) => ({ id: agency.id, name: agency.name })),
-    roles: roles.map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
+    companyRoles: roles.filter((role) => role.scope === "company").map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
+    agencyRoles: roles.filter((role) => role.scope === "agency").map((role) => ({ id: role.id, name: role.name, scope: role.scope })),
     invitations: invitations.map((invitation) => ({
       id: invitation.id,
       email: invitation.email,
@@ -42,9 +43,9 @@ export default async function InvitationsPage() {
       <div>
         <WorkspacePageHeader
           icon="mail"
-          breadcrumb="Invitations"
-          title="Invitations"
-          description="Suivez et gérez les invitations persistées du workspace."
+          breadcrumb={fr.workspace.invitations.breadcrumb}
+          title={fr.workspace.invitations.title}
+          description={fr.workspace.invitations.description}
         />
         <div className="mt-6">
           <WorkspaceTabs />

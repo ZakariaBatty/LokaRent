@@ -15,7 +15,8 @@ type Labels = typeof import("@/translations/fr").default.workspace.invitations;
 
 export type WorkspaceInvitationsData = {
   agencies: { id: string; name: string }[];
-  roles: { id: string; name: string; scope: RoleScope }[];
+  companyRoles: { id: string; name: string; scope: RoleScope }[];
+  agencyRoles: { id: string; name: string; scope: RoleScope }[];
   invitations: {
     id: string;
     email: string;
@@ -31,14 +32,6 @@ export type WorkspaceInvitationsData = {
   }[];
 };
 
-const roleLabel: Record<string, string> = {
-  owner: "Propriétaire",
-  admin: "Administrateur",
-  accountant: "Comptable",
-  agent: "Agent",
-  readonly: "Lecture seule",
-};
-
 const roleColor: Record<string, string> = {
   owner: "bg-violet-50 text-violet-700 ring-violet-100",
   admin: "bg-indigo-50 text-indigo-700 ring-indigo-100",
@@ -47,15 +40,15 @@ const roleColor: Record<string, string> = {
   readonly: "bg-slate-100 text-slate-600 ring-slate-200",
 };
 
-const statusConfig: Record<InvitationStatus, { label: string; dot: string; bg: string }> = {
-  pending: { label: "En attente", dot: "bg-amber-400", bg: "bg-amber-50 text-amber-700" },
-  accepted: { label: "Acceptée", dot: "bg-emerald-500", bg: "bg-emerald-50 text-emerald-700" },
-  expired: { label: "Expirée", dot: "bg-slate-400", bg: "bg-slate-100 text-slate-500" },
-  revoked: { label: "Révoquée", dot: "bg-rose-400", bg: "bg-rose-50 text-rose-700" },
+const statusStyles: Record<InvitationStatus, { dot: string; bg: string }> = {
+  pending: { dot: "bg-amber-400", bg: "bg-amber-50 text-amber-700" },
+  accepted: { dot: "bg-emerald-500", bg: "bg-emerald-50 text-emerald-700" },
+  expired: { dot: "bg-slate-400", bg: "bg-slate-100 text-slate-500" },
+  revoked: { dot: "bg-rose-400", bg: "bg-rose-50 text-rose-700" },
 };
 
-function roleName(name: string) {
-  return roleLabel[name] ?? name;
+function roleName(name: string, labels: Labels) {
+  return labels.roles[name as keyof typeof labels.roles] ?? name;
 }
 
 function rolePill(name: string) {
@@ -100,11 +93,11 @@ export function WorkspaceInvitationsClient({ data, labels }: { data: WorkspaceIn
   };
 
   const filterTabs: { value: StatusFilter; label: string }[] = [
-    { value: "all", label: "Toutes" },
-    { value: "pending", label: "En attente" },
-    { value: "accepted", label: "Acceptées" },
-    { value: "expired", label: "Expirées" },
-    { value: "revoked", label: "Révoquées" },
+    { value: "all", label: labels.filters.all },
+    { value: "pending", label: labels.status.pending },
+    { value: "accepted", label: labels.status.accepted },
+    { value: "expired", label: labels.status.expired },
+    { value: "revoked", label: labels.status.revoked },
   ];
 
   return (
@@ -134,31 +127,31 @@ export function WorkspaceInvitationsClient({ data, labels }: { data: WorkspaceIn
           className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg hover:shadow-indigo-500/20"
         >
           <Plus className="h-4 w-4" />
-          Nouvelle invitation
+          {labels.actions.create}
         </button>
       </div>
 
       {filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/40 p-10 text-center">
           <Mail className="h-8 w-8 text-slate-300" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">Aucune invitation</p>
-          <p className="mt-1 text-xs text-slate-500">Aucune invitation pour ce filtre.</p>
+          <p className="mt-3 text-sm font-semibold text-slate-700">{labels.empty.title}</p>
+          <p className="mt-1 text-xs text-slate-500">{labels.empty.description}</p>
         </div>
       ) : (
         <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-3.5">
-            <p className="text-xs font-semibold text-slate-500">{filtered.length} invitation{filtered.length !== 1 ? "s" : ""}</p>
+              <p className="text-xs font-semibold text-slate-500">{filtered.length} {labels.table.count}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/40 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  <th className="px-5 py-3">Destinataire</th>
-                  <th className="px-4 py-3">Agence</th>
-                  <th className="px-4 py-3">Rôle</th>
-                  <th className="px-4 py-3">Invité par</th>
-                  <th className="px-4 py-3">Expiration</th>
-                  <th className="px-4 py-3">Statut</th>
+                  <th className="px-5 py-3">{labels.columns.recipient}</th>
+                  <th className="px-4 py-3">{labels.columns.scope}</th>
+                  <th className="px-4 py-3">{labels.columns.role}</th>
+                  <th className="px-4 py-3">{labels.columns.invitedBy}</th>
+                  <th className="px-4 py-3">{labels.columns.expiry}</th>
+                  <th className="px-4 py-3">{labels.columns.status}</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -177,7 +170,8 @@ export function WorkspaceInvitationsClient({ data, labels }: { data: WorkspaceIn
       <InvitationPanel
         open={panelOpen}
         agencies={data.agencies}
-        roles={data.roles}
+        companyRoles={data.companyRoles}
+        agencyRoles={data.agencyRoles}
         labels={labels}
         onClose={() => setPanelOpen(false)}
       />
@@ -196,7 +190,7 @@ function InvitationRow({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const sc = statusConfig[invitation.effectiveStatus];
+  const sc = statusStyles[invitation.effectiveStatus];
   const days = daysLeft(invitation.expiresAt);
 
   const revoke = () => {
@@ -229,33 +223,37 @@ function InvitationRow({
       <td className="px-4 py-3.5 text-xs text-slate-600">
         <div className="flex items-center gap-1.5">
           <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          {invitation.agencyName ?? "Workspace"}
+          {invitation.agencyName ?? labels.scope.company}
         </div>
       </td>
       <td className="px-4 py-3.5">
         <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset", rolePill(invitation.roleName))}>
-          {roleName(invitation.roleName)}
+          {roleName(invitation.roleName, labels)}
         </span>
       </td>
       <td className="px-4 py-3.5 text-xs text-slate-500">{invitation.invitedByName}</td>
       <td className="px-4 py-3.5">
-        {invitation.effectiveStatus === "accepted" && invitation.acceptedAt ? (
-          <span className="text-xs text-slate-400">Acceptée le {new Date(invitation.acceptedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}</span>
+        {invitation.effectiveStatus === "accepted" ? (
+          <span className="text-xs text-slate-400">
+            {invitation.acceptedAt
+              ? `${labels.timeline.acceptedOn} ${new Date(invitation.acceptedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}`
+              : labels.status.accepted}
+          </span>
         ) : invitation.effectiveStatus === "expired" ? (
-          <span className="text-xs text-slate-400">Expirée</span>
+          <span className="text-xs text-slate-400">{labels.status.expired}</span>
         ) : invitation.effectiveStatus === "revoked" ? (
-          <span className="text-xs text-slate-400">Révoquée</span>
+          <span className="text-xs text-slate-400">{labels.status.revoked}</span>
         ) : (
           <div className="flex items-center gap-1.5">
             <Clock className="h-3.5 w-3.5 shrink-0 text-slate-300" />
-            <span className={cn("text-xs font-medium", days <= 3 ? "text-amber-600" : "text-slate-500")}>{days} jour{days !== 1 ? "s" : ""}</span>
+            <span className={cn("text-xs font-medium", days <= 3 ? "text-amber-600" : "text-slate-500")}>{days} {days !== 1 ? labels.timeline.days : labels.timeline.day}</span>
           </div>
         )}
       </td>
       <td className="px-4 py-3.5">
         <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold", sc.bg)}>
           <span className={cn("h-1.5 w-1.5 rounded-full", sc.dot)} />
-          {sc.label}
+          {labels.status[invitation.effectiveStatus]}
         </span>
       </td>
       <td className="px-4 py-3.5">
@@ -266,7 +264,7 @@ function InvitationRow({
               disabled={pending}
               onClick={revoke}
               className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Révoquer"
+              aria-label={labels.actions.revoke}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -280,28 +278,40 @@ function InvitationRow({
 function InvitationPanel({
   open,
   agencies,
-  roles,
+  companyRoles,
+  agencyRoles,
   labels,
   onClose,
 }: {
   open: boolean;
   agencies: WorkspaceInvitationsData["agencies"];
-  roles: WorkspaceInvitationsData["roles"];
+  companyRoles: WorkspaceInvitationsData["companyRoles"];
+  agencyRoles: WorkspaceInvitationsData["agencyRoles"];
   labels: Labels;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [scope, setScope] = useState<RoleScope>("agency");
   const [agencyId, setAgencyId] = useState(agencies[0]?.id ?? "");
-  const agencyRoles = roles.filter((role) => role.scope === "agency");
-  const [roleId, setRoleId] = useState(agencyRoles[0]?.id ?? "");
+  const availableRoles = scope === "agency" ? agencyRoles : companyRoles;
+  const [roleId, setRoleId] = useState(availableRoles[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
-  const hasConfiguration = agencies.length > 0 && agencyRoles.length > 0;
+  const hasConfiguration = scope === "agency" ? agencies.length > 0 && agencyRoles.length > 0 : companyRoles.length > 0;
+
+  const changeScope = (nextScope: RoleScope) => {
+    setScope(nextScope);
+    setRoleId((nextScope === "agency" ? agencyRoles : companyRoles)[0]?.id ?? "");
+  };
 
   const submit = () => {
     if (!hasConfiguration) return;
     startTransition(async () => {
-      const result = await createWorkspaceInvitationAction({ email, agencyId, roleId });
+      const result = await createWorkspaceInvitationAction({
+        email,
+        agencyId: scope === "agency" ? agencyId : null,
+        roleId,
+      });
       if (result.success) {
         toast.success(labels.messages.created, { description: labels.messages.noEmailSent });
         setEmail("");
@@ -325,8 +335,8 @@ function InvitationPanel({
                   <Send className="h-4 w-4" />
                 </span>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">Nouvelle invitation</h2>
-                  <p className="text-xs text-slate-500">Persistance sans envoi email automatique</p>
+                  <h2 className="text-base font-bold text-slate-900">{labels.panel.title}</h2>
+                  <p className="text-xs text-slate-500">{labels.panel.description}</p>
                 </div>
               </div>
               <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
@@ -334,35 +344,46 @@ function InvitationPanel({
               </button>
             </div>
             <div className="flex-1 space-y-5 overflow-y-auto px-6 py-6">
-              <Field label="Adresse email">
-                <input type="email" placeholder="nom@exemple.ma" value={email} onChange={(event) => setEmail(event.target.value)} className="input-base" />
+              <Field label={labels.fields.email}>
+                <input type="email" placeholder={labels.fields.emailPlaceholder} value={email} onChange={(event) => setEmail(event.target.value)} className="input-base" />
               </Field>
-              <Field label="Agence">
-                <select value={agencyId} onChange={(event) => setAgencyId(event.target.value)} className="input-base">
-                  {agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}
-                </select>
+              <Field label={labels.fields.scope}>
+                <div className="grid grid-cols-2 gap-1 rounded-xl border border-slate-200/80 bg-white p-1">
+                  {(["agency", "company"] as const).map((value) => (
+                    <button key={value} type="button" onClick={() => changeScope(value)} className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold", scope === value ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50")}>
+                      {labels.scope[value]}
+                    </button>
+                  ))}
+                </div>
               </Field>
-              <Field label="Rôle">
+              {scope === "agency" && (
+                <Field label={labels.fields.agency}>
+                  <select value={agencyId} onChange={(event) => setAgencyId(event.target.value)} className="input-base">
+                    {agencies.map((agency) => <option key={agency.id} value={agency.id}>{agency.name}</option>)}
+                  </select>
+                </Field>
+              )}
+              <Field label={labels.fields.role}>
                 <select value={roleId} onChange={(event) => setRoleId(event.target.value)} className="input-base">
-                  {agencyRoles.map((role) => <option key={role.id} value={role.id}>{roleName(role.name)}</option>)}
+                  {availableRoles.map((role) => <option key={role.id} value={role.id}>{roleName(role.name, labels)}</option>)}
                 </select>
               </Field>
               {!hasConfiguration ? (
                 <p className="rounded-xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs leading-relaxed text-rose-700">
-                  {agencies.length === 0 ? labels.messages.noAgencies : labels.messages.noAgencyRoles}
+                  {scope === "agency" && agencies.length === 0 ? labels.messages.noAgencies : scope === "agency" ? labels.messages.noAgencyRoles : labels.messages.noCompanyRoles}
                 </p>
               ) : (
                 <p className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3 text-xs leading-relaxed text-amber-700">
-                  L'invitation sera valide 7 jours. L'envoi email réel reste à connecter dans une phase ultérieure.
+                  {labels.panel.expiryNotice}
                 </p>
               )}
             </div>
             <div className="flex gap-2.5 border-t border-slate-100 px-6 py-4">
               <button type="button" disabled={pending || !email || !agencyId || !roleId || !hasConfiguration} onClick={submit} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:shadow-lg hover:shadow-indigo-500/20 disabled:cursor-not-allowed disabled:opacity-50">
                 <Send className="h-4 w-4" />
-                Enregistrer l'invitation
+                {labels.actions.save}
               </button>
-              <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Annuler</button>
+              <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">{labels.actions.cancel}</button>
             </div>
           </motion.aside>
         </>
