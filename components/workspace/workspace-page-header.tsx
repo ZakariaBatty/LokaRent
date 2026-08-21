@@ -1,21 +1,45 @@
 "use client"
 
 import { motion } from "motion/react"
-import type { LucideIcon } from "lucide-react"
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  Crown,
+  Mail,
+  Shield,
+  Users,
+  Users2,
+} from "lucide-react"
+
+const headerIcons = {
+  activity: Activity,
+  building: Building2,
+  creditCard: CreditCard,
+  crown: Crown,
+  mail: Mail,
+  shield: Shield,
+  users: Users,
+  users2: Users2,
+} as const
+
+export type WorkspacePageHeaderIcon = keyof typeof headerIcons
 
 export function WorkspacePageHeader({
-  icon: Icon,
+  icon,
   breadcrumb,
   title,
   description,
   actions,
 }: {
-  icon: LucideIcon
+  icon: WorkspacePageHeaderIcon
   breadcrumb: string
   title: string
   description: string
   actions?: React.ReactNode
 }) {
+  const Icon = headerIcons[icon]
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}

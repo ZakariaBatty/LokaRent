@@ -3,14 +3,7 @@
 import { motion, AnimatePresence } from "motion/react"
 import { ChevronRight } from "lucide-react"
 import type { Agency } from "@/lib/mock-workspaces"
-import { planLabels, formatMAD } from "@/lib/mock-workspaces"
 import { cn } from "@/lib/utils"
-
-const planColors: Record<Agency["plan"], string> = {
-  STARTER: "bg-sky-50 text-sky-700 ring-sky-100",
-  PRO: "bg-indigo-50 text-indigo-700 ring-indigo-100",
-  BUSINESS: "bg-violet-50 text-violet-700 ring-violet-100",
-}
 
 const statusStyles: Record<Agency["status"], { dot: string; bg: string; label: string }> = {
   active: { dot: "bg-emerald-500", bg: "bg-emerald-50 text-emerald-700", label: "Actif" },
@@ -44,10 +37,9 @@ export function AgenciesTable({
             <tr className="border-b border-slate-100 bg-slate-50/40 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               <th className="px-6 py-3">Agence</th>
               <th className="px-4 py-3">Ville</th>
-              <th className="px-4 py-3">Abonnement</th>
               <th className="px-4 py-3">Utilisateurs</th>
+              <th className="px-4 py-3">Véhicules</th>
               <th className="px-4 py-3">Réservations</th>
-              <th className="px-4 py-3">Chiffre d&apos;affaires</th>
               <th className="px-4 py-3">Statut</th>
               <th className="px-4 py-3" />
             </tr>
@@ -71,14 +63,9 @@ export function AgenciesTable({
                       <span className="font-medium text-slate-900">{agency.name}</span>
                     </td>
                     <td className="px-4 py-4 text-slate-600">{agency.city}</td>
-                    <td className="px-4 py-4">
-                      <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset", planColors[agency.plan])}>
-                        {planLabels[agency.plan]}
-                      </span>
-                    </td>
                     <td className="px-4 py-4 text-slate-600">{agency.memberCount}</td>
+                    <td className="px-4 py-4 text-slate-600">{agency.carCount}</td>
                     <td className="px-4 py-4 text-slate-600">{agency.reservationCount}</td>
-                    <td className="px-4 py-4 font-medium text-slate-900">{formatMAD(agency.revenue)}</td>
                     <td className="px-4 py-4">
                       <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold", status.bg)}>
                         <span className={cn("h-1.5 w-1.5 rounded-full", status.dot)} />

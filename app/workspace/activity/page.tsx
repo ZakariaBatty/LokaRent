@@ -95,7 +95,7 @@ export default function WorkspaceActivityPage() {
     <div className="mx-auto max-w-[1440px] space-y-5">
       <div>
         <WorkspacePageHeader
-          icon={Activity}
+          icon="activity"
           breadcrumb="Journaux"
           title="Journal d&apos;activité"
           description="Suivez toutes les actions effectuées par vos membres, toutes agences confondues."

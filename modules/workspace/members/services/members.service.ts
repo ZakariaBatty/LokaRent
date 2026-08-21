@@ -6,6 +6,7 @@ import {
   createCompanyMembership,
   findAgencyMembership,
   findCompanyMembership,
+  listCompanyAgencyMemberships,
   listAgencyMemberships,
   listCompanyMemberships,
   listUserAgencyMemberships,
@@ -37,6 +38,18 @@ export async function listCompanyMembershipsService(input: {
   includeDeleted?: boolean;
 }) {
   return listCompanyMemberships(input);
+}
+
+export async function listWorkspaceMembersService(input: {
+  companyId: string;
+  includeDeleted?: boolean;
+}) {
+  const [companyMemberships, agencyMemberships] = await Promise.all([
+    listCompanyMemberships(input),
+    listCompanyAgencyMemberships(input),
+  ]);
+
+  return { companyMemberships, agencyMemberships };
 }
 
 export async function createCompanyMembershipService(
@@ -184,6 +197,7 @@ export async function removeAgencyMembershipService(
 export const membersService = {
   getCompanyMembershipService,
   listCompanyMembershipsService,
+  listWorkspaceMembersService,
   createCompanyMembershipService,
   updateCompanyMembershipService,
   removeCompanyMembershipService,

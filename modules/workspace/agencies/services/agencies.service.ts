@@ -8,6 +8,7 @@ import {
   findCompanyBySlug,
   getCompanyUsageCounts,
   listActiveAgencies,
+  listWorkspaceAgencies,
   softDeleteAgency,
   softDeleteCompany,
   updateAgency,
@@ -92,6 +93,11 @@ export async function listActiveAgenciesService(companyId: string) {
   return listActiveAgencies(companyId);
 }
 
+export async function listWorkspaceAgenciesService(companyId: string) {
+  await getCompanyService({ companyId });
+  return listWorkspaceAgencies(companyId);
+}
+
 export async function createAgencyService(
   input: WorkspaceActor & {
     data: AgencyCreateData;
@@ -174,6 +180,7 @@ export const agenciesService = {
   deactivateCompanyService,
   getAgencyService,
   listActiveAgenciesService,
+  listWorkspaceAgenciesService,
   createAgencyService,
   updateAgencyService,
   deactivateAgencyService,

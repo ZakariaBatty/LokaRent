@@ -146,7 +146,10 @@ export async function revokeInvitationService(input: {
   companyId: string;
   invitationId: string;
 }) {
-  await getInvitationService(input);
+  const invitation = await getInvitationService(input);
+  if (invitation.status !== "pending") {
+    throw createValidationError("Only pending invitations can be revoked");
+  }
   return updateInvitation({
     ...input,
     data: { status: "revoked" },

@@ -95,7 +95,7 @@ export default function WorkspaceBillingPage() {
     <div className="mx-auto max-w-[1440px] space-y-5">
       <div>
         <WorkspacePageHeader
-          icon={CreditCard}
+          icon="creditCard"
           breadcrumb="Facturation"
           title="Facturation"
           description="Gérez les abonnements de vos agences et consultez vos factures."

@@ -93,6 +93,20 @@ export async function listAgencyMemberships(
   });
 }
 
+export async function listCompanyAgencyMemberships(
+  input: { companyId: string; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.agencyMembership.findMany({
+    where: {
+      companyId: input.companyId,
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    include: { role: true, user: true, agency: true },
+    orderBy: [{ isPrimary: "desc" }, { createdAt: "desc" }],
+  });
+}
+
 export async function listUserAgencyMemberships(
   input: { companyId: string; userId: string; includeDeleted?: boolean },
   db: DatabaseClient = prisma,
@@ -169,6 +183,7 @@ export const membersRepository = {
   softDeleteCompanyMembership,
   findAgencyMembership,
   listAgencyMemberships,
+  listCompanyAgencyMemberships,
   listUserAgencyMemberships,
   createAgencyMembership,
   updateAgencyMembership,

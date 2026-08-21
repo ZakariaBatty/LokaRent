@@ -1,17 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronsUpDown, Check, Building2 } from 'lucide-react'
+import { ChevronsUpDown, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAgency } from '@/contexts/agency-context'
 import { cn } from '@/lib/utils'
 import type { SidebarAgency } from '@/contexts/agency-context'
-
-const planBadge: Record<string, { label: string; bg: string; text: string; ring: string }> = {
-  PRO:       { label: 'Pro',     bg: 'bg-blue-50',   text: 'text-blue-600',  ring: 'ring-blue-100' },
-  STARTER:   { label: 'Starter', bg: 'bg-slate-50',  text: 'text-slate-500', ring: 'ring-slate-200' },
-  BUSINESS:  { label: 'Business', bg: 'bg-amber-50', text: 'text-amber-600', ring: 'ring-amber-100' },
-}
 
 function agencyInitials(name: string) {
   return name
@@ -39,7 +33,6 @@ export function AgencySwitcher() {
 
   if (!activeAgency) return null
 
-  const badge = planBadge[activeAgency.plan] ?? planBadge.PRO
   const carCount = 'vehicleCount' in activeAgency ? activeAgency.vehicleCount : 0
   const initials = agencyInitials(activeAgency.name)
   const gradient = agencyGradient(activeAgency.id)
@@ -61,14 +54,6 @@ export function AgencySwitcher() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="truncate text-sm font-semibold text-slate-900">{activeAgency.city}</p>
-              <span
-                className={cn(
-                  'rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset',
-                  badge.bg, badge.text, badge.ring
-                )}
-              >
-                {badge.label}
-              </span>
             </div>
             <p className="truncate text-[11px] text-slate-500">
               {activeAgency.city} · {carCount} véhicule{carCount !== 1 ? 's' : ''}
@@ -111,7 +96,6 @@ export function AgencySwitcher() {
           >
             {userAgencies.map((agency: SidebarAgency) => {
               const isActive = agency.id === activeAgency.id
-              const ab = planBadge[agency.plan] ?? planBadge.PRO
               const ag = agencyGradient(agency.id)
               const ai = agencyInitials(agency.name)
               return (
@@ -143,14 +127,6 @@ export function AgencySwitcher() {
                         )}
                       >
                         {agency.city}
-                      </span>
-                      <span
-                        className={cn(
-                          'rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset',
-                          ab.bg, ab.text, ab.ring
-                        )}
-                      >
-                        {ab.label}
                       </span>
                     </div>
                     <p className="truncate text-[11px] text-slate-500">{agency.name}</p>

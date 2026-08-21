@@ -92,6 +92,23 @@ export async function listActiveAgencies(companyId: string, db: DatabaseClient =
   });
 }
 
+export async function listWorkspaceAgencies(companyId: string, db: DatabaseClient = prisma) {
+  return db.agency.findMany({
+    where: { companyId, deletedAt: null },
+    include: {
+      _count: {
+        select: {
+          agencyMemberships: { where: { status: "active", deletedAt: null } },
+          vehicles: { where: { deletedAt: null } },
+          reservations: true,
+          customers: { where: { deletedAt: null } },
+        },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+}
+
 export async function createAgency(
   data: Prisma.AgencyUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -168,6 +185,7 @@ export const agenciesRepository = {
   findAgencyById,
   findAgencyByCode,
   listActiveAgencies,
+  listWorkspaceAgencies,
   createAgency,
   updateAgency,
   softDeleteAgency,

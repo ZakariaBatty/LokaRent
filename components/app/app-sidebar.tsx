@@ -41,7 +41,7 @@ function CollapsedAgencyBadge() {
         </div>
       </TooltipTrigger>
       <TooltipContent side="right" className="font-medium">
-        {activeAgency.name} · {activeAgency.plan.charAt(0) + activeAgency.plan.slice(1).toLowerCase()}
+        {activeAgency.name}
       </TooltipContent>
     </Tooltip>
   )

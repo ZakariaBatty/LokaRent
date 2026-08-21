@@ -26,7 +26,7 @@ export default function TeamsPage() {
     <>
       <div className="space-y-6">
         <WorkspacePageHeader
-          icon={Users2}
+          icon="users2"
           breadcrumb="Équipes"
           title="Gestion des équipes"
           description="Organisez vos utilisateurs en équipes et gérez leurs accès."

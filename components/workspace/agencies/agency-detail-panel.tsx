@@ -7,13 +7,7 @@ import {
   Info,
   Users,
   Activity,
-  TrendingUp,
-  Car,
   CalendarDays,
-  UserCheck,
-  CreditCard,
-  ArrowUpRight,
-  ArrowDownRight,
   MoreHorizontal,
   MapPin,
   Mail,
@@ -21,43 +15,27 @@ import {
   Globe,
   Building2,
   Clock,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import type { Agency } from "@/lib/mock-workspaces"
 import {
   getMembersByAgency,
   getAuditLogsByAgency,
-  getSubscriptionByAgency,
-  getInvoicesByAgency,
   getGlobalUserById,
   getUserName,
   roleLabels,
   roleBadgeStyles,
-  planLabels,
-  planPrices,
-  formatMAD,
 } from "@/lib/mock-workspaces"
 import { cn } from "@/lib/utils"
 
-type TabId = "overview" | "financial" | "operations" | "members" | "subscription" | "activity"
+type TabId = "overview" | "operations" | "members" | "activity"
 
 const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Agence", icon: Info },
-  { id: "financial", label: "Finances", icon: TrendingUp },
   { id: "operations", label: "Opérations", icon: CalendarDays },
   { id: "members", label: "Membres", icon: Users },
-  { id: "subscription", label: "Abonnement", icon: CreditCard },
   { id: "activity", label: "Activité", icon: Activity },
 ]
-
-const planBadge: Record<Agency["plan"], string> = {
-  STARTER: "bg-sky-50 text-sky-700 ring-sky-100",
-  PRO: "bg-indigo-50 text-indigo-700 ring-indigo-100",
-  BUSINESS: "bg-violet-50 text-violet-700 ring-violet-100",
-}
 
 const statusBadge: Record<Agency["status"], { dot: string; bg: string; label: string }> = {
   active: { dot: "bg-emerald-500", bg: "bg-emerald-50 text-emerald-700", label: "Actif" },
@@ -139,11 +117,7 @@ export function AgencyDetailPanel({
 
   const members = getMembersByAgency(agency.id)
   const activityLogs = getAuditLogsByAgency(agency.id, 12)
-  const subscription = getSubscriptionByAgency(agency.id)
-  const invoices = getInvoicesByAgency(agency.id)
   const status = statusBadge[agency.status]
-  const profit = agency.revenue - agency.expenses
-  const margin = agency.revenue > 0 ? Math.round((profit / agency.revenue) * 100) : 0
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.12)]">
@@ -159,9 +133,6 @@ export function AgencyDetailPanel({
               <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold", status.bg)}>
                 <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", status.dot)} />
                 {status.label}
-              </span>
-              <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset", planBadge[agency.plan])}>
-                {planLabels[agency.plan]}
               </span>
             </div>
 
@@ -259,69 +230,6 @@ export function AgencyDetailPanel({
                 )}
                 <InfoRow icon={Building2} label="Propriétaire" value={getUserName(agency.ownerId)} />
                 <InfoRow icon={Clock} label="Créée le" value={fmt(agency.createdAt)} />
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {/* FINANCIAL ────────────────────────────────────────── */}
-        {tab === "financial" && (
-          <motion.div key="financial" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-            {/* Revenue / Expenses / Profit */}
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <KpiCell label="Chiffre d'affaires" value={formatMAD(agency.revenue)} accent="indigo" />
-              <KpiCell label="Dépenses" value={formatMAD(agency.expenses)} accent="rose" />
-              <KpiCell label="Bénéfice net" value={formatMAD(profit)} sub={`Marge ${margin}%`} accent="emerald" />
-            </div>
-
-            {/* Revenue bar */}
-            <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-700">Répartition revenus / dépenses</p>
-                <span className="text-[11px] font-semibold text-emerald-600">+{margin}% marge</span>
-              </div>
-              <div className="space-y-2.5">
-                <ProgressBar
-                  label="Revenus"
-                  value={agency.revenue}
-                  max={agency.revenue}
-                  color="bg-indigo-500"
-                  formatted={formatMAD(agency.revenue)}
-                />
-                <ProgressBar
-                  label="Dépenses"
-                  value={agency.expenses}
-                  max={agency.revenue}
-                  color="bg-rose-400"
-                  formatted={formatMAD(agency.expenses)}
-                />
-                <ProgressBar
-                  label="Bénéfice"
-                  value={profit}
-                  max={agency.revenue}
-                  color="bg-emerald-500"
-                  formatted={formatMAD(profit)}
-                />
-              </div>
-            </div>
-
-            {/* Monthly trend placeholders */}
-            <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white">
-              <div className="border-b border-slate-100 px-4 py-3">
-                <p className="text-xs font-semibold text-slate-700">Évolution mensuelle</p>
-              </div>
-              <div className="flex items-end gap-1 px-4 pb-4 pt-3">
-                {[42, 58, 51, 67, 72, 65, 80, 74, 88, 79, 91, 85].map((v, i) => (
-                  <div key={i} className="flex flex-1 flex-col items-center gap-1">
-                    <div
-                      className="w-full rounded-sm bg-indigo-200 transition-all hover:bg-indigo-400"
-                      style={{ height: `${v * 0.9}px` }}
-                    />
-                    <span className="text-[8px] text-slate-400">
-                      {["J","F","M","A","M","J","J","A","S","O","N","D"][i]}
-                    </span>
-                  </div>
-                ))}
               </div>
             </div>
           </motion.div>
@@ -450,105 +358,6 @@ export function AgencyDetailPanel({
           </motion.div>
         )}
 
-        {/* SUBSCRIPTION ─────────────────────────────────────── */}
-        {tab === "subscription" && (
-          <motion.div key="subscription" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-            {subscription ? (
-              <>
-                {/* Current plan */}
-                <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="text-xs font-semibold text-slate-700">Plan actuel</p>
-                  </div>
-                  <div className="grid grid-cols-2 gap-0 divide-x divide-slate-100 divide-y sm:grid-cols-3 sm:divide-y-0">
-                    {[
-                      { label: "Plan", value: planLabels[subscription.plan] },
-                      { label: "Facturation", value: subscription.billingCycle === "monthly" ? "Mensuelle" : subscription.billingCycle === "annual" ? "Annuelle" : "6 mois" },
-                      { label: "Montant", value: `${planPrices[subscription.plan].toLocaleString("fr-FR")} MAD/mois` },
-                      { label: "Début période", value: fmt(subscription.currentPeriodStart) },
-                      { label: "Fin période", value: fmt(subscription.currentPeriodEnd) },
-                      { label: "Prochain paiement", value: fmt(subscription.nextBillingDate) },
-                    ].map((f) => (
-                      <div key={f.label} className="px-4 py-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{f.label}</p>
-                        <p className="mt-1 text-sm font-semibold text-slate-900">{f.value}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {subscription.status === "active" ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                      ) : subscription.status === "trialing" ? (
-                        <AlertCircle className="h-4 w-4 text-amber-500" />
-                      ) : (
-                        <XCircle className="h-4 w-4 text-rose-500" />
-                      )}
-                      <span className="text-xs font-semibold text-slate-700">
-                        {subscription.status === "active" ? "Actif" : subscription.status === "trialing" ? "Période d'essai" : subscription.status === "past_due" ? "Paiement en retard" : "Annulé"}
-                      </span>
-                      {subscription.trialEndDate && (
-                        <span className="text-[11px] text-slate-400">· Essai jusqu&apos;au {fmt(subscription.trialEndDate)}</span>
-                      )}
-                    </div>
-                    <span className="text-[11px] text-slate-400">
-                      Renouvellement {subscription.autoRenew ? "auto" : "manuel"}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Invoices */}
-                <div className="overflow-hidden rounded-xl border border-slate-200/70 bg-white">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="text-xs font-semibold text-slate-700">Factures</p>
-                  </div>
-                  {invoices.length > 0 ? (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                          <th className="px-4 py-2.5">N° Facture</th>
-                          <th className="px-4 py-2.5">Montant</th>
-                          <th className="px-4 py-2.5">Date</th>
-                          <th className="px-4 py-2.5">Statut</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {invoices.map((inv) => (
-                          <tr key={inv.id} className="border-b border-slate-100/60 last:border-0">
-                            <td className="px-4 py-3 font-mono text-[11px] text-slate-600">{inv.invoiceNumber}</td>
-                            <td className="px-4 py-3 font-semibold tabular-nums text-slate-900">{inv.amount.toLocaleString("fr-FR")} MAD</td>
-                            <td className="px-4 py-3 text-[11px] text-slate-500">{fmt(inv.issuedAt)}</td>
-                            <td className="px-4 py-3">
-                              <span className={cn(
-                                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                                inv.status === "paid" ? "bg-emerald-50 text-emerald-700" :
-                                inv.status === "pending" ? "bg-amber-50 text-amber-700" :
-                                "bg-rose-50 text-rose-700",
-                              )}>
-                                <span className={cn("h-1.5 w-1.5 rounded-full",
-                                  inv.status === "paid" ? "bg-emerald-500" :
-                                  inv.status === "pending" ? "bg-amber-500" : "bg-rose-500",
-                                )} />
-                                {inv.status === "paid" ? "Payée" : inv.status === "pending" ? "En attente" : "Échouée"}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="px-4 py-6 text-center text-sm text-slate-400">Aucune facture.</p>
-                  )}
-                </div>
-              </>
-            ) : (
-              <p className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
-                Aucun abonnement trouvé pour cette agence.
-              </p>
-            )}
-          </motion.div>
-        )}
-
         {/* ACTIVITY ─────────────────────────────────────────── */}
         {tab === "activity" && (
           <motion.div key="activity" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}>
@@ -625,33 +434,6 @@ function InfoRow({
         ) : (
           <p className="mt-0.5 truncate text-sm text-slate-900">{value}</p>
         )}
-      </div>
-    </div>
-  )
-}
-
-function ProgressBar({
-  label,
-  value,
-  max,
-  color,
-  formatted,
-}: {
-  label: string
-  value: number
-  max: number
-  color: string
-  formatted: string
-}) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-600">{label}</span>
-        <span className="font-semibold tabular-nums text-slate-900">{formatted}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
       </div>
     </div>
   )

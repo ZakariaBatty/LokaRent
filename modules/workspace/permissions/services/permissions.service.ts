@@ -13,6 +13,7 @@ import {
 import { getAgencyMembershipService } from "@/modules/workspace/members/services/members.service";
 import {
   createRole,
+  createManyRolePermissions,
   createRolePermission,
   createUserPermissionOverride,
   deleteUserPermissionOverride,
@@ -58,6 +59,55 @@ type PermissionOverrideExpiryInput = {
 };
 
 const PERMISSION_OVERRIDE_ENTITY = "user_permission_override";
+
+const agencyRolePermissionTemplates: Record<string, string[]> = {
+  accountant: [
+    "reservations.view",
+    "fleet.view",
+    "clients.view",
+    "contracts.view",
+    "contracts.export_pdf",
+    "finance.invoices.view",
+    "finance.payments.record",
+    "finance.deposits.manage",
+    "finance.expenses.view",
+    "finance.expenses.create",
+    "finance.expenses.edit",
+    "finance.expenses.delete",
+    "finance.reports.view",
+    "finance.reports.export",
+    "reports.view",
+    "reports.export",
+  ],
+  agent: [
+    "reservations.view",
+    "reservations.create",
+    "reservations.edit",
+    "reservations.cancel",
+    "fleet.view",
+    "fleet.maintenance.create",
+    "clients.view",
+    "clients.create",
+    "clients.edit",
+    "contracts.view",
+    "contracts.create",
+    "contracts.export_pdf",
+  ],
+  readonly: [
+    "reservations.view",
+    "fleet.view",
+    "clients.view",
+    "contracts.view",
+  ],
+};
+
+const systemRoleDescriptions: Record<string, string> = {
+  owner: "Company owner with workspace and all-agency access",
+  admin: "Agency administrator",
+  accountant: "Agency financial operator",
+  agent: "Agency rental operations user",
+  readonly: "Read-only agency user",
+};
 
 async function getScopedAgencyMembership(input: {
   context: CurrentAgencyContext;
@@ -227,6 +277,57 @@ export async function listRolesService(input: {
   includeDeleted?: boolean;
 }) {
   return listRoles(input);
+}
+
+export async function ensureCompanySystemRolesService(input: { companyId: string }) {
+  const permissions = await listPermissions();
+  const allPermissionKeys = permissions.map((permission) => permission.key);
+  const templates = [
+    { name: "owner", scope: "company" as const, permissions: allPermissionKeys },
+    {
+      name: "admin",
+      scope: "agency" as const,
+      permissions: allPermissionKeys.filter((key) => !key.startsWith("workspace.billing")),
+    },
+    ...Object.entries(agencyRolePermissionTemplates).map(([name, permissionKeys]) => ({
+      name,
+      scope: "agency" as const,
+      permissions: permissionKeys,
+    })),
+  ];
+
+  return runInTransaction(async (db) => {
+    const existingRoles = await listRoles({ companyId: input.companyId }, db);
+    const roles = [];
+    for (const template of templates) {
+      const existing = existingRoles.find((role) => role.name === template.name && role.scope === template.scope);
+      if (existing) {
+        roles.push(existing);
+      } else {
+        roles.push(await createRole({
+          id: createId(),
+          companyId: input.companyId,
+          name: template.name,
+          description: systemRoleDescriptions[template.name],
+          scope: template.scope,
+          isSystem: true,
+        }, db));
+      }
+    }
+
+    const rolePermissions = roles.flatMap((role) => {
+      const template = templates.find((item) => item.name === role.name && item.scope === role.scope);
+      return (template?.permissions ?? []).map((permissionKey) => ({
+        id: createId(),
+        roleId: role.id,
+        permissionKey,
+      }));
+    });
+    if (rolePermissions.length > 0) {
+      await createManyRolePermissions(rolePermissions, db);
+    }
+    return roles;
+  });
 }
 
 export async function getRoleService(input: { companyId: string; roleId: string }) {
@@ -513,6 +614,7 @@ export const permissionsService = {
   listPermissionsService,
   getPermissionService,
   listRolesService,
+  ensureCompanySystemRolesService,
   getRoleService,
   createRoleService,
   updateRoleService,
