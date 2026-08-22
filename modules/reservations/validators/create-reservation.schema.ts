@@ -18,6 +18,19 @@ export const reservationExtraInputSchema = z.object({
   quantity: z.coerce.number().int().positive(),
 });
 
+export const reservationSelectedExtraInputSchema = z.object({
+  definitionId: z.string().uuid(),
+  quantity: z.coerce.number().int().positive().optional(),
+});
+
+export const reservationAuthorizedDriverInputSchema = z.object({
+  fullName: requiredText,
+  licenseNumber: requiredText,
+  licenseIssuedAt: z.coerce.date().nullable().optional(),
+  licenseExpiresAt: z.coerce.date().nullable().optional(),
+  documentUrl: optionalText,
+});
+
 export const createReservationSchema = z
   .object({
     customerId: z.string().uuid(),
@@ -37,6 +50,8 @@ export const createReservationSchema = z
     advanceAmount: optionalAmount,
     internalNotes: optionalText,
     extras: z.array(reservationExtraInputSchema).max(20).optional(),
+    selectedExtras: z.array(reservationSelectedExtraInputSchema).max(20).optional(),
+    authorizedDrivers: z.array(reservationAuthorizedDriverInputSchema).max(5).optional(),
   })
   .refine((data) => data.startsAt < data.endsAt, { path: ["endsAt"] });
 

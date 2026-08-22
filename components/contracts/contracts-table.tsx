@@ -18,8 +18,16 @@ import {
   statusConfig,
   type Contract,
 } from "@/lib/contracts-data"
-import { categoryAccent } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+
+const contractCategoryAccent: Record<Contract["car"]["category"], string> = {
+  economique: "bg-emerald-50 text-emerald-700",
+  compacte: "bg-blue-50 text-blue-700",
+  berline: "bg-indigo-50 text-indigo-700",
+  suv: "bg-violet-50 text-violet-700",
+  premium: "bg-amber-50 text-amber-700",
+  utilitaire: "bg-slate-100 text-slate-700",
+}
 
 export function ContractsTable({
   rows,
@@ -107,7 +115,7 @@ export function ContractsTable({
                         <div
                           className={cn(
                             "flex h-8 w-8 items-center justify-center rounded-lg text-[10px] font-semibold",
-                            categoryAccent[c.car.category],
+                            contractCategoryAccent[c.car.category],
                           )}
                         >
                           {c.car.brand.slice(0, 2).toUpperCase()}

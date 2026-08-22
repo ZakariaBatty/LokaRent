@@ -22,6 +22,7 @@
     "db:migrate:reset": "npm run migrate:reset --workspace=@lokarent/db",
     "db:seed": "npm run seed --workspace=@lokarent/db",
     "db:seed:core": "npm run seed:core --workspace=@lokarent/db",
+    "db:reset": "npm run prisma:reset --workspace=@lokarent/db",
     "db:pull": "npm run db:pull --workspace=@lokarent/db",
     "db:check": "npm run check --workspace=@lokarent/db"
   },

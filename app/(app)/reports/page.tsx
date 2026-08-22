@@ -1,49 +1,40 @@
-"use client"
+import { ReportsPageClient } from "@/components/reports/reports-page-client"
+import { getReportsOverviewAction } from "@/modules/reports/actions/generate-report.action"
+import type { ReportsPeriod } from "@/modules/reports/services/reports.service"
 
-import { useState } from "react"
-import type { Period } from "@/lib/reports-data"
-import { ReportsAiSummary } from "@/components/reports/reports-ai-summary"
-import { ReportsCarsTable } from "@/components/reports/reports-cars-table"
-import { ReportsComplianceCard } from "@/components/reports/reports-compliance-card"
-import { ReportsExpensesCard } from "@/components/reports/reports-expenses-card"
-import { ReportsFunnelCard } from "@/components/reports/reports-funnel-card"
-import { ReportsOccupancyChart } from "@/components/reports/reports-occupancy-chart"
-import { ReportsRevenueTrendChart } from "@/components/reports/reports-revenue-trend-chart"
-import { ReportsSegmentsDonut } from "@/components/reports/reports-segments-donut"
-import { ReportsSummaryCards } from "@/components/reports/reports-summary-cards"
-import { ReportsToolbar } from "@/components/reports/reports-toolbar"
-import { ReportsTopClients } from "@/components/reports/reports-top-clients"
+type SearchParams = Promise<Record<string, string | string[] | undefined>>
 
-export default function ReportsPage() {
-  const [period, setPeriod] = useState<Period>("thisMonth")
+function first(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
 
-  return (
-    <div className="space-y-5">
-      <ReportsToolbar period={period} onPeriodChange={setPeriod} />
+function parseRange(value: string | undefined): ReportsPeriod {
+  if (value === "last_month" || value === "quarter" || value === "year" || value === "custom") return value
+  return "this_month"
+}
 
-      <ReportsSummaryCards />
+function parseDate(value: string | undefined) {
+  if (!value) return undefined
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  const date = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date
+}
 
-      <ReportsAiSummary />
+export default async function ReportsPage({ searchParams }: { searchParams: SearchParams }) {
+  const params = await searchParams
+  const range = parseRange(first(params.range))
+  const result = await getReportsOverviewAction({
+    range,
+    customFrom: parseDate(first(params.from)),
+    customTo: parseDate(first(params.to)),
+    currency: first(params.currency),
+  })
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <ReportsRevenueTrendChart />
-        </div>
-        <ReportsSegmentsDonut />
-      </div>
+  if (!result.success) {
+    throw new Error(result.messageKey)
+  }
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <ReportsOccupancyChart />
-        <ReportsExpensesCard />
-        <ReportsFunnelCard />
-      </div>
-
-      <ReportsCarsTable />
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ReportsTopClients />
-        <ReportsComplianceCard />
-      </div>
-    </div>
-  )
+  return <ReportsPageClient report={result.report} />
 }

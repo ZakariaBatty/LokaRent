@@ -122,11 +122,13 @@ function buildDraft(car?: Car | null): CarFormDraft {
 
 export function CarFormPanel({
   mode,
+  scope = "core",
   car,
   onClose,
   onSubmit,
 }: {
   mode: "add" | "edit"
+  scope?: "core" | "documents"
   car?: Car | null
   onClose: () => void
   onSubmit: (draft: CarFormDraft) => Promise<boolean>
@@ -262,10 +264,16 @@ export function CarFormPanel({
           </div>
           <div>
             <h2 className="text-base font-semibold text-slate-900">
-              {mode === "add" ? "Ajouter un véhicule" : "Modifier le véhicule"}
+              {scope === "documents"
+                ? fr.fleet.documents.editDocuments
+                : mode === "add"
+                  ? "Ajouter un véhicule"
+                  : "Modifier le véhicule"}
             </h2>
             <p className="text-xs text-slate-500">
-              {mode === "add"
+              {scope === "documents"
+                ? `${car?.brand} ${car?.model} · ${car?.plate}`
+                : mode === "add"
                 ? "Enregistrez un nouveau véhicule dans votre flotte"
                 : `${car?.brand} ${car?.model} · ${car?.plate}`}
             </p>
@@ -284,215 +292,219 @@ export function CarFormPanel({
       {/* Body */}
       <div className="flex-1 space-y-7 overflow-y-auto px-6 py-6">
         {/* Identité */}
-        <Section title="Identité" icon={CarIcon}>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Marque" required error={errors.brand}>
-              <Input
-                value={draft.brand}
-                onChange={(v) => set("brand", v)}
-                placeholder="Dacia"
-                invalid={!!errors.brand}
-              />
-            </Field>
-            <Field label="Modèle" required error={errors.model}>
-              <Input
-                value={draft.model}
-                onChange={(v) => set("model", v)}
-                placeholder="Logan"
-                invalid={!!errors.model}
-              />
-            </Field>
-            <Field label="Année" required error={errors.year}>
-              <Input
-                type="number"
-                value={draft.year}
-                onChange={(v) => set("year", v === "" ? "" : Number(v))}
-                placeholder={`${currentYear}`}
-                invalid={!!errors.year}
-              />
-            </Field>
-            <Field label="Immatriculation" required error={errors.plate}>
-              <Input
-                value={draft.plate}
-                onChange={(v) => set("plate", v.toUpperCase())}
-                placeholder="12345-A-6"
-                mono
-                invalid={!!errors.plate}
-              />
-            </Field>
-            <Field label="Couleur">
-              <div className="relative">
-                <Palette className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  value={draft.color}
-                  onChange={(e) => set("color", e.target.value)}
-                  placeholder="Gris métallisé"
-                  className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                />
-              </div>
-            </Field>
-            <Field label="Nombre de places" required error={errors.seats}>
-              <Input
-                type="number"
-                value={draft.seats}
-                onChange={(v) => set("seats", v === "" ? "" : Number(v))}
-                placeholder="5"
-                invalid={!!errors.seats}
-              />
-            </Field>
-          </div>
-        </Section>
-
-        <Section title={fr.fleet.upload.vehiclePhotos} icon={CarIcon}>
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
-              {draft.photos.map((photo, index) => (
-                <div
-                  key={`${photo.url}-${index}`}
-                  className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
-                >
-                  <img src={photo.url} alt="" className="h-full w-full object-cover" />
-                  {index === 0 && (
-                    <span className="absolute left-2 top-2 rounded-full bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold text-white">
-                      {fr.fleet.documents.primaryPhoto}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(index)}
-                    className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 opacity-0 shadow-sm transition hover:text-rose-600 group-hover:opacity-100"
-                    aria-label={fr.fleet.upload.removeFile}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-              {draft.photos.length < 6 && (
-                <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-sm font-semibold text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700">
-                  {uploadingPhotos ? (
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
-                  ) : (
-                    <Upload className="h-5 w-5" />
-                  )}
-                  <span>{uploadingPhotos ? fr.fleet.upload.uploading : fr.fleet.upload.addPhotos}</span>
-                  <input
-                    type="file"
-                    multiple
-                    accept="image/jpeg,image/png,image/webp,image/gif"
-                    onChange={uploadPhotos}
-                    disabled={uploadingPhotos}
-                    className="hidden"
+        {scope === "core" && (
+          <>
+            <Section title="Identité" icon={CarIcon}>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Marque" required error={errors.brand}>
+                  <Input
+                    value={draft.brand}
+                    onChange={(v) => set("brand", v)}
+                    placeholder="Dacia"
+                    invalid={!!errors.brand}
                   />
-                </label>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-400">{fr.fleet.upload.photoHint}</p>
-          </div>
-        </Section>
+                </Field>
+                <Field label="Modèle" required error={errors.model}>
+                  <Input
+                    value={draft.model}
+                    onChange={(v) => set("model", v)}
+                    placeholder="Logan"
+                    invalid={!!errors.model}
+                  />
+                </Field>
+                <Field label="Année" required error={errors.year}>
+                  <Input
+                    type="number"
+                    value={draft.year}
+                    onChange={(v) => set("year", v === "" ? "" : Number(v))}
+                    placeholder={`${currentYear}`}
+                    invalid={!!errors.year}
+                  />
+                </Field>
+                <Field label="Immatriculation" required error={errors.plate}>
+                  <Input
+                    value={draft.plate}
+                    onChange={(v) => set("plate", v.toUpperCase())}
+                    placeholder="12345-A-6"
+                    mono
+                    invalid={!!errors.plate}
+                  />
+                </Field>
+                <Field label="Couleur">
+                  <div className="relative">
+                    <Palette className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      value={draft.color}
+                      onChange={(e) => set("color", e.target.value)}
+                      placeholder="Gris métallisé"
+                      className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                    />
+                  </div>
+                </Field>
+                <Field label="Nombre de places" required error={errors.seats}>
+                  <Input
+                    type="number"
+                    value={draft.seats}
+                    onChange={(v) => set("seats", v === "" ? "" : Number(v))}
+                    placeholder="5"
+                    invalid={!!errors.seats}
+                  />
+                </Field>
+              </div>
+            </Section>
 
-        {/* Caractéristiques */}
-        <Section title="Caractéristiques" icon={Gauge}>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Catégorie">
-              <Dropdown
-                value={draft.category}
-                options={categories.map((c) => ({ value: c, label: c }))}
-                onChange={(v) => set("category", v as CarCategory)}
-              />
-            </Field>
-            <Field label="Carburant">
-              <Dropdown
-                value={draft.fuel}
-                options={fuels.map((f) => ({ value: f, label: f }))}
-                onChange={(v) => set("fuel", v as FuelType)}
-              />
-            </Field>
-            <Field label="Kilométrage actuel" required error={errors.km}>
-              <Input
-                type="number"
-                value={draft.km}
-                onChange={(v) => set("km", v === "" ? "" : Number(v))}
-                placeholder="45000"
-                suffix="km"
-                invalid={!!errors.km}
-              />
-            </Field>
-            <Field label="Statut">
-              <Dropdown
-                value={draft.status}
-                options={statuses.map((s) => ({
-                  value: s,
-                  label: statusConfig[s].label,
-                  dot: statusConfig[s].dotClass,
-                }))}
-                onChange={(v) => set("status", v as CarStatus)}
-              />
-            </Field>
-          </div>
-        </Section>
+            <Section title={fr.fleet.upload.vehiclePhotos} icon={CarIcon}>
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  {draft.photos.map((photo, index) => (
+                    <div
+                      key={`${photo.url}-${index}`}
+                      className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-slate-200 bg-slate-100"
+                    >
+                      <img src={photo.url} alt="" className="h-full w-full object-cover" />
+                      {index === 0 && (
+                        <span className="absolute left-2 top-2 rounded-full bg-slate-950/75 px-2 py-0.5 text-[10px] font-semibold text-white">
+                          {fr.fleet.documents.primaryPhoto}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(index)}
+                        className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/90 text-slate-600 opacity-0 shadow-sm transition hover:text-rose-600 group-hover:opacity-100"
+                        aria-label={fr.fleet.upload.removeFile}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {draft.photos.length < 6 && (
+                    <label className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/80 text-sm font-semibold text-slate-500 transition hover:border-indigo-300 hover:bg-indigo-50/50 hover:text-indigo-700">
+                      {uploadingPhotos ? (
+                        <span className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+                      ) : (
+                        <Upload className="h-5 w-5" />
+                      )}
+                      <span>{uploadingPhotos ? fr.fleet.upload.uploading : fr.fleet.upload.addPhotos}</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={uploadPhotos}
+                        disabled={uploadingPhotos}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400">{fr.fleet.upload.photoHint}</p>
+              </div>
+            </Section>
 
-        {/* Tarification */}
-        <Section title={fr.fleet.pricing.title} icon={Gauge}>
-          <div className="grid grid-cols-3 gap-3">
-            <Field label={fr.fleet.pricing.dailyRate} required error={errors.priceDay}>
-              <Input
-                type="number"
-                value={draft.priceDay}
-                onChange={(v) => set("priceDay", v === "" ? "" : Number(v))}
-                placeholder="250"
-                suffix="DH"
-                invalid={!!errors.priceDay}
-              />
-            </Field>
-            <Field label={fr.fleet.pricing.weeklyRate}>
-              <Input
-                type="number"
-                value={draft.priceWeek}
-                onChange={(v) => set("priceWeek", v === "" ? "" : Number(v))}
-                placeholder="1400"
-                suffix="DH"
-              />
-            </Field>
-            <Field label={fr.fleet.pricing.monthlyRate}>
-              <Input
-                type="number"
-                value={draft.priceMonth}
-                onChange={(v) => set("priceMonth", v === "" ? "" : Number(v))}
-                placeholder="5500"
-                suffix="DH"
-              />
-            </Field>
-            <Field label={fr.fleet.pricing.depositAmount}>
-              <Input
-                type="number"
-                value={draft.depositAmount}
-                onChange={(v) => set("depositAmount", v === "" ? "" : Number(v))}
-                placeholder="2000"
-                suffix="DH"
-              />
-            </Field>
-            <Field label={fr.fleet.pricing.mileageLimit}>
-              <Input
-                type="number"
-                value={draft.mileageLimit}
-                onChange={(v) => set("mileageLimit", v === "" ? "" : Number(v))}
-                placeholder="300"
-                suffix="km"
-              />
-            </Field>
-            <Field label={fr.fleet.pricing.extraMileageRate}>
-              <Input
-                type="number"
-                value={draft.extraMileageRate}
-                onChange={(v) => set("extraMileageRate", v === "" ? "" : Number(v))}
-                placeholder="2"
-                suffix="DH"
-              />
-            </Field>
-          </div>
-        </Section>
+            {/* Caractéristiques */}
+            <Section title="Caractéristiques" icon={Gauge}>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Catégorie">
+                  <Dropdown
+                    value={draft.category}
+                    options={categories.map((c) => ({ value: c, label: c }))}
+                    onChange={(v) => set("category", v as CarCategory)}
+                  />
+                </Field>
+                <Field label="Carburant">
+                  <Dropdown
+                    value={draft.fuel}
+                    options={fuels.map((f) => ({ value: f, label: f }))}
+                    onChange={(v) => set("fuel", v as FuelType)}
+                  />
+                </Field>
+                <Field label="Kilométrage actuel" required error={errors.km}>
+                  <Input
+                    type="number"
+                    value={draft.km}
+                    onChange={(v) => set("km", v === "" ? "" : Number(v))}
+                    placeholder="45000"
+                    suffix="km"
+                    invalid={!!errors.km}
+                  />
+                </Field>
+                <Field label="Statut">
+                  <Dropdown
+                    value={draft.status}
+                    options={statuses.map((s) => ({
+                      value: s,
+                      label: statusConfig[s].label,
+                      dot: statusConfig[s].dotClass,
+                    }))}
+                    onChange={(v) => set("status", v as CarStatus)}
+                  />
+                </Field>
+              </div>
+            </Section>
 
-        <Section title={fr.fleet.documents.title} icon={ShieldCheck}>
+            {/* Tarification */}
+            <Section title={fr.fleet.pricing.title} icon={Gauge}>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label={fr.fleet.pricing.dailyRate} required error={errors.priceDay}>
+                  <Input
+                    type="number"
+                    value={draft.priceDay}
+                    onChange={(v) => set("priceDay", v === "" ? "" : Number(v))}
+                    placeholder="250"
+                    suffix="DH"
+                    invalid={!!errors.priceDay}
+                  />
+                </Field>
+                <Field label={fr.fleet.pricing.weeklyRate}>
+                  <Input
+                    type="number"
+                    value={draft.priceWeek}
+                    onChange={(v) => set("priceWeek", v === "" ? "" : Number(v))}
+                    placeholder="1400"
+                    suffix="DH"
+                  />
+                </Field>
+                <Field label={fr.fleet.pricing.monthlyRate}>
+                  <Input
+                    type="number"
+                    value={draft.priceMonth}
+                    onChange={(v) => set("priceMonth", v === "" ? "" : Number(v))}
+                    placeholder="5500"
+                    suffix="DH"
+                  />
+                </Field>
+                <Field label={fr.fleet.pricing.depositAmount}>
+                  <Input
+                    type="number"
+                    value={draft.depositAmount}
+                    onChange={(v) => set("depositAmount", v === "" ? "" : Number(v))}
+                    placeholder="2000"
+                    suffix="DH"
+                  />
+                </Field>
+                <Field label={fr.fleet.pricing.mileageLimit}>
+                  <Input
+                    type="number"
+                    value={draft.mileageLimit}
+                    onChange={(v) => set("mileageLimit", v === "" ? "" : Number(v))}
+                    placeholder="300"
+                    suffix="km"
+                  />
+                </Field>
+                <Field label={fr.fleet.pricing.extraMileageRate}>
+                  <Input
+                    type="number"
+                    value={draft.extraMileageRate}
+                    onChange={(v) => set("extraMileageRate", v === "" ? "" : Number(v))}
+                    placeholder="2"
+                    suffix="DH"
+                  />
+                </Field>
+              </div>
+            </Section>
+          </>
+        )}
+
+        {scope === "documents" && <Section title={fr.fleet.documents.title} icon={ShieldCheck}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Field label={fr.fleet.documents.company}>
@@ -634,7 +646,7 @@ export function CarFormPanel({
               />
             </div>
           </div>
-        </Section>
+        </Section>}
 
       </div>
 

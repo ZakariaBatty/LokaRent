@@ -2,35 +2,34 @@
 
 import { motion } from "motion/react"
 import { Car, TrendingUp } from "lucide-react"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardTopVehicle } from "@/modules/dashboard/services/dashboard.service"
 
-export function TopCars() {
-  const { agencyData } = useAgency()
-  const topCars = [...agencyData.cars]
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 3)
-    .map((car) => ({
-      name: `${car.brand} ${car.model}`,
-      plate: car.plate,
-      revenue: `${car.revenue.toLocaleString("fr-FR")} DH`,
-      occupancy: car.occupancyRate,
-      trend: `+${Math.round(car.occupancyRate / 10)}%`,
-    }))
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function TopCars({ rows, currency }: { rows: DashboardTopVehicle[]; currency: string }) {
+  const { t } = useI18n()
 
   return (
     <div>
       <div className="mb-4 flex items-end justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Véhicules les plus rentables</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Top 3 du mois en cours</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("dashboard.topCars.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{t("dashboard.topCars.subtitle")}</p>
         </div>
         <button className="text-xs font-medium text-slate-500 transition-colors hover:text-slate-900">
-          Voir tout
+          {t("dashboard.actions.viewAll")}
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {topCars.map((car, i) => (
+        {rows.map((car, i) => (
           <motion.div
             key={car.plate}
             initial={{ opacity: 0, y: 12 }}
@@ -54,18 +53,20 @@ export function TopCars() {
 
             <div className="mt-4">
               <div className="flex items-baseline gap-1.5">
-                <span className="text-lg font-semibold tracking-tight text-slate-900">{car.revenue}</span>
+                <span className="text-lg font-semibold tracking-tight text-slate-900">
+                  {formatMoney(car.bookedValue, currency)}
+                </span>
                 <span className="inline-flex items-center gap-0.5 text-[10px] font-medium text-emerald-600">
                   <TrendingUp className="h-2.5 w-2.5" />
                   {car.trend}
                 </span>
               </div>
-              <p className="text-[10px] text-slate-400">Revenus générés</p>
+              <p className="text-[10px] text-slate-400">{t("dashboard.topCars.bookedValue")}</p>
             </div>
 
             <div className="mt-3">
               <div className="flex items-center justify-between text-[10px]">
-                <span className="text-slate-500">Taux d&apos;occupation</span>
+                <span className="text-slate-500">{t("dashboard.topCars.occupancyRate")}</span>
                 <span className="font-semibold text-slate-700">{car.occupancy}%</span>
               </div>
               <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100">

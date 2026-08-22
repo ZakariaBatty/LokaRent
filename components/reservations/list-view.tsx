@@ -2,8 +2,9 @@
 
 import { useState } from "react"
 import { motion, AnimatePresence } from "motion/react"
-import { Eye, Pencil, X, Trash2, AlertTriangle, MoreHorizontal } from "lucide-react"
+import { Eye, Pencil, X, Trash2, AlertTriangle, MoreHorizontal, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { useI18n } from "@/contexts/i18n-context"
 import { type Reservation, statusConfig, formatMAD, formatDate } from "@/lib/reservations-data"
 import {
   DropdownMenu,
@@ -38,10 +39,26 @@ export function ListView({
   onEdit: (r: Reservation) => void
   selectedId: string | null
   onCancel: (id: string) => void
-  onDelete: (id: string) => void
+  onDelete: (id: string) => Promise<boolean>
   compact?: boolean
 }) {
+  const { t } = useI18n()
   const [confirmDelete, setConfirmDelete] = useState<Reservation | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const confirmDeleteReservation = async () => {
+    if (!confirmDelete) return
+    setDeleting(true)
+    try {
+      const deleted = await onDelete(confirmDelete.id)
+      if (deleted) {
+        toast.success(t("reservations.form.deleted"))
+        setConfirmDelete(null)
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -203,25 +220,23 @@ export function ListView({
             <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50">
               <Trash2 className="h-5 w-5 text-rose-600" />
             </div>
-            <AlertDialogTitle>Supprimer la réservation ?</AlertDialogTitle>
+            <AlertDialogTitle>{t("reservations.delete.title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Cette action est irréversible. La réservation {confirmDelete?.code} sera définitivement supprimée
-              de votre historique.
+              {t("reservations.delete.description").replace("{code}", confirmDelete?.code ?? "")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-lg">Annuler</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting} className="rounded-lg">{t("reservations.delete.cancel")}</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                if (confirmDelete) {
-                  onDelete(confirmDelete.id)
-                  toast.success("Réservation supprimée")
-                }
-                setConfirmDelete(null)
+              onClick={(event) => {
+                event.preventDefault()
+                void confirmDeleteReservation()
               }}
+              disabled={deleting}
               className="rounded-lg bg-rose-600 text-white hover:bg-rose-700"
             >
-              Supprimer
+              {deleting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+              {t("reservations.delete.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

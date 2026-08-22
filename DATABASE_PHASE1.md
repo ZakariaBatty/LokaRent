@@ -111,7 +111,7 @@ Thirteen domains.
 |---|---|
 | `contract_templates` | Reusable templates. One default per agency is enough for Phase 1. |
 | `contract_template_versions` | Immutable versioned snapshot of a template body. A contract references the exact version in force at signing. **Phase 1 blocking dependency** per `DATABASE_FINAL_REVIEW.md` — required for legal integrity, cannot be backfilled later. |
-| `contracts` | One contract per reservation. Created at pickup. References `template_version_id`. |
+| `contracts` | Contract versions/amendments for a reservation. Each row references the exact `template_version_id` and `pricing_snapshot_id` used at generation. |
 | `contract_inspection_items` | Vehicle condition checklist at pickup and return. |
 | `contract_signatures` | One row per signing party per event. |
 
@@ -199,7 +199,7 @@ reservations
   ├── reservation_pricing_snapshots   (1:n chain; one is_current=true, rest superseded)
   ├── reservation_extras              (1:n)
   ├── reservation_timeline_events     (1:n, append-only)
-  └── contracts (1:1)
+  └── contracts (1:n version chain; one is_current=true)
         ├── contract_inspection_items (1:n)
         ├── contract_signatures       (1:n)
         └── documents (polymorphic, entity_type = 'contract')
@@ -1030,11 +1030,21 @@ reservation_pricing_snapshots
   reservation_id      uuid FK → reservations NOT NULL      -- NOT unique: a reservation has a chain of snapshots
   supersedes_id       uuid FK → reservation_pricing_snapshots NULL  -- prior snapshot this one replaces; NULL for the first
   is_current          boolean NOT NULL DEFAULT true        -- exactly one true per reservation
+  pricing_rule_id     uuid FK → vehicle_pricing_rules NULL -- resolved rate source when available
+  starts_at           timestamptz NULL                     -- frozen rental start used for pricing
+  ends_at             timestamptz NULL                     -- frozen rental end used for pricing
+  duration_value      smallint NULL                        -- frozen duration basis
+  duration_unit       text NULL                            -- e.g. day
   price_per_day       numeric(14,4) NOT NULL
   days                smallint NOT NULL
   extras_total        numeric(14,4) NOT NULL
   discount_amount     numeric(14,4) NOT NULL
+  discount_reason     text NULL
   total_amount        numeric(14,4) NOT NULL
+  mileage_limit       integer NULL
+  extra_mileage_rate  numeric(14,4) NULL
+  deposit_amount      numeric(14,4) NULL
+  tax_rate            numeric(14,4) NULL              -- immutable accepted tax rate copied from agency setting at snapshot creation
   currency            char(3) NOT NULL
   locked_at           timestamptz NOT NULL
   locked_by           uuid FK → users NOT NULL
@@ -1042,9 +1052,38 @@ reservation_pricing_snapshots
   -- Current snapshot strategy: enforced by a PARTIAL UNIQUE index
   UNIQUE(reservation_id) WHERE is_current = true
   INDEX(reservation_id, created_at)   -- fetch full chain / latest by created_at
+  INDEX(pricing_rule_id)
 ```
 
 **Current snapshot strategy:** Queries that need the active price filter `WHERE reservation_id = ? AND is_current = true`. When a price is adjusted: (1) insert the new snapshot with `supersedes_id` = old row id and `is_current = true`; (2) set the old row's `is_current = false`. Both steps run in one transaction. The partial unique index guarantees no two current snapshots can coexist for a reservation while still permitting the full historical chain. Note the immutability rule applies to financial columns; `is_current` is the single permitted state flag flip and is itself captured in the audit trail.
+
+---
+
+#### `reservation_extra_definitions`
+
+Mutable catalog of selectable reservation extras, scoped at company level (`agency_id NULL`) or agency level. Reservation writes must copy the current label/price/currency into `reservation_extras`; browser-submitted labels and prices are not authoritative.
+
+```
+reservation_extra_definitions
+  id              uuid PK
+  company_id      uuid FK NOT NULL
+  agency_id       uuid FK NULL
+  key             text NOT NULL
+  label           text NOT NULL
+  description     text
+  price           numeric(14,4) NOT NULL
+  currency        char(3) NOT NULL
+  is_active       boolean NOT NULL DEFAULT true
+  sort_order      integer NOT NULL DEFAULT 0
+  created_at      timestamptz
+  updated_at      timestamptz
+  deleted_at      timestamptz
+  deleted_by      uuid
+
+  UNIQUE(company_id, key) WHERE agency_id IS NULL AND deleted_at IS NULL
+  UNIQUE(company_id, agency_id, key) WHERE agency_id IS NOT NULL AND deleted_at IS NULL
+  INDEX(company_id, agency_id, is_active, sort_order)
+```
 
 ---
 
@@ -1055,11 +1094,40 @@ reservation_extras
   id              uuid PK
   company_id      uuid FK NOT NULL
   reservation_id  uuid FK → reservations NOT NULL
+  definition_id   uuid FK → reservation_extra_definitions NULL
   label           text NOT NULL               -- "GPS", "Siège bébé"
-  unit_price      numeric(10,2) NOT NULL
+  unit_price      numeric(14,4) NOT NULL
   quantity        smallint NOT NULL DEFAULT 1
-  total_price     numeric(10,2) NOT NULL
+  total_price     numeric(14,4) NOT NULL
+  currency        char(3) NOT NULL
   created_at      timestamptz
+```
+
+Rows are immutable price snapshots for the reservation. A definition can be edited or deleted later without changing historical reservation rows.
+
+---
+
+#### `reservation_authorized_drivers`
+
+Renter/customer authorized drivers for legal/contract purposes. This is separate from `driver_reservation_assignments`, which is only for internal agency chauffeurs/drivers.
+
+```
+reservation_authorized_drivers
+  id                  uuid PK
+  company_id          uuid FK NOT NULL
+  agency_id           uuid FK NOT NULL
+  reservation_id      uuid FK → reservations NOT NULL
+  full_name           text NOT NULL
+  license_number      text NOT NULL
+  license_issued_at   date
+  license_expires_at  date
+  document_url        text
+  created_at          timestamptz
+  updated_at          timestamptz
+  deleted_at          timestamptz
+  deleted_by          uuid
+
+  INDEX(reservation_id, deleted_at)
 ```
 
 ---
@@ -1101,13 +1169,15 @@ contract_templates
   is_active       boolean NOT NULL DEFAULT true
   created_at      timestamptz
   updated_at      timestamptz
+
+  UNIQUE(company_id, agency_id) WHERE is_default = true AND deleted_at IS NULL AND agency_id IS NOT NULL
 ```
 
 ---
 
 #### `contracts`
 
-One contract per reservation. Created when the reservation transitions to `active` (vehicle handover).
+Contract version generated from a reservation. A reservation may have multiple historical contract versions/amendments; exactly one non-deleted contract is current.
 
 ```
 contracts
@@ -1115,7 +1185,11 @@ contracts
   company_id          uuid FK NOT NULL
   agency_id           uuid FK NOT NULL
   code                text NOT NULL           -- "CTR-2025-00142"
-  reservation_id      uuid FK → reservations UNIQUE NOT NULL
+  reservation_id      uuid FK → reservations NOT NULL
+  pricing_snapshot_id uuid FK → reservation_pricing_snapshots NOT NULL
+  supersedes_contract_id uuid FK → contracts
+  version_number      smallint NOT NULL DEFAULT 1
+  is_current          boolean NOT NULL DEFAULT true
   customer_id         uuid FK → customers NOT NULL
   vehicle_id          uuid FK → vehicles NOT NULL
   template_id         uuid FK → contract_templates
@@ -1133,6 +1207,8 @@ contracts
   deleted_by          uuid
 
   UNIQUE(company_id, code)
+  UNIQUE(reservation_id, version_number)
+  UNIQUE(reservation_id) WHERE is_current = true AND deleted_at IS NULL
 ```
 
 ---
@@ -1180,7 +1256,7 @@ contract_signatures
 
 #### `invoices`
 
-One invoice per reservation. Generated at confirmation or completion.
+Invoices support two Phase-1 modes: rental invoices linked to one reservation, and manual invoices independent from reservations.
 
 ```
 invoices
@@ -1188,23 +1264,31 @@ invoices
   company_id      uuid FK NOT NULL
   agency_id       uuid FK NOT NULL
   code            text NOT NULL               -- "INV-{AGENCY_CODE}-2025-00142"
-  reservation_id  uuid FK → reservations NOT NULL
+  type            enum(rental, manual) NOT NULL DEFAULT rental
+  reservation_id  uuid FK → reservations       -- required for rental, NULL for manual
   customer_id     uuid FK → customers NOT NULL
   status          enum(draft, issued, paid, partially_paid, voided) NOT NULL
-  subtotal        numeric(12,2) NOT NULL
-  tax_amount      numeric(12,2) NOT NULL DEFAULT 0
-  discount_amount numeric(12,2) NOT NULL DEFAULT 0
-  total_amount    numeric(12,2) NOT NULL
+  subtotal        numeric(14,4) NOT NULL
+  tax_amount      numeric(14,4) NOT NULL DEFAULT 0
+  discount_amount numeric(14,4) NOT NULL DEFAULT 0
+  total_amount    numeric(14,4) NOT NULL
   currency        char(3) NOT NULL
   issued_at       date
   due_at          date
   paid_at         timestamptz
+  document_url    text                        -- generated invoice document/PDF URL
   notes           text
   created_at      timestamptz
   updated_at      timestamptz
+  deleted_at      timestamptz                  -- draft-only soft delete
+  deleted_by      uuid
 
   UNIQUE(company_id, code)
+  UNIQUE(reservation_id) WHERE type = 'rental' AND reservation_id IS NOT NULL AND deleted_at IS NULL
+  CHECK ((type = 'rental' AND reservation_id IS NOT NULL) OR (type = 'manual' AND reservation_id IS NULL))
 ```
+
+Only draft invoices may be soft-deleted. Issued, partially paid, paid, overdue, and voided invoices remain historical accounting records; corrections use `credit_notes`.
 
 ---
 
@@ -1218,12 +1302,16 @@ invoice_line_items
   company_id      uuid FK NOT NULL
   invoice_id      uuid FK → invoices NOT NULL
   description     text NOT NULL
-  quantity        numeric(10,2) NOT NULL
-  unit_price      numeric(10,2) NOT NULL
-  total_price     numeric(10,2) NOT NULL
+  quantity        numeric(14,4) NOT NULL
+  unit_price      numeric(14,4) NOT NULL
+  total_price     numeric(14,4) NOT NULL
+  tax_rate        numeric(14,4) NULL           -- immutable tax rate actually used for this historical line
+  tax_amount      numeric(14,4) NULL           -- immutable tax amount actually applied to this historical line
   sort_order      smallint NOT NULL DEFAULT 0
   created_at      timestamptz
 ```
+
+`reservation_pricing_snapshots.tax_rate` is copied from the resolved agency `tax_rate` setting when the accepted pricing snapshot is created. Existing historical rows may be `NULL` if the accepted tax rate was not previously stored. Issued invoice line items must use their own `tax_rate` and `tax_amount` snapshot and must never recalculate tax from current settings.
 
 ---
 
@@ -1236,7 +1324,7 @@ payments
   id              uuid PK
   company_id      uuid FK NOT NULL
   agency_id       uuid FK NOT NULL
-  reservation_id  uuid FK → reservations NOT NULL
+  reservation_id  uuid FK → reservations       -- required for rental invoice payments, NULL for manual invoice payments
   invoice_id      uuid FK → invoices
   customer_id     uuid FK → customers NOT NULL
   method          enum(cash, bank_transfer, cheque, card, other) NOT NULL
@@ -1248,8 +1336,9 @@ payments
   recorded_by     uuid FK → users NOT NULL
   created_at      timestamptz
   updated_at      timestamptz
-  deleted_at      timestamptz
-  deleted_by      uuid
+```
+
+Payments are immutable append-only records and are not soft-deleted.
 ```
 
 ---
@@ -1306,11 +1395,13 @@ expenses
   vehicle_id      uuid FK → vehicles          -- null = non-vehicle expense
   reservation_id  uuid FK → reservations      -- null = non-reservation expense
   description     text NOT NULL
-  amount          numeric(12,2) NOT NULL
+  amount          numeric(14,4) NOT NULL
   currency        char(3) NOT NULL
   occurred_at     date NOT NULL
   method          enum(cash, bank_transfer, cheque, card, other)
   reference       text
+  provider        text                         -- supplier/provider shown in operational expense UI
+  internal_note   text                         -- private operational note
   document_url    text
   recorded_by     uuid FK → users NOT NULL
   created_at      timestamptz
@@ -1358,6 +1449,7 @@ documents
 | `contract` | `contracts.id` |
 | `contract_inspection` | `contract_inspection_items.id` |
 | `expense` | `expenses.id` |
+| `reservation` | `reservations.id` |
 
 ---
 
@@ -1436,6 +1528,12 @@ activity_logs
 - `disputes` — linked to `payments.id`
 
 **Existing tables untouched:** `payments`, `invoices`, `companies`, `reservations`. Zero new columns.
+
+Refunds remain Phase 2. In Phase 1, `credit_notes` are accounting correction documents for invoice voids/corrections and are not cash refunds. A future dedicated `refunds` table will represent money returned from a prior payment.
+
+Financial accounts/cashboxes/bank accounts are not required in Phase 1. Payments and expenses remain operational records, not a double-entry ledger.
+
+Because there is no FX/conversion model, Finance aggregates must not combine different currencies into one total. KPI/report queries must filter or group by `currency`.
 
 ---
 

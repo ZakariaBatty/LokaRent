@@ -2,6 +2,8 @@ import { createId } from "@/shared";
 import {
   createActivityLog,
   createAuditLog,
+  listActivityFeed,
+  listActivityFilterOptions,
   listActivityLogs,
   listAuditLogs,
 } from "../repositories/activity.repository";
@@ -62,9 +64,44 @@ export async function listActivityLogsService(input: {
   return listActivityLogs(input);
 }
 
+export async function listWorkspaceActivityFeedService(input: {
+  companyId: string;
+  agencyId?: string | null;
+  entityType?: string;
+  verb?: string;
+  search?: string;
+  from?: Date;
+  to?: Date;
+  page?: number;
+  pageSize?: number;
+}) {
+  const page = Math.max(1, input.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 20));
+  const result = await listActivityFeed({
+    ...input,
+    page,
+    pageSize,
+    search: input.search?.trim() || undefined,
+  });
+  return {
+    ...result,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+  };
+}
+
+export async function listWorkspaceActivityFilterOptionsService(input: {
+  companyId: string;
+}) {
+  return listActivityFilterOptions(input);
+}
+
 export const activityService = {
   createAuditLogService,
   listAuditLogsService,
   createActivityLogService,
   listActivityLogsService,
+  listWorkspaceActivityFeedService,
+  listWorkspaceActivityFilterOptionsService,
 };

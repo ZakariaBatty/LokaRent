@@ -9,6 +9,50 @@ export type ReservationExtras = {
   additionalDriver: string | null
 }
 
+export type ReservationExtraItem = {
+  id: string
+  definitionId: string | null
+  key?: string | null
+  label: string
+  unitPrice: number
+  quantity: number
+  totalPrice: number
+  currency: string
+}
+
+export type ReservationAuthorizedDriver = {
+  id: string
+  fullName: string
+  licenseNumber: string
+  licenseIssuedAt?: string | null
+  licenseExpiresAt?: string | null
+  documentUrl?: string | null
+}
+
+export type ReservationDeposit = {
+  id: string
+  amount: number
+  currency: string
+  method: "cash" | "cheque" | "card" | "other"
+  status: "held" | "released" | "forfeited" | "partially_released"
+  collectedAt: string
+  releasedAt?: string | null
+  releasedAmount: number
+  heldAmount: number
+  forfeitureReason?: string | null
+  notes?: string | null
+}
+
+export type ReservationDepositSummary = {
+  agreedAmount: number
+  collectedAmount: number
+  releasedAmount: number
+  heldAmount: number
+  currency: string
+  status: "not_collected" | ReservationDeposit["status"]
+  records: ReservationDeposit[]
+}
+
 export type ContractChecklistItem = {
   label: string
   ok: boolean
@@ -32,6 +76,7 @@ export type TimelineEvent = {
 export type Reservation = {
   id: string
   code: string // e.g. RES-2024-0012
+  sourceId?: string
   status: ReservationStatus
   urgency: "low" | "medium" | "high" // for overdue, expiring etc.
 
@@ -56,13 +101,19 @@ export type Reservation = {
   returnLocation: string
 
   extras: ReservationExtras
+  extraItems?: ReservationExtraItem[]
+  authorizedDrivers?: ReservationAuthorizedDriver[]
 
   startKm: number | null
   returnKm: number | null
 
   pricePerDay: number
+  discountAmount?: number
+  discountReason?: string | null
   total: number
+  currentPricingSnapshotId?: string | null
   caution: number
+  deposit?: ReservationDepositSummary
   advance: number
   remaining: number
   paymentMethod: "Espèces" | "Carte bancaire" | "Virement" | "Chèque"

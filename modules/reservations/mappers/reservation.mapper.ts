@@ -10,9 +10,11 @@ type ReservationPayload = Prisma.ReservationGetPayload<{
     vehicle: { include: { category: true } };
     source: true;
     pricingSnapshots: true;
-    extras: true;
+    extras: { include: { definition: true } };
+    authorizedDrivers: true;
     timelineEvents: true;
-    contract: true;
+    contracts: true;
+    deposits: true;
     driverAssignments: { include: { driver: true } };
   };
 }>;
@@ -81,14 +83,65 @@ function mapTimeline(event: ReservationPayload["timelineEvents"][number]): Timel
   };
 }
 
+function depositHeldAmount(deposit: ReservationPayload["deposits"][number]) {
+  return Math.max(0, Number(deposit.amount) - Number(deposit.releasedAmount ?? 0));
+}
+
+function mapDepositSummary(reservation: ReservationPayload) {
+  const agreedAmount = Number(reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent)?.depositAmount ?? reservation.depositAmount);
+  const records = reservation.deposits.map((deposit) => ({
+    id: deposit.id,
+    amount: Number(deposit.amount),
+    currency: deposit.currency,
+    method: deposit.method,
+    status: deposit.status,
+    collectedAt: deposit.collectedAt.toISOString(),
+    releasedAt: deposit.releasedAt?.toISOString() ?? null,
+    releasedAmount: Number(deposit.releasedAmount ?? 0),
+    heldAmount: depositHeldAmount(deposit),
+    forfeitureReason: deposit.forfeitureReason,
+    notes: deposit.notes,
+  }));
+  const collectedAmount = records.reduce((sum, deposit) => sum + deposit.amount, 0);
+  const releasedAmount = records.reduce((sum, deposit) => sum + deposit.releasedAmount, 0);
+  const heldAmount = records.reduce((sum, deposit) => sum + deposit.heldAmount, 0);
+  const current = records[0] ?? null;
+  return {
+    agreedAmount,
+    collectedAmount,
+    releasedAmount,
+    heldAmount,
+    currency: current?.currency ?? reservation.currency,
+    status: current?.status ?? "not_collected",
+    records,
+  };
+}
+
+function includesAny(value: string, terms: string[]) {
+  const normalized = value.toLowerCase();
+  return terms.some((term) => normalized.includes(term));
+}
+
+function additionalDriverName(extras: ReservationPayload["extras"]) {
+  const extra = extras.find((item) => includesAny(item.label, ["conducteur", "driver"]));
+  if (!extra) return null;
+  const [, name] = extra.label.split(/:|-/).map((part) => part.trim());
+  return name || extra.label;
+}
+
 export function mapReservationToUi(reservation: ReservationPayload): Reservation {
   const name = customerName(reservation.customer);
   const driverAssignment = reservation.driverAssignments[0];
-  const total = Number(reservation.totalAmount);
   const advance = Number(reservation.advanceAmount);
+  const authorizedDriver = reservation.authorizedDrivers[0];
+  const currentPricingSnapshot = reservation.pricingSnapshots.find((snapshot) => snapshot.isCurrent) ?? null;
+  const total = Number(currentPricingSnapshot?.totalAmount ?? reservation.totalAmount);
+  const currentContract = reservation.contracts[0];
+  const depositSummary = mapDepositSummary(reservation);
   return {
     id: reservation.id,
     code: reservation.code,
+    sourceId: reservation.sourceId,
     status: mapReservationStatusToUi(reservation.status),
     urgency: reservation.status === "active" ? "medium" : "low",
     client: {
@@ -110,16 +163,38 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
     pickupLocation: reservation.pickupLocation ?? "",
     returnLocation: reservation.returnLocation ?? "",
     extras: {
-      gps: reservation.extras.some((extra) => extra.label.toLowerCase().includes("gps")),
-      babySeat: reservation.extras.some((extra) => extra.label.toLowerCase().includes("baby")),
-      insuranceUpgrade: reservation.extras.some((extra) => extra.label.toLowerCase().includes("insurance")),
-      additionalDriver: null,
+      gps: reservation.extras.some((extra) => includesAny(extra.label, ["gps"])),
+      babySeat: reservation.extras.some((extra) => includesAny(extra.label, ["baby", "bébé", "bebe", "siège", "siege"])),
+      insuranceUpgrade: reservation.extras.some((extra) => includesAny(extra.label, ["insurance", "assurance"])),
+      additionalDriver: authorizedDriver?.fullName ?? additionalDriverName(reservation.extras),
     },
-    startKm: null,
+    extraItems: reservation.extras.map((extra) => ({
+      id: extra.id,
+      definitionId: extra.definitionId,
+      key: extra.definition?.key ?? null,
+      label: extra.label,
+      unitPrice: Number(extra.unitPrice),
+      quantity: extra.quantity,
+      totalPrice: Number(extra.totalPrice),
+      currency: extra.currency,
+    })),
+    authorizedDrivers: reservation.authorizedDrivers.map((driver) => ({
+      id: driver.id,
+      fullName: driver.fullName,
+      licenseNumber: driver.licenseNumber,
+      licenseIssuedAt: driver.licenseIssuedAt?.toISOString() ?? null,
+      licenseExpiresAt: driver.licenseExpiresAt?.toISOString() ?? null,
+      documentUrl: driver.documentUrl,
+    })),
+    startKm: currentContract?.pickupMileage ?? null,
     returnKm: null,
     pricePerDay: Number(reservation.pricePerDay),
+    discountAmount: Number(reservation.discountAmount),
+    discountReason: reservation.discountReason,
     total,
+    currentPricingSnapshotId: currentPricingSnapshot?.id ?? null,
     caution: Number(reservation.depositAmount),
+    deposit: depositSummary,
     advance,
     remaining: Math.max(0, total - advance),
     paymentMethod: "Espèces",
@@ -128,7 +203,7 @@ export function mapReservationToUi(reservation: ReservationPayload): Reservation
       departureChecklist: [],
       returnChecklist: [],
       damages: [],
-      signed: Boolean(reservation.contract),
+      signed: Boolean(currentContract),
       photos: 0,
     },
     timeline: reservation.timelineEvents.map(mapTimeline),

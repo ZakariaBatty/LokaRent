@@ -3,8 +3,13 @@
 import Link from "next/link"
 import { motion } from "motion/react"
 import { AlertTriangle, ArrowRight, ShieldAlert, Clock } from "lucide-react"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardAlerts } from "@/modules/dashboard/services/dashboard.service"
 
-export function AlertsBanner() {
+export function AlertsBanner({ alerts }: { alerts: DashboardAlerts }) {
+  const { t } = useI18n()
+  if (alerts.total === 0) return null
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -32,25 +37,33 @@ export function AlertsBanner() {
         {/* Content */}
         <div className="relative flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-amber-950">Action requise</p>
+            <p className="text-sm font-semibold text-amber-950">{t("dashboard.alerts.actionRequired")}</p>
             <span className="rounded-md bg-amber-200/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-800">
-              4 alertes
+              {alerts.total} {t("dashboard.alerts.alerts")}
             </span>
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-amber-800/90">
-            <span className="inline-flex items-center gap-1.5">
-              <ShieldAlert className="h-3 w-3" />3 assurances expirent dans moins de 30 jours
-            </span>
-            <span className="hidden h-1 w-1 rounded-full bg-amber-400 sm:inline-block" />
-            <span className="inline-flex items-center gap-1.5">
-              <Clock className="h-3 w-3" />1 voiture en retard de retour
-            </span>
+            {alerts.expiringDocuments > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <ShieldAlert className="h-3 w-3" />
+                {t("dashboard.alerts.expiringDocuments").replace("{count}", String(alerts.expiringDocuments))}
+              </span>
+            )}
+            {alerts.expiringDocuments > 0 && alerts.overdueReturns > 0 && (
+              <span className="hidden h-1 w-1 rounded-full bg-amber-400 sm:inline-block" />
+            )}
+            {alerts.overdueReturns > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <Clock className="h-3 w-3" />
+                {t("dashboard.alerts.overdueReturns").replace("{count}", String(alerts.overdueReturns))}
+              </span>
+            )}
           </div>
         </div>
 
         {/* CTA */}
         <div className="relative flex items-center gap-1.5 text-xs font-medium text-amber-900">
-          <span className="hidden sm:inline">Voir les alertes</span>
+          <span className="hidden sm:inline">{t("dashboard.alerts.viewAlerts")}</span>
           <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
         </div>
       </Link>

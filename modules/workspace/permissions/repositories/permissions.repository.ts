@@ -112,6 +112,19 @@ export async function listUserPermissionOverrides(
   });
 }
 
+export async function listCompanyUserPermissionOverrides(
+  input: { companyId: string },
+  db: DatabaseClient = prisma,
+) {
+  return db.userPermissionOverride.findMany({
+    where: {
+      agencyMembership: { companyId: input.companyId, deletedAt: null },
+    },
+    include: { permission: true, role: true, agencyMembership: { include: { agency: true, user: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
 type UserPermissionOverrideScope = {
   companyId: string;
   agencyMembershipId: string;
@@ -274,6 +287,7 @@ export const permissionsRepository = {
   createManyRolePermissions,
   deleteRolePermission,
   listUserPermissionOverrides,
+  listCompanyUserPermissionOverrides,
   createUserPermissionOverride,
   createGrantPermissionOverride,
   createDenyPermissionOverride,

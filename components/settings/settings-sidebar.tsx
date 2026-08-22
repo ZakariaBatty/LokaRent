@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "motion/react"
-import { Bell, Building2, FileText, SlidersHorizontal, Tag, UsersRound } from "lucide-react"
+import { Bell, Building2, FileText, SlidersHorizontal, Tag } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 const items: { href: string; label: string; icon: LucideIcon; description: string }[] = [
@@ -24,12 +24,6 @@ const items: { href: string; label: string; icon: LucideIcon; description: strin
     label: "Modèle de contrat",
     icon: FileText,
     description: "Clauses & mise en page",
-  },
-  {
-    href: "/settings/teams",
-    label: "Équipes",
-    icon: UsersRound,
-    description: "Groupes par agence",
   },
   {
     href: "/settings/notifications",

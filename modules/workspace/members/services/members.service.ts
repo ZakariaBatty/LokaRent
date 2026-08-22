@@ -1,4 +1,13 @@
-import { createId, createNotFoundError, createValidationError, publishDomainEvent } from "@/shared";
+import type { Prisma } from "@lokarent/db";
+import {
+  createId,
+  createNotFoundError,
+  createValidationError,
+  publishDomainEvent,
+  runInTransaction,
+  writeActivityLog,
+  writeAuditLog,
+} from "@/shared";
 import { getCompanyService } from "@/modules/workspace/agencies/services/agencies.service";
 import { enforcePlanLimitService } from "@/modules/workspace/billing/services/billing.service";
 import {
@@ -6,6 +15,7 @@ import {
   createCompanyMembership,
   findAgencyMembership,
   findCompanyMembership,
+  listCompanyAgencyMemberships,
   listAgencyMemberships,
   listCompanyMemberships,
   listUserAgencyMemberships,
@@ -23,6 +33,130 @@ export type MemberActor = {
 type CompanyMembershipCreateData = Omit<Parameters<typeof createCompanyMembership>[0], "id" | "companyId">;
 type AgencyMembershipCreateData = Omit<Parameters<typeof createAgencyMembership>[0], "id" | "companyId" | "agencyId">;
 
+function safeAgencyMembershipSnapshot(membership: {
+  id: string;
+  companyId: string;
+  agencyId: string;
+  userId: string;
+  roleId: string;
+  roleScope: string;
+  status: string;
+  isPrimary: boolean;
+  joinedAt?: Date | null;
+  deletedAt?: Date | null;
+}) {
+  return {
+    id: membership.id,
+    companyId: membership.companyId,
+    agencyId: membership.agencyId,
+    userId: membership.userId,
+    roleId: membership.roleId,
+    roleScope: membership.roleScope,
+    status: membership.status,
+    isPrimary: membership.isPrimary,
+    joinedAt: membership.joinedAt?.toISOString() ?? null,
+    deletedAt: membership.deletedAt?.toISOString() ?? null,
+  } satisfies Prisma.InputJsonObject;
+}
+
+function safeCompanyMembershipSnapshot(membership: {
+  id: string;
+  companyId: string;
+  userId: string;
+  roleId: string;
+  roleScope: string;
+  status: string;
+  deletedAt?: Date | null;
+}) {
+  return {
+    id: membership.id,
+    companyId: membership.companyId,
+    userId: membership.userId,
+    roleId: membership.roleId,
+    roleScope: membership.roleScope,
+    status: membership.status,
+    deletedAt: membership.deletedAt?.toISOString() ?? null,
+  } satisfies Prisma.InputJsonObject;
+}
+
+async function writeWorkspaceAgencyMembershipLogs(
+  input: MemberActor & {
+    companyId: string;
+    agencyId: string;
+    membershipId: string;
+    action:
+      | "AgencyMembershipCreated"
+      | "AgencyMembershipRoleUpdated"
+      | "AgencyMembershipRemoved";
+    changes: Prisma.InputJsonObject;
+    db: Parameters<typeof writeAuditLog>[1];
+  },
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      action: input.action,
+      entityType: "agency_membership",
+      entityId: input.membershipId,
+      changes: input.changes,
+    },
+    input.db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "agency_membership",
+      entityId: input.membershipId,
+      verb: input.action,
+      metadata: input.changes,
+    },
+    input.db,
+  );
+}
+
+async function writeWorkspaceCompanyMembershipLogs(
+  input: MemberActor & {
+    companyId: string;
+    membershipId: string;
+    action: "CompanyMembershipRemoved";
+    changes: Prisma.InputJsonObject;
+    db: Parameters<typeof writeAuditLog>[1];
+  },
+) {
+  await writeAuditLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      userId: input.userId,
+      action: input.action,
+      entityType: "company_membership",
+      entityId: input.membershipId,
+      changes: input.changes,
+    },
+    input.db,
+  );
+  await writeActivityLog(
+    {
+      id: createId(),
+      companyId: input.companyId,
+      userId: input.userId,
+      actorName: input.actorName,
+      entityType: "company_membership",
+      entityId: input.membershipId,
+      verb: input.action,
+      metadata: input.changes,
+    },
+    input.db,
+  );
+}
+
 export async function getCompanyMembershipService(input: {
   companyId: string;
   userId: string;
@@ -37,6 +171,18 @@ export async function listCompanyMembershipsService(input: {
   includeDeleted?: boolean;
 }) {
   return listCompanyMemberships(input);
+}
+
+export async function listWorkspaceMembersService(input: {
+  companyId: string;
+  includeDeleted?: boolean;
+}) {
+  const [companyMemberships, agencyMemberships] = await Promise.all([
+    listCompanyMemberships(input),
+    listCompanyAgencyMemberships(input),
+  ]);
+
+  return { companyMemberships, agencyMemberships };
 }
 
 export async function createCompanyMembershipService(
@@ -83,13 +229,35 @@ export async function updateCompanyMembershipService(
 export async function removeCompanyMembershipService(
   input: MemberActor & { companyId: string; membershipId: string },
 ) {
-  const activeMembers = await listCompanyMemberships({ companyId: input.companyId });
-  if (activeMembers.length <= 1) {
-    throw createValidationError("A company must keep at least one active member");
-  }
-  return softDeleteCompanyMembership({
-    ...input,
-    deletedBy: input.userId ?? null,
+  return runInTransaction(async (db) => {
+    const activeMembers = await listCompanyMemberships({ companyId: input.companyId }, db);
+    if (activeMembers.length <= 1) {
+      throw createValidationError("A company must keep at least one active member");
+    }
+    const before = await db.companyMembership.findFirst({
+      where: { id: input.membershipId, companyId: input.companyId, deletedAt: null },
+    });
+    if (!before) throw createNotFoundError("Company membership", input);
+    const removed = await softDeleteCompanyMembership({
+      ...input,
+      deletedBy: input.userId ?? null,
+    }, db);
+    const after = await db.companyMembership.findFirst({
+      where: { id: input.membershipId, companyId: input.companyId },
+    });
+    await writeWorkspaceCompanyMembershipLogs({
+      companyId: input.companyId,
+      membershipId: input.membershipId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "CompanyMembershipRemoved",
+      changes: {
+        before: safeCompanyMembershipSnapshot(before),
+        after: after ? safeCompanyMembershipSnapshot(after) : null,
+      },
+      db,
+    });
+    return removed;
   });
 }
 
@@ -122,21 +290,35 @@ export async function listUserAgencyMembershipsService(input: {
 export async function assignUserToAgencyService(
   input: MemberActor & { companyId: string; agencyId: string; data: AgencyMembershipCreateData },
 ) {
-  const existing = await findAgencyMembership({
-    companyId: input.companyId,
-    agencyId: input.agencyId,
-    userId: input.data.userId,
-    includeDeleted: true,
+  const membership = await runInTransaction(async (db) => {
+    const existing = await findAgencyMembership({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      userId: input.data.userId,
+      includeDeleted: true,
+    }, db);
+    if (existing && !existing.deletedAt) {
+      throw createValidationError("User is already assigned to this agency");
+    }
+    const created = await createAgencyMembership({
+      ...input.data,
+      id: createId(),
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+    }, db);
+    await writeWorkspaceAgencyMembershipLogs({
+      companyId: created.companyId,
+      agencyId: created.agencyId,
+      membershipId: created.id,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyMembershipCreated",
+      changes: { after: safeAgencyMembershipSnapshot(created) },
+      db,
+    });
+    return created;
   });
-  if (existing && !existing.deletedAt) {
-    throw createValidationError("User is already assigned to this agency");
-  }
-  const membership = await createAgencyMembership({
-    ...input.data,
-    id: createId(),
-    companyId: input.companyId,
-    agencyId: input.agencyId,
-  });
+
   await publishDomainEvent({
     name: "MemberAssignedToAgency",
     companyId: membership.companyId,
@@ -151,23 +333,86 @@ export async function assignUserToAgencyService(
 }
 
 export async function updateAgencyMembershipService(
-  input: {
+  input: MemberActor & {
     companyId: string;
     agencyId: string;
     membershipId: string;
     data: Parameters<typeof updateAgencyMembership>[0]["data"];
   },
 ) {
-  return updateAgencyMembership(input);
+  return runInTransaction(async (db) => {
+    const before = await db.agencyMembership.findFirst({
+      where: {
+        id: input.membershipId,
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+      },
+    });
+    if (!before) throw createNotFoundError("Agency membership", input);
+    await updateAgencyMembership(input, db);
+    const after = await db.agencyMembership.findFirst({
+      where: {
+        id: input.membershipId,
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+      },
+    });
+    if (!after) throw createNotFoundError("Agency membership", input);
+    await writeWorkspaceAgencyMembershipLogs({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      membershipId: input.membershipId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyMembershipRoleUpdated",
+      changes: {
+        before: safeAgencyMembershipSnapshot(before),
+        after: safeAgencyMembershipSnapshot(after),
+      },
+      db,
+    });
+    return { count: 1 };
+  });
 }
 
 export async function removeAgencyMembershipService(
   input: MemberActor & { companyId: string; agencyId: string; membershipId: string },
 ) {
-  const result = await softDeleteAgencyMembership({
-    ...input,
-    deletedBy: input.userId ?? null,
+  const result = await runInTransaction(async (db) => {
+    const before = await db.agencyMembership.findFirst({
+      where: {
+        id: input.membershipId,
+        companyId: input.companyId,
+        agencyId: input.agencyId,
+        deletedAt: null,
+      },
+    });
+    if (!before) throw createNotFoundError("Agency membership", input);
+    const removed = await softDeleteAgencyMembership({
+      ...input,
+      deletedBy: input.userId ?? null,
+    }, db);
+    const after = await db.agencyMembership.findFirst({
+      where: { id: input.membershipId, companyId: input.companyId, agencyId: input.agencyId },
+    });
+    await writeWorkspaceAgencyMembershipLogs({
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      membershipId: input.membershipId,
+      userId: input.userId,
+      actorName: input.actorName,
+      action: "AgencyMembershipRemoved",
+      changes: {
+        before: safeAgencyMembershipSnapshot(before),
+        after: after ? safeAgencyMembershipSnapshot(after) : null,
+      },
+      db,
+    });
+    return removed;
   });
+
   await publishDomainEvent({
     name: "MemberRemovedFromAgency",
     companyId: input.companyId,
@@ -184,6 +429,7 @@ export async function removeAgencyMembershipService(
 export const membersService = {
   getCompanyMembershipService,
   listCompanyMembershipsService,
+  listWorkspaceMembersService,
   createCompanyMembershipService,
   updateCompanyMembershipService,
   removeCompanyMembershipService,

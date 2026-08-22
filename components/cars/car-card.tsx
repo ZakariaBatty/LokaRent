@@ -7,7 +7,7 @@ import { CarIllustration } from "./car-illustration"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
 
-type Alert = { type: "insurance" | "vignette" | "maintenance"; severity: "warning" | "danger" }
+type Alert = { type: "insurance" | "vignette" | "inspection"; severity: "warning" | "danger" }
 
 function getAlerts(car: Car): Alert[] {
   const alerts: Alert[] = []
@@ -22,9 +22,9 @@ function getAlerts(car: Car): Alert[] {
     alerts.push({ type: "vignette", severity: "warning" })
 
   if (car.visiteTechnique.daysLeft < 0)
-    alerts.push({ type: "maintenance", severity: "danger" })
+    alerts.push({ type: "inspection", severity: "danger" })
   else if (car.visiteTechnique.daysLeft <= 30)
-    alerts.push({ type: "maintenance", severity: "warning" })
+    alerts.push({ type: "inspection", severity: "warning" })
 
   return alerts
 }

@@ -619,6 +619,8 @@ Each widget is an independent server component that can be independently cached 
 | Manage deposits | Y | Y | Y | N | N |
 | View expenses | Y | Y | Y | N | N |
 | Add expense | Y | Y | Y | N | N |
+| Edit expense | Y | Y | Y | N | N |
+| Delete expense | Y | Y | Y | N | N |
 | View financial reports | Y | Y | Y | N | N |
 | Export reports | Y | Y | Y | N | N |
 | **Agency — Settings** |

@@ -32,12 +32,16 @@ export function CarDetailPanel({
   car,
   onClose,
   onEdit,
+  onEditDocuments,
+  onSaveDocument,
   onDelete,
   canDelete = false,
 }: {
   car: Car
   onClose: () => void
   onEdit?: () => void
+  onEditDocuments?: () => void
+  onSaveDocument?: Parameters<typeof DocumentsTab>[0]["onSaveDocument"]
   onDelete?: () => void
   canDelete?: boolean
 }) {
@@ -125,20 +129,22 @@ export function CarDetailPanel({
               <p className="text-base font-bold text-slate-900 tabular-nums">{formatMAD(car.priceDay)}</p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Revenus</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                {fr.fleet.finance.revenue}
+              </p>
               <p className="text-base font-bold text-emerald-700 tabular-nums">
                 {formatMAD(car.revenue)}
               </p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Occupation
+                {fr.fleet.finance.occupancy}
               </p>
               <p className="text-base font-bold text-slate-900 tabular-nums">{car.occupancyRate}%</p>
             </div>
             <div className="rounded-xl border border-slate-200/80 bg-white p-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Profit net
+                {fr.fleet.finance.netProfit}
               </p>
               <p
                 className={cn(
@@ -192,7 +198,9 @@ export function CarDetailPanel({
             className="p-5"
           >
             {activeTab === "infos" && <InfosTab car={car} />}
-            {activeTab === "documents" && <DocumentsTab car={car} />}
+            {activeTab === "documents" && (
+              <DocumentsTab car={car} onEdit={onEditDocuments ?? onEdit} onSaveDocument={onSaveDocument} />
+            )}
             {activeTab === "finances" && <FinancesTab car={car} />}
             {activeTab === "historique" && <HistoriqueTab car={car} />}
           </motion.div>

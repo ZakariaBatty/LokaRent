@@ -185,9 +185,12 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 
 **Invoice ownership:**
 - An invoice is owned by the agency that issued it (`agency_id`).
-- Every invoice references one reservation (`reservation_id`).
+- Rental invoices reference one reservation (`reservation_id`). Manual invoices are reservation-independent and keep `reservation_id NULL`.
 - Every invoice references one customer (`customer_id`).
 - When the customer type is `company`, `customer_business_id` is also populated for accurate legal billing.
+- `invoices.type` explicitly distinguishes `rental` and `manual`; a database check keeps rental invoices linked to reservations and manual invoices unlinked.
+- Draft invoices may be soft-deleted with `deleted_at` / `deleted_by`. Issued and other historical invoice states are never deleted; corrections use credit notes.
+- The active rental-invoice uniqueness rule is `reservation_id WHERE type = 'rental' AND deleted_at IS NULL`, so a soft-deleted draft frees the reservation for a new invoice while preserving active duplicate protection.
 
 **Invoice numbering strategy:**
 - Format: `INV-{AGENCY_CODE}-{YEAR}-{SEQUENCE}` — e.g. `INV-AGA-2025-00017`.
@@ -199,11 +202,26 @@ draft → issued → partially_paid → paid → overdue → voided (via credit_
 - `invoices.customer_id` → `customers` — always set.
 - `invoices.customer_business_id` → `customer_businesses` — set only when customer type is `company`.
 - `invoices.reservation_id` → `reservations` — always set for rental invoices.
+- `payments.reservation_id` → `reservations` — set for rental invoice payments, `NULL` for manual invoice payments.
 - `payments.invoice_id` → `invoices` — nullable (advance or deposit payments may not yet reference an invoice).
 - `credit_notes.original_invoice_id` → `invoices` — the invoice being corrected.
 - `credit_notes.replacement_invoice_id` → `invoices` — nullable; the correcting invoice if one was re-issued.
 
-**Key design decision:** `invoices` and `credit_notes` are never deleted or mutated after issuance. A correction creates a new credit note referencing the original invoice. This is not optional — it is how VAT-compliant accounting works in every jurisdiction.
+**Key design decision:** `invoices` and `credit_notes` are never deleted or mutated after issuance. A correction creates a new credit note referencing the original invoice. Draft invoices may be soft-deleted before issuance, but issued accounting history is preserved. This is not optional — it is how VAT-compliant accounting works in every jurisdiction.
+
+**Tax and document snapshots:**
+- `settings.tax_rate` is mutable agency configuration. It is resolved at reservation confirmation/repricing time and copied into `reservation_pricing_snapshots.tax_rate`.
+- `reservation_pricing_snapshots.tax_rate` is the immutable accepted tax rate for that pricing snapshot. Historical rows may be `NULL` when the rate was not stored before the Phase-1 Finance tax snapshot migration.
+- `invoice_line_items.tax_rate` and `invoice_line_items.tax_amount` freeze the tax basis actually used for each issued invoice line. Issued invoices never recalculate tax from current settings.
+- `invoices.document_url` stores the generated invoice document/PDF location. Invoice PDFs are accounting documents and are retained permanently.
+
+**Phase-1 correction boundary:**
+- `credit_notes` are accounting/document corrections for invoice voids or amount corrections.
+- `credit_notes` are not cash refunds.
+- A dedicated `refunds` table is postponed to the Phase 2 online-payment/refund workflow.
+- `FinancialAccount`/cashbox/bank account modeling is not required in Phase 1; Finance remains operational rental ERP finance, not a double-entry accounting ledger.
+
+**Currency aggregation rule:** Finance rows carry explicit currency. Until an FX/conversion model exists, reports and KPIs must group or filter by currency and must not aggregate different currencies into one total.
 
 ---
 
@@ -441,7 +459,7 @@ reservations
  ├── reservation_pricing_snapshots     (1:N) — supersession chain; exactly one is_current=true
  ├── reservation_extras                (1:N) — add-ons selected
  ├── reservation_timeline_events       (1:N) — append-only status log
- ├── contracts                         (1:1) — created at pickup
+ ├── contracts                         (1:N) — version/amendment chain; one is_current=true
  ├── invoices                          (1:1) — issued on confirmation/pickup
  └── deposits                          (1:1, nullable)
 
@@ -475,6 +493,8 @@ contract_template_versions
 
 contracts
  ├── reservations                      (N:1)
+ ├── reservation_pricing_snapshots      (N:1) — exact pricing snapshot used at generation
+ ├── contracts                         (N:1, self — supersedes_contract_id for amendments)
  ├── contract_template_versions        (N:1) — exact version used at generation
  ├── contract_inspection_items         (1:N) — pickup and return checklists
  ├── contract_signatures               (1:N) — one per signing party per event
@@ -1081,7 +1101,7 @@ Every file type that the system stores, where it lives, who owns it, and what ha
 | **Customer passport scan** | `customer_documents` | Object storage — private bucket | Same as driving license | Same as driving license. |
 | **Contract PDF (generated)** | `contracts` | Object storage — private bucket, immutable path | Forever — legal document | Never deleted. Not even after company closure. The object storage path is preserved in `contracts.rendered_pdf_url`. |
 | **Contract signed PDF** | `contracts` | Object storage — private bucket, immutable path | Forever | Never deleted. |
-| **Invoice PDF** | `invoices` | Object storage — private bucket | Forever — accounting document | Never deleted. |
+| **Invoice PDF** | `invoices.document_url` | Object storage — private bucket | Forever — accounting document | Never deleted. |
 | **Credit note PDF** | `credit_notes` | Object storage — private bucket | Forever | Never deleted. |
 | **Vehicle insurance certificate** | `vehicle_insurances` | Object storage | Life of the insurance policy + 5 years | Soft-delete `documents` row. File purged after 5-year retention from policy end. |
 | **Vehicle registration document** | `vehicle_registrations` | Object storage | Life of registration period + 5 years | Same as insurance. |
@@ -1202,7 +1222,10 @@ Without writing SQL. Every field below must have an index, and the type and reas
 | Table | Column(s) | Index Type | Reason |
 |---|---|---|---|
 | `contracts` | `number` | Unique B-tree (per company) | Contract number search. |
-| `contracts` | `reservation_id` | Unique B-tree | One contract per reservation. |
+| `contracts` | `(reservation_id, version_number)` | Unique B-tree | One contract version number per reservation. |
+| `contracts` | `reservation_id WHERE is_current = true AND deleted_at IS NULL` | Partial Unique B-tree | Exactly one current non-deleted contract per reservation. |
+| `contracts` | `pricing_snapshot_id` | B-tree | Reconstruct the exact pricing snapshot used by a contract version. |
+| `contracts` | `supersedes_contract_id` | B-tree | Traverse amendment history. |
 | `contracts` | `status` | B-tree | Filter contracts by state. |
 | `contract_signatures` | `(contract_id, signer_type)` | B-tree | Find whether customer/agent has signed. |
 
@@ -1218,7 +1241,7 @@ Without writing SQL. Every field below must have an index, and the type and reas
 | `invoices` | `due_date` | B-tree | Overdue detection job. |
 | `invoices` | `customer_id` | B-tree | All invoices for a customer. |
 | `invoices` | `customer_business_id` | B-tree (sparse) | All invoices for a company customer entity. |
-| `payments` | `(invoice_id, status)` | B-tree | Payments for an invoice. |
+| `payments` | `invoice_id` | B-tree | Payments for an invoice. Phase 1 has no `Payment.status`. |
 | `payments` | `(agency_id, created_at)` | B-tree | Payment feed and reporting. |
 | `deposits` | `(reservation_id, status)` | B-tree | Deposit status per reservation. |
 | `expenses` | `(agency_id, date)` | B-tree | Expense reports by date range. |

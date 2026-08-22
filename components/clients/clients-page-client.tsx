@@ -22,6 +22,7 @@ import {
 } from "@/components/clients/client-form-dialog"
 import { ClientDeleteDialog } from "@/components/clients/client-delete-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import fr from "@/translations/fr"
 
 type Props = {
   initialResult: ClientListDto
@@ -327,7 +328,7 @@ export function ClientsPageClient({ initialResult, initialFilters }: Props) {
                       Locations
                     </th>
                     <th className="py-3 px-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      Total dépensé
+                      {fr.clients.finance.paidAmount}
                     </th>
                     <th className="py-3 px-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       Dernière

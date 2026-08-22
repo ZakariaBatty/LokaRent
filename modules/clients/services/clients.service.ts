@@ -25,6 +25,7 @@ import {
   findCustomerByIdForCompany,
   findCustomerByContact,
   findCustomerReservationSummary,
+  findCustomerReservationSummaries,
   liftCustomerBlacklistEntry,
   paginateCustomers,
   restoreCustomer,
@@ -111,7 +112,19 @@ export async function getCustomerService(input: {
 }
 
 export async function listCustomersService(input: CustomerListInput) {
-  return paginateCustomers(input);
+  const result = await paginateCustomers(input);
+  const summaries = await findCustomerReservationSummaries({
+    companyId: input.companyId,
+    agencyId: input.agencyId,
+    customerIds: result.data.map((customer) => customer.id),
+  });
+  return {
+    ...result,
+    data: result.data.map((customer) => ({
+      ...customer,
+      reservationSummary: summaries[customer.id],
+    })),
+  };
 }
 
 export async function createCustomerService(input: {

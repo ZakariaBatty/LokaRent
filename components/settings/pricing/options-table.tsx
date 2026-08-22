@@ -3,6 +3,7 @@
 import { motion } from "motion/react"
 import { Baby, Navigation, Plus, ShieldCheck, Trash2, Truck, UserPlus } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { useI18n } from "@/contexts/i18n-context"
 import { type PricingOption } from "@/lib/pricing-grid-data"
 import { EditableCurrencyCell } from "./editable-currency-cell"
 
@@ -33,16 +34,17 @@ export function OptionsTable({
   onDelete: (id: string) => void
   onAdd: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="space-y-3">
       <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/60 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-              <th className="px-5 py-3">Option</th>
-              <th className="px-3 py-3">Prix / jour</th>
-              <th className="px-3 py-3">Inclus dans le forfait</th>
-              <th className="w-16 px-3 py-3 text-right">Actions</th>
+              <th className="px-5 py-3">{t("settings.pricing.options.columns.option")}</th>
+              <th className="px-3 py-3">{t("settings.pricing.options.columns.pricePerDay")}</th>
+              <th className="px-3 py-3">{t("settings.pricing.options.columns.active")}</th>
+              <th className="w-16 px-3 py-3 text-right">{t("settings.pricing.options.columns.actions")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -104,7 +106,7 @@ export function OptionsTable({
                           o.included ? "text-emerald-700" : "text-slate-500"
                         }`}
                       >
-                        {o.included ? "Inclus" : "Optionnel"}
+                        {o.included ? t("settings.pricing.options.active") : t("settings.pricing.options.inactive")}
                       </span>
                     </label>
                   </td>
@@ -114,7 +116,7 @@ export function OptionsTable({
                         type="button"
                         onClick={() => onDelete(o.id)}
                         className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-rose-50 hover:text-rose-600"
-                        title="Supprimer"
+                        title={t("settings.pricing.options.delete")}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -132,7 +134,7 @@ export function OptionsTable({
         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/40 px-4 py-3 text-sm font-semibold text-slate-600 transition hover:border-indigo-300 hover:bg-indigo-50/30 hover:text-indigo-700"
       >
         <Plus className="h-4 w-4" />
-        Ajouter une option
+        {t("settings.pricing.options.add")}
       </button>
     </div>
   )

@@ -28,7 +28,6 @@ import {
   SettingsCard,
 } from "@/components/settings/settings-card"
 import { LogoUploader } from "@/components/settings/agency/logo-uploader"
-import { SubscriptionCard } from "@/components/settings/agency/subscription-card"
 import {
   SaveStatusPill,
   StickySaveBar,
@@ -564,9 +563,6 @@ export default function AgencySettingsPage() {
           </div>
         </FieldGrid>
       </SettingsCard>
-
-      {/* Subscription */}
-      <SubscriptionCard plan={activeAgency?.plan ?? "PRO"} />
 
       {/* Sticky save bar */}
       <StickySaveBar

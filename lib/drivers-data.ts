@@ -33,6 +33,7 @@ export type DriverPaymentEntry = {
 
 export type DriverAssignment = {
   id: string
+  reservationId: string
   reservationCode: string
   clientName: string
   carLabel: string

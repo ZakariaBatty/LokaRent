@@ -4,30 +4,41 @@ import { motion } from "motion/react"
 import { Calendar, Download, FileText, Mail } from "lucide-react"
 import { useState } from "react"
 import { toast } from "sonner"
-import { type Period, periodLabels } from "@/lib/reports-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { ReportsPeriod } from "@/modules/reports/services/reports.service"
 
-const PERIODS: Period[] = ["thisMonth", "lastMonth", "3months", "6months", "year", "custom"]
+const PERIODS: ReportsPeriod[] = ["this_month", "last_month", "quarter", "year", "custom"]
+const periodLabelKeys: Record<ReportsPeriod, string> = {
+  this_month: "finances.range.thisMonth",
+  last_month: "finances.range.lastMonth",
+  quarter: "finances.range.quarter",
+  year: "finances.range.year",
+  custom: "finances.range.custom",
+}
 
 export function ReportsToolbar({
   period,
   onPeriodChange,
+  customFrom,
+  customTo,
+  onCustomChange,
+  onCustomApply,
 }: {
-  period: Period
-  onPeriodChange: (p: Period) => void
+  period: ReportsPeriod
+  onPeriodChange: (p: ReportsPeriod) => void
+  customFrom: string
+  customTo: string
+  onCustomChange: (range: { from: string; to: string }) => void
+  onCustomApply: () => void
 }) {
+  const { t } = useI18n()
   const [exporting, setExporting] = useState<string | null>(null)
 
   const handleExport = (kind: "pdf" | "excel" | "email") => {
     setExporting(kind)
     setTimeout(() => {
       setExporting(null)
-      toast.success(
-        kind === "pdf"
-          ? "Rapport PDF téléchargé"
-          : kind === "excel"
-            ? "Fichier Excel téléchargé"
-            : "Rapport envoyé par email",
-      )
+      toast.error(t("reports.export.unavailable"))
     }, 900)
   }
 
@@ -38,8 +49,8 @@ export function ReportsToolbar({
           <FileText className="h-5 w-5 text-indigo-600" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Rapports</h1>
-          <p className="text-sm text-slate-500">Analyses, tendances et exports de la performance</p>
+          <h1 className="text-xl font-semibold tracking-tight text-slate-900">{t("navigation.reports")}</h1>
+          <p className="text-sm text-slate-500">{t("reports.header.subtitle")}</p>
         </div>
       </div>
 
@@ -62,11 +73,36 @@ export function ReportsToolbar({
                     transition={{ type: "spring", stiffness: 380, damping: 32 }}
                   />
                 )}
-                <span className="relative">{periodLabels[p]}</span>
+                <span className="relative">{t(periodLabelKeys[p])}</span>
               </button>
             ))}
           </div>
         </div>
+        {period === "custom" && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/70 bg-white p-2 shadow-sm">
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(event) => onCustomChange({ from: event.target.value, to: customTo })}
+              className="h-8 rounded-lg border border-slate-200 px-2 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              aria-label={t("finances.range.startDate")}
+            />
+            <input
+              type="date"
+              value={customTo}
+              onChange={(event) => onCustomChange({ from: customFrom, to: event.target.value })}
+              className="h-8 rounded-lg border border-slate-200 px-2 text-xs text-slate-700 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+              aria-label={t("finances.range.endDate")}
+            />
+            <button
+              type="button"
+              onClick={onCustomApply}
+              className="h-8 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white transition hover:bg-indigo-500"
+            >
+              {t("finances.range.apply")}
+            </button>
+          </div>
+        )}
 
         <button
           onClick={() => handleExport("pdf")}
@@ -74,7 +110,7 @@ export function ReportsToolbar({
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
         >
           <Download className="h-3.5 w-3.5" />
-          {exporting === "pdf" ? "Préparation…" : "PDF"}
+          {exporting === "pdf" ? t("reports.export.preparing") : "PDF"}
         </button>
         <button
           onClick={() => handleExport("excel")}
@@ -82,7 +118,7 @@ export function ReportsToolbar({
           className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
         >
           <Download className="h-3.5 w-3.5" />
-          {exporting === "excel" ? "Préparation…" : "Excel"}
+          {exporting === "excel" ? t("reports.export.preparing") : "Excel"}
         </button>
         <button
           onClick={() => handleExport("email")}
@@ -91,7 +127,7 @@ export function ReportsToolbar({
         >
           <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
           <Mail className="relative h-3.5 w-3.5" />
-          <span className="relative">{exporting === "email" ? "Envoi…" : "Email"}</span>
+          <span className="relative">{exporting === "email" ? t("reports.export.sending") : "Email"}</span>
         </button>
       </div>
     </div>

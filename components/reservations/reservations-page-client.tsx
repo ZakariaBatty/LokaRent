@@ -71,15 +71,21 @@ export function ReservationsPageClient({
     const result = await deleteReservationAction({ reservationId: id })
     if (!result.success) {
       toast.error(t("reservations.form.deleteUnavailable"))
-      return
+      return false
     }
     setReservations((prev) => prev.filter((r) => r.id !== id))
     setSelected((cur) => (cur && cur.id === id ? null : cur))
     refresh()
+    return true
   }
 
   const handleNew = () => router.push("/reservations/new")
   const handleEdit = (r: Reservation) => router.push(`/reservations/${r.id}/edit`)
+  const handleReservationUpdated = (reservation: Reservation) => {
+    setReservations((prev) => prev.map((item) => (item.id === reservation.id ? reservation : item)))
+    setSelected((cur) => (cur && cur.id === reservation.id ? reservation : cur))
+    refresh()
+  }
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-5">
@@ -144,6 +150,7 @@ export function ReservationsPageClient({
                 reservation={selected}
                 onClose={handleClose}
                 onStatusChange={(id, next) => void runLifecycle(id, next)}
+                onReservationUpdated={handleReservationUpdated}
               />
             </motion.div>
           </>

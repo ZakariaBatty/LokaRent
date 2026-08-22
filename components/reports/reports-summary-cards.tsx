@@ -13,7 +13,8 @@ import {
   Wallet,
 } from "lucide-react"
 import { CountUp } from "@/components/app/count-up"
-import { formatMAD, reportsKpi } from "@/lib/reports-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { ReportsKpi } from "@/modules/reports/services/reports.service"
 
 type SummaryCard = {
   label: string
@@ -28,39 +29,48 @@ type SummaryCard = {
   invertedDelta?: boolean
 }
 
-export function ReportsSummaryCards() {
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function ReportsSummaryCards({ kpi, currency }: { kpi: ReportsKpi; currency: string }) {
+  const { t } = useI18n()
   const cards: SummaryCard[] = [
     {
-      label: "Revenus",
-      value: reportsKpi.revenue,
-      delta: reportsKpi.revenueDelta,
+      label: t("reports.cards.revenue"),
+      value: kpi.revenue,
+      delta: kpi.revenueDelta,
       icon: Wallet,
       iconBg: "bg-blue-50",
       iconColor: "text-blue-600",
-      formatValue: (n) => formatMAD(Math.round(n)),
+      formatValue: (n) => formatMoney(Math.round(n), currency),
     },
     {
-      label: "Profit net",
-      value: reportsKpi.netProfit,
-      delta: reportsKpi.netProfitDelta,
+      label: t("reports.cards.netProfit"),
+      value: kpi.netProfit,
+      delta: kpi.netProfitDelta,
       icon: TrendingUp,
       iconBg: "bg-emerald-50",
       iconColor: "text-emerald-600",
-      formatValue: (n) => formatMAD(Math.round(n)),
+      formatValue: (n) => formatMoney(Math.round(n), currency),
       highlight: true,
     },
     {
-      label: "Locations",
-      value: reportsKpi.rentals,
-      delta: reportsKpi.rentalsDelta,
+      label: t("reports.cards.rentals"),
+      value: kpi.rentals,
+      delta: kpi.rentalsDelta,
       icon: Calendar,
       iconBg: "bg-indigo-50",
       iconColor: "text-indigo-600",
     },
     {
-      label: "Durée moyenne",
-      value: reportsKpi.avgDuration,
-      delta: reportsKpi.avgDurationDelta,
+      label: t("reports.cards.avgDuration"),
+      value: kpi.avgDuration,
+      delta: kpi.avgDurationDelta,
       icon: Clock,
       iconBg: "bg-amber-50",
       iconColor: "text-amber-600",
@@ -69,22 +79,22 @@ export function ReportsSummaryCards() {
         n.toLocaleString("fr-FR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
     },
     {
-      label: "Taux d'occupation",
-      value: reportsKpi.fleetOccupancy,
-      delta: reportsKpi.fleetOccupancyDelta,
+      label: t("reports.cards.fleetOccupancy"),
+      value: kpi.fleetOccupancy,
+      delta: kpi.fleetOccupancyDelta,
       icon: Users,
       iconBg: "bg-violet-50",
       iconColor: "text-violet-600",
       suffix: "%",
     },
     {
-      label: "Panier moyen",
-      value: reportsKpi.avgTicket,
-      delta: reportsKpi.avgTicketDelta,
+      label: t("reports.cards.avgTicket"),
+      value: kpi.avgTicket,
+      delta: kpi.avgTicketDelta,
       icon: Receipt,
       iconBg: "bg-rose-50",
       iconColor: "text-rose-600",
-      formatValue: (n) => formatMAD(Math.round(n)),
+      formatValue: (n) => formatMoney(Math.round(n), currency),
     },
   ]
 

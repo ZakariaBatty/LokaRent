@@ -14,15 +14,27 @@ export type InvoiceLineItem = {
   taxRate: number // percentage, e.g. 20
   subtotal: number // quantity * unitPrice before tax
   total: number   // subtotal + tax
+  source?: "system" | "manual"
 }
 
 export type InvoicePayment = {
   id: string
   date: string
-  method: "cash" | "bank_transfer" | "card" | "cheque"
+  method: "cash" | "bank_transfer" | "card" | "cheque" | "other"
   amount: number
   reference?: string
   note?: string
+  recordedBy?: string
+}
+
+export type InvoiceCreditNote = {
+  id: string
+  code: string
+  amount: number
+  currency: string
+  reason?: string
+  issuedAt: string
+  replacementInvoiceId?: string
 }
 
 export type InvoiceTimelineEvent = {
@@ -62,12 +74,18 @@ export type Invoice = {
   lineItems: InvoiceLineItem[]
   subtotal: number
   taxTotal: number
+  taxRate?: number
+  discount?: number
   total: number
   paid: number
+  credited?: number
   remaining: number
+  currency?: string
+  settlementWarning?: boolean
 
   // Payments recorded
   payments: InvoicePayment[]
+  creditNotes?: InvoiceCreditNote[]
 
   // Meta
   notes?: string

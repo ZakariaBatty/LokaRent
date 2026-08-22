@@ -2,11 +2,21 @@
 
 import { motion } from "motion/react"
 import { ArrowDownRight, ArrowUpRight, Wallet } from "lucide-react"
-import { expensesByCategory, formatMAD } from "@/lib/reports-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { ReportsExpenseCategoryRow } from "@/modules/reports/services/reports.service"
 
-export function ReportsExpensesCard() {
-  const total = expensesByCategory.reduce((s, e) => s + e.amount, 0)
-  const max = Math.max(...expensesByCategory.map((e) => e.amount))
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+export function ReportsExpensesCard({ rows, currency }: { rows: ReportsExpenseCategoryRow[]; currency: string }) {
+  const { t } = useI18n()
+  const total = rows.reduce((s, e) => s + e.amount, 0)
+  const max = Math.max(...rows.map((e) => e.amount), 1)
 
   return (
     <motion.div
@@ -21,18 +31,18 @@ export function ReportsExpensesCard() {
             <Wallet className="h-4 w-4 text-orange-600" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Charges par poste</h3>
-            <p className="mt-0.5 text-xs text-slate-500">vs période précédente</p>
+            <h3 className="text-sm font-semibold text-slate-900">{t("reports.expenses.title")}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">{t("reports.labels.vsPrevious")}</p>
           </div>
         </div>
         <div className="text-right">
-          <div className="text-lg font-bold tabular-nums text-slate-900">{formatMAD(total)}</div>
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Total</div>
+          <div className="text-lg font-bold tabular-nums text-slate-900">{formatMoney(total, currency)}</div>
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">{t("reports.labels.total")}</div>
         </div>
       </div>
 
       <ul className="space-y-3 p-5">
-        {expensesByCategory.map((e, i) => {
+        {rows.map((e, i) => {
           const delta = e.prevAmount > 0 ? ((e.amount - e.prevAmount) / e.prevAmount) * 100 : 0
           const pct = (e.amount / max) * 100
           return (
@@ -57,7 +67,7 @@ export function ReportsExpensesCard() {
                   )}
                 </div>
                 <span className="font-semibold tabular-nums text-slate-900">
-                  {formatMAD(e.amount)}
+                  {formatMoney(e.amount, currency)}
                 </span>
               </div>
               <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100">

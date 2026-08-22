@@ -3,21 +3,33 @@
 import { motion } from "motion/react"
 import { ArrowDownRight, ArrowUpDown, ArrowUpRight, ChevronRight } from "lucide-react"
 import { useMemo, useState } from "react"
-import { formatMAD, type CarFinance } from "@/lib/finances-data"
-import { categoryAccent } from "@/lib/cars-data"
+import { type CarFinance } from "@/lib/finances-data"
+import { categoryAccent, type CarCategory } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/contexts/i18n-context"
 
 type SortKey = "revenue" | "expenses" | "profit" | "occupancyRate" | "roi"
+
+function formatMoney(amount: number, currency: string) {
+  return `${amount.toLocaleString("fr-FR")} ${currency}`
+}
+
+function carCategoryAccent(category: string) {
+  return categoryAccent[category as CarCategory] ?? "bg-slate-100 text-slate-700 ring-slate-200"
+}
 
 export function FinancesPerCarTable({
   rows,
   selectedId,
   onSelect,
+  currency,
 }: {
   rows: CarFinance[]
   selectedId: string | null
   onSelect: (car: CarFinance) => void
+  currency: string
 }) {
+  const { t } = useI18n()
   const [sortKey, setSortKey] = useState<SortKey>("profit")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
 
@@ -26,7 +38,9 @@ export function FinancesPerCarTable({
     copy.sort((a, b) => {
       const va = a[sortKey]
       const vb = b[sortKey]
-      return sortDir === "asc" ? va - vb : vb - va
+      const left = typeof va === "number" ? va : Number.NEGATIVE_INFINITY
+      const right = typeof vb === "number" ? vb : Number.NEGATIVE_INFINITY
+      return sortDir === "asc" ? left - right : right - left
     })
     return copy
   }, [rows, sortKey, sortDir])
@@ -49,8 +63,10 @@ export function FinancesPerCarTable({
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Détails par véhicule</h3>
-          <p className="mt-0.5 text-xs text-slate-500">{rows.length} véhicules · cliquez pour analyser</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("finances.vehicleTable.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {rows.length} {t("finances.vehicleTable.vehicles")} · {t("finances.vehicleTable.clickToAnalyze")}
+          </p>
         </div>
       </div>
 
@@ -58,25 +74,25 @@ export function FinancesPerCarTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
-              <Th className="pl-6">Voiture</Th>
+              <Th className="pl-6">{t("finances.vehicleTable.car")}</Th>
               <ThSort active={sortKey === "revenue"} dir={sortDir} onClick={() => toggleSort("revenue")}>
-                Revenus
+                {t("finances.chart.revenue")}
               </ThSort>
               <ThSort active={sortKey === "expenses"} dir={sortDir} onClick={() => toggleSort("expenses")}>
-                Charges
+                {t("finances.chart.expenses")}
               </ThSort>
               <ThSort active={sortKey === "profit"} dir={sortDir} onClick={() => toggleSort("profit")}>
-                Profit
+                {t("finances.chart.profit")}
               </ThSort>
               <ThSort
                 active={sortKey === "occupancyRate"}
                 dir={sortDir}
                 onClick={() => toggleSort("occupancyRate")}
               >
-                Occupation
+                {t("finances.vehicleTable.occupancy")}
               </ThSort>
               <ThSort active={sortKey === "roi"} dir={sortDir} onClick={() => toggleSort("roi")}>
-                ROI
+                {t("finances.vehicleTable.roi")}
               </ThSort>
               <Th className="pr-6"></Th>
             </tr>
@@ -99,7 +115,7 @@ export function FinancesPerCarTable({
                       <div
                         className={cn(
                           "flex h-9 w-9 items-center justify-center rounded-xl text-[11px] font-semibold",
-                          categoryAccent[car.category],
+                          carCategoryAccent(car.category),
                         )}
                       >
                         {car.brand.slice(0, 2).toUpperCase()}
@@ -113,10 +129,10 @@ export function FinancesPerCarTable({
                     </div>
                   </td>
                   <td className="px-3 py-3.5 text-right tabular-nums text-slate-700">
-                    {formatMAD(car.revenue)}
+                    {formatMoney(car.revenue, currency)}
                   </td>
                   <td className="px-3 py-3.5 text-right tabular-nums text-slate-500">
-                    {formatMAD(car.expenses)}
+                    {formatMoney(car.expenses, currency)}
                   </td>
                   <td className="px-3 py-3.5 text-right">
                     <span
@@ -133,7 +149,7 @@ export function FinancesPerCarTable({
                         <ArrowDownRight className="h-3 w-3" />
                       )}
                       {profitable ? "+" : ""}
-                      {formatMAD(car.profit)}
+                      {formatMoney(car.profit, currency)}
                     </span>
                   </td>
                   <td className="px-3 py-3.5">
@@ -153,15 +169,16 @@ export function FinancesPerCarTable({
                     <span
                       className={cn(
                         "text-xs font-semibold tabular-nums",
-                        car.roi >= 100
+                        car.roi == null
+                          ? "text-slate-400"
+                          : car.roi >= 100
                           ? "text-emerald-700"
                           : car.roi >= 0
                             ? "text-slate-700"
                             : "text-rose-700",
                       )}
                     >
-                      {car.roi >= 0 ? "+" : ""}
-                      {car.roi}%
+                      {car.roi == null ? t("finances.vehicleTable.unavailable") : `${car.roi >= 0 ? "+" : ""}${car.roi}%`}
                     </span>
                   </td>
                   <td className="py-3.5 pl-3 pr-6 text-right">

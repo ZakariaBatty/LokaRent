@@ -30,9 +30,21 @@ export type EtatBlock = {
 export type Contract = {
   id: string;
   code: string; // LR-2026-0045
+  versionNumber?: number;
+  isCurrent?: boolean;
+  supersedesContractId?: string | null;
+  pricingSnapshotId?: string;
   status: ContractStatus;
   createdAt: string;
   createdBy: string;
+  reservationCode?: string;
+  renderedHtml?: string;
+  contentHash?: string;
+  template?: {
+    id?: string;
+    name?: string;
+    versionNumber?: number;
+  };
 
   client: {
     fullName: string;
@@ -44,6 +56,11 @@ export type Contract = {
     fullName: string;
     cinMasked: string;
     permis: string;
+  };
+  assignedDriver?: {
+    fullName: string;
+    phone?: string | null;
+    role?: string;
   };
 
   car: {
@@ -72,8 +89,12 @@ export type Contract = {
   pricing: {
     pricePerDay: number;
     discount: number;
+    discountReason?: string | null;
     options: { label: string; amount: number }[];
     total: number;
+    currency?: string;
+    mileageLimit?: number | null;
+    extraMileageRate?: number | null;
   };
 
   caution: {
@@ -89,6 +110,9 @@ export type Contract = {
     depart: EtatBlock;
     retour?: EtatBlock & { damages: Damage[]; notes?: string };
   };
+
+  pickupMileage?: number;
+  pickupFuelLevel?: number | null;
 
   signedByClient?: boolean; // ISO date
   signedByAgency?: boolean; // ISO date

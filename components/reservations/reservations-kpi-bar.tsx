@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react"
 import { CountUp } from "@/components/app/count-up"
 import { type Reservation, formatMAD } from "@/lib/reservations-data"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/contexts/i18n-context"
 
 type KpiCardProps = {
   label: string
@@ -72,14 +73,14 @@ function KpiCard({ label, value, display, icon: Icon, iconBg, iconColor, ringFro
 }
 
 export function ReservationsKpiBar({ reservations }: { reservations: Reservation[] }) {
+  const { t } = useI18n()
   const total = reservations.length
   const active = reservations.filter((r) => r.status === "en_cours").length
-  const confirmed = reservations.filter((r) => r.status === "confirmee").length
   const cancelled = reservations.filter((r) => r.status === "annulee").length
   const overdue = reservations.filter((r) => r.overdue).length
 
-  const revenue = reservations
-    .filter((r) => r.status === "terminee" || r.status === "en_cours")
+  const bookedValue = reservations
+    .filter((r) => r.status === "confirmee" || r.status === "en_cours" || r.status === "terminee")
     .reduce((sum, r) => sum + r.total, 0)
 
   const confirmable = reservations.filter((r) => r.status !== "annulee").length
@@ -88,7 +89,7 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
   return (
     <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6 lg:gap-4">
       <KpiCard
-        label="Total"
+        label={t("reservations.kpi.total")}
         value={total}
         icon={CalendarCheck}
         iconBg="bg-blue-50"
@@ -99,7 +100,7 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
         live
       />
       <KpiCard
-        label="En cours"
+        label={t("reservations.kpi.active")}
         value={active}
         icon={Activity}
         iconBg="bg-indigo-50"
@@ -110,9 +111,9 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
         live
       />
       <KpiCard
-        label="Revenus"
-        value={revenue}
-        display={formatMAD(revenue)}
+        label={t("reservations.kpi.bookedValue")}
+        value={bookedValue}
+        display={formatMAD(bookedValue)}
         icon={TrendingUp}
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"
@@ -121,7 +122,7 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
         delay={0.1}
       />
       <KpiCard
-        label="Confirmation"
+        label={t("reservations.kpi.confirmation")}
         value={confirmRate}
         suffix="%"
         icon={BadgeCheck}
@@ -132,7 +133,7 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
         delay={0.15}
       />
       <KpiCard
-        label="Annulations"
+        label={t("reservations.kpi.cancellations")}
         value={cancelled}
         icon={XCircle}
         iconBg="bg-slate-100"
@@ -142,7 +143,7 @@ export function ReservationsKpiBar({ reservations }: { reservations: Reservation
         delay={0.2}
       />
       <KpiCard
-        label="Retards"
+        label={t("reservations.kpi.overdue")}
         value={overdue}
         icon={AlertTriangle}
         iconBg="bg-rose-50"

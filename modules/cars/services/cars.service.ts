@@ -46,6 +46,7 @@ import {
   updateVehicleInspection,
   updateVehicleInsurance,
   updateVehicleMaintenance,
+  updateVehicleVignette,
   findCurrentVehicleMileage,
   softDeleteVehiclePhotosAfterOrder,
   softDeleteVehiclePricingRule,
@@ -734,6 +735,17 @@ export async function createVehicleVignetteService(input: {
   });
 }
 
+export async function updateVehicleVignetteService(input: {
+  companyId: string;
+  agencyId: string;
+  vignetteId: string;
+  data: Parameters<typeof updateVehicleVignette>[0]["data"];
+}) {
+  const result = await updateVehicleVignette(input);
+  if (result.count === 0) throw createNotFoundError("Vehicle vignette", input);
+  return result;
+}
+
 export async function createVehicleMileageLogService(input: {
   context: Pick<FleetServiceContext, "companyId" | "userId">;
   data: VehicleMileageLogCreateData;
@@ -872,6 +884,7 @@ export const carsService = {
   createVehicleInspectionService,
   updateVehicleInspectionService,
   createVehicleVignetteService,
+  updateVehicleVignetteService,
   createVehicleMileageLogService,
   createVehicleMaintenanceService,
   updateVehicleMaintenanceService,

@@ -928,7 +928,7 @@ function buildUpcomingCharges(cars: Car[], prefix: string): UpcomingCharge[] {
     if (c.insurance.daysLeft <= 30) {
       charges.push({
         id: `UC-${prefix}-${c.id}-ins`,
-        type: "Assurance",
+        type: "insurance",
         carLabel,
         plate: c.plate,
         dueDate: c.insurance.endDate,
@@ -940,7 +940,7 @@ function buildUpcomingCharges(cars: Car[], prefix: string): UpcomingCharge[] {
     if (c.vignette.daysLeft <= 30) {
       charges.push({
         id: `UC-${prefix}-${c.id}-vig`,
-        type: "Vignette",
+        type: "vignette",
         carLabel,
         plate: c.plate,
         dueDate: c.vignette.endDate,
@@ -952,7 +952,7 @@ function buildUpcomingCharges(cars: Car[], prefix: string): UpcomingCharge[] {
     if (c.visiteTechnique.daysLeft <= 30) {
       charges.push({
         id: `UC-${prefix}-${c.id}-vt`,
-        type: "Visite technique",
+        type: "inspection",
         carLabel,
         plate: c.plate,
         dueDate: c.visiteTechnique.nextDate,
@@ -964,7 +964,7 @@ function buildUpcomingCharges(cars: Car[], prefix: string): UpcomingCharge[] {
     if (c.creditAuto) {
       charges.push({
         id: `UC-${prefix}-${c.id}-cred`,
-        type: "Crédit auto",
+        type: "maintenance",
         carLabel,
         plate: c.plate,
         dueDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7).toISOString().split("T")[0],

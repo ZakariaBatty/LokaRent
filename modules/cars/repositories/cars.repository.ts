@@ -600,6 +600,21 @@ export async function createVehicleVignette(
   return db.vehicleVignette.create({ data });
 }
 
+export async function updateVehicleVignette(
+  input: {
+    companyId: string;
+    agencyId: string;
+    vignetteId: string;
+    data: Prisma.VehicleVignetteUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.vehicleVignette.updateMany({
+    where: { id: input.vignetteId, companyId: input.companyId, agencyId: input.agencyId },
+    data: input.data,
+  });
+}
+
 export async function listVehicleMaintenances(
   input: { companyId: string; agencyId: string; vehicleId: string; includeDeleted?: boolean },
   db: DatabaseClient = prisma,
@@ -796,6 +811,7 @@ export const carsRepository = {
   updateVehicleInspection,
   listVehicleVignettes,
   createVehicleVignette,
+  updateVehicleVignette,
   listVehicleMaintenances,
   createVehicleMaintenance,
   updateVehicleMaintenance,

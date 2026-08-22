@@ -24,9 +24,10 @@ import {
   type Invoice,
   type InvoiceType,
   type InvoiceLineItem,
-  invoices as allInvoices,
   formatMAD,
 } from "@/lib/invoices-data"
+import type { InvoiceCustomerOption, InvoiceableReservationOption } from "@/modules/finances/mappers/invoice.mapper"
+import { useI18n } from "@/contexts/i18n-context"
 import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
@@ -43,28 +44,14 @@ type FormState = {
   customerPhone: string
   customerEmail: string
   customerType: "individual" | "company"
+  customerId: string
   reservationId: string
+  taxRate: number
   issueDate: string
   dueDate: string
   notes: string
   lineItems: DraftLineItem[]
 }
-
-// Seed reservation options from existing mock invoices that are rental type
-const rentalOptions = allInvoices
-  .filter((i) => i.type === "rental" && i.reservationCode)
-  .map((i) => ({
-    id: i.reservationId ?? i.id,
-    code: i.reservationCode ?? "",
-    carLabel: i.carLabel ?? "",
-    customerName: i.customerName,
-    customerPhone: i.customerPhone,
-    customerEmail: i.customerEmail ?? "",
-    lineItems: i.lineItems,
-    subtotal: i.subtotal,
-    taxTotal: i.taxTotal,
-    total: i.total,
-  }))
 
 const today = new Date().toISOString().split("T")[0]
 const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0]
@@ -78,6 +65,7 @@ function emptyLine(idx: number): DraftLineItem {
     taxRate: 20,
     subtotal: 0,
     total: 0,
+    source: "manual",
   }
 }
 
@@ -135,14 +123,25 @@ function inputClass(error?: boolean) {
 // ---------------------------------------------------------------------------
 export function InvoiceFormPanel({
   initial,
+  reservationOptions = [],
+  customerOptions = [],
+  selectedCustomer,
+  onAddCustomer,
+  saving: externalSaving,
   onClose,
   onSave,
 }: {
   initial?: Invoice | null
+  reservationOptions?: InvoiceableReservationOption[]
+  customerOptions?: InvoiceCustomerOption[]
+  selectedCustomer?: InvoiceCustomerOption | null
+  onAddCustomer?: () => void
+  saving?: boolean
   onClose: () => void
   onSave: (data: Partial<Invoice>) => void
 }) {
   const isEdit = !!initial
+  const { t } = useI18n()
 
   const [form, setForm] = useState<FormState>(() => {
     if (initial) {
@@ -152,7 +151,9 @@ export function InvoiceFormPanel({
         customerPhone:  initial.customerPhone,
         customerEmail:  initial.customerEmail ?? "",
         customerType:   initial.customerType,
+        customerId:     initial.customerId,
         reservationId:  initial.reservationId ?? "",
+        taxRate:        initial.lineItems[0]?.taxRate ?? 20,
         issueDate:      initial.issueDate,
         dueDate:        initial.dueDate,
         notes:          initial.notes ?? "",
@@ -165,7 +166,9 @@ export function InvoiceFormPanel({
       customerPhone:  "",
       customerEmail:  "",
       customerType:   "individual",
+      customerId:     "",
       reservationId:  "",
+      taxRate:        20,
       issueDate:      today,
       dueDate:        twoWeeks,
       notes:          "",
@@ -175,20 +178,29 @@ export function InvoiceFormPanel({
 
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [saving, setSaving] = useState(false)
+  const isSaving = externalSaving ?? saving
 
   // Auto-populate rental fields when a reservation is selected
   useEffect(() => {
     if (form.type !== "rental" || !form.reservationId) return
-    const opt = rentalOptions.find((r) => r.id === form.reservationId)
+    const opt = reservationOptions.find((r) => r.id === form.reservationId)
     if (!opt) return
     setForm((prev) => ({
       ...prev,
       customerName:  opt.customerName,
       customerPhone: opt.customerPhone,
       customerEmail: opt.customerEmail,
-      lineItems:     opt.lineItems.map((li) => ({ ...li })),
+      customerType:  opt.customerType,
+      customerId:    "",
+      taxRate:       opt.defaultTaxRate ?? prev.taxRate,
+      lineItems:     opt.lineItems.map((li) => recalc({ ...li, taxRate: opt.defaultTaxRate ?? prev.taxRate })),
     }))
-  }, [form.reservationId, form.type])
+  }, [form.reservationId, form.type, reservationOptions])
+
+  useEffect(() => {
+    if (form.type !== "manual" || !selectedCustomer) return
+    selectCustomer(selectedCustomer)
+  }, [form.type, selectedCustomer])
 
   const update = useCallback(
     <K extends keyof FormState>(key: K, val: FormState[K]) => {
@@ -210,10 +222,31 @@ export function InvoiceFormPanel({
     })
   }
 
+  const updateTaxRate = (value: number) => {
+    setForm((prev) => ({
+      ...prev,
+      taxRate: value,
+      lineItems: prev.lineItems.map((line) => recalc({ ...line, taxRate: value })),
+    }))
+    setErrors((prev) => ({ ...prev, taxRate: undefined }))
+  }
+
+  const selectCustomer = (customer: InvoiceCustomerOption) => {
+    setForm((prev) => ({
+      ...prev,
+      customerId: customer.id,
+      customerName: customer.name,
+      customerPhone: customer.phone,
+      customerEmail: customer.email,
+      customerType: customer.type,
+    }))
+    setErrors((prev) => ({ ...prev, customerId: undefined, customerName: undefined }))
+  }
+
   const addLine = () => {
     setForm((prev) => ({
       ...prev,
-      lineItems: [...prev.lineItems, emptyLine(prev.lineItems.length)],
+      lineItems: [...prev.lineItems, recalc({ ...emptyLine(prev.lineItems.length), taxRate: prev.taxRate })],
     }))
   }
 
@@ -232,27 +265,32 @@ export function InvoiceFormPanel({
   // ── Validation ──────────────────────────────────────────────────────────
   const validate = () => {
     const e: typeof errors = {}
-    if (!form.customerName.trim()) e.customerName = "Requis"
-    if (!form.customerPhone.trim()) e.customerPhone = "Requis"
-    if (!form.issueDate) e.issueDate = "Requis"
-    if (!form.dueDate) e.dueDate = "Requis"
-    if (form.type === "rental" && !form.reservationId) e.reservationId = "Sélectionnez une réservation"
-    if (form.lineItems.length === 0) e.lineItems = "Au moins une ligne requise"
+    if (!form.customerName.trim()) e.customerName = t("validation.required")
+    if (form.type === "manual" && !form.customerId) e.customerId = t("validation.required")
+    if (!form.issueDate) e.issueDate = t("validation.required")
+    if (!form.dueDate) e.dueDate = t("validation.required")
+    if (form.type === "rental" && !form.reservationId) e.reservationId = t("invoices.form.selectReservation")
+    if (form.lineItems.length === 0) e.lineItems = t("invoices.form.lineRequired")
+    if (form.taxRate < 0 || form.taxRate > 100) e.taxRate = t("invoices.form.invalidTax")
     return e
   }
 
   const handleSave = async () => {
     const e = validate()
     if (Object.keys(e).length > 0) { setErrors(e); return }
-    setSaving(true)
-    await new Promise((r) => setTimeout(r, 900))
-    setSaving(false)
+    if (externalSaving === undefined) {
+      setSaving(true)
+      await new Promise((r) => setTimeout(r, 900))
+      setSaving(false)
+    }
     onSave({
+      id:            initial?.id,
       type:          form.type,
       customerName:  form.customerName,
       customerPhone: form.customerPhone,
       customerEmail: form.customerEmail || undefined,
       customerType:  form.customerType,
+      customerId:    form.customerId,
       reservationId: form.reservationId || undefined,
       issueDate:     form.issueDate,
       dueDate:       form.dueDate,
@@ -308,7 +346,18 @@ export function InvoiceFormPanel({
                   <button
                     key={t}
                     type="button"
-                    onClick={() => update("type", t)}
+                    onClick={() => {
+                      setForm((prev) => ({
+                        ...prev,
+                        type: t,
+                        reservationId: t === "manual" ? "" : prev.reservationId,
+                        customerId: t === "rental" ? "" : prev.customerId,
+                        customerName: t === "manual" ? "" : prev.customerName,
+                        customerPhone: t === "manual" ? "" : prev.customerPhone,
+                        customerEmail: t === "manual" ? "" : prev.customerEmail,
+                        lineItems: t === "manual" ? [recalc({ ...emptyLine(0), taxRate: prev.taxRate })] : prev.lineItems,
+                      }))
+                    }}
                     className={cn(
                       "flex items-center gap-2.5 rounded-xl border p-3 text-left text-sm font-medium transition-all",
                       form.type === t
@@ -348,8 +397,8 @@ export function InvoiceFormPanel({
                       >
                         <span className="truncate">
                           {form.reservationId
-                            ? rentalOptions.find((r) => r.id === form.reservationId)
-                              ? `${rentalOptions.find((r) => r.id === form.reservationId)!.code} · ${rentalOptions.find((r) => r.id === form.reservationId)!.carLabel}`
+                            ? reservationOptions.find((r) => r.id === form.reservationId)
+                              ? `${reservationOptions.find((r) => r.id === form.reservationId)!.code} · ${reservationOptions.find((r) => r.id === form.reservationId)!.carLabel}`
                               : form.reservationId
                             : "Choisir une réservation…"}
                         </span>
@@ -357,7 +406,7 @@ export function InvoiceFormPanel({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" className="w-full max-w-sm rounded-xl">
-                      {rentalOptions.map((r) => (
+                      {reservationOptions.map((r) => (
                         <DropdownMenuItem
                           key={r.id}
                           onClick={() => update("reservationId", r.id)}
@@ -366,6 +415,7 @@ export function InvoiceFormPanel({
                           <Car className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                           <span className="font-mono text-xs text-indigo-600">{r.code}</span>
                           <span className="truncate text-slate-700">{r.carLabel}</span>
+                          {!r.taxReady && <span className="ml-auto text-[10px] text-amber-600">{t("invoices.form.missingTax")}</span>}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
@@ -373,6 +423,50 @@ export function InvoiceFormPanel({
                   {errors.reservationId && (
                     <p className="mt-1 text-[11px] text-rose-500">{errors.reservationId}</p>
                   )}
+                </Field>
+              </div>
+            )}
+
+            {form.type === "manual" && (
+              <div>
+                <div className="flex items-center justify-between">
+                  <SectionHeading>{t("invoices.form.customerSection")}</SectionHeading>
+                  {onAddCustomer && (
+                    <button
+                      type="button"
+                      onClick={onAddCustomer}
+                      className="mb-3 inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {t("invoices.form.addCustomer")}
+                    </button>
+                  )}
+                </div>
+                <Field label={t("invoices.form.selectCustomer")} required>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "flex h-10 w-full items-center justify-between rounded-xl border px-3 text-sm transition hover:border-blue-300",
+                          errors.customerId ? "border-rose-300 bg-rose-50 text-rose-700" : form.customerId ? "border-slate-200 bg-white text-slate-900" : "border-slate-200 bg-white text-slate-400",
+                        )}
+                      >
+                        <span className="truncate">{form.customerId ? form.customerName : t("invoices.form.chooseCustomer")}</span>
+                        <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-full max-w-sm rounded-xl">
+                      {customerOptions.map((customer) => (
+                        <DropdownMenuItem key={customer.id} onClick={() => selectCustomer(customer)} className="cursor-pointer gap-2 text-sm">
+                          {customer.type === "company" ? <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" /> : <User className="h-3.5 w-3.5 shrink-0 text-slate-400" />}
+                          <span className="truncate text-slate-700">{customer.name}</span>
+                          <span className="ml-auto text-[10px] text-slate-400">{customer.phone}</span>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  {errors.customerId && <p className="mt-1 text-[11px] text-rose-500">{errors.customerId}</p>}
                 </Field>
               </div>
             )}
@@ -467,6 +561,21 @@ export function InvoiceFormPanel({
               </div>
             </div>
 
+            <div>
+              <SectionHeading>{t("invoices.form.taxSection")}</SectionHeading>
+              <Field label={t("invoices.form.globalTax")} required>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={form.taxRate}
+                  onChange={(e) => updateTaxRate(parseFloat(e.target.value) || 0)}
+                  className={inputClass(!!errors.taxRate)}
+                />
+                {errors.taxRate && <p className="mt-0.5 text-[11px] text-rose-500">{errors.taxRate}</p>}
+              </Field>
+            </div>
+
             {/* Notes */}
             <div>
               <SectionHeading>Notes internes</SectionHeading>
@@ -513,7 +622,7 @@ export function InvoiceFormPanel({
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                       Ligne {idx + 1}
                     </span>
-                    {form.lineItems.length > 1 && (
+                    {form.lineItems.length > 1 && li.source !== "system" && (
                       <button
                         type="button"
                         onClick={() => removeLine(idx)}
@@ -530,7 +639,7 @@ export function InvoiceFormPanel({
                     onChange={(e) => updateLine(idx, "description", e.target.value)}
                     placeholder="Description de la prestation…"
                     className="mb-2 h-9 rounded-lg border-slate-200 bg-slate-50/60 text-sm"
-                    disabled={form.type === "rental" && !!form.reservationId}
+                    disabled={li.source === "system"}
                   />
 
                   {/* Qty / Price / Tax */}
@@ -543,7 +652,7 @@ export function InvoiceFormPanel({
                         value={li.quantity}
                         onChange={(e) => updateLine(idx, "quantity", e.target.value)}
                         className="h-9 rounded-lg border-slate-200 bg-slate-50/60 text-sm"
-                        disabled={form.type === "rental" && !!form.reservationId}
+                        disabled={li.source === "system"}
                       />
                     </div>
                     <div>
@@ -554,7 +663,7 @@ export function InvoiceFormPanel({
                         value={li.unitPrice}
                         onChange={(e) => updateLine(idx, "unitPrice", e.target.value)}
                         className="h-9 rounded-lg border-slate-200 bg-slate-50/60 text-sm"
-                        disabled={form.type === "rental" && !!form.reservationId}
+                        disabled={li.source === "system"}
                       />
                     </div>
                     <div>
@@ -564,8 +673,9 @@ export function InvoiceFormPanel({
                         min={0}
                         max={100}
                         value={li.taxRate}
-                        onChange={(e) => updateLine(idx, "taxRate", e.target.value)}
+                        onChange={(e) => updateTaxRate(parseFloat(e.target.value) || 0)}
                         className="h-9 rounded-lg border-slate-200 bg-slate-50/60 text-sm"
+                        disabled
                       />
                     </div>
                   </div>
@@ -620,11 +730,11 @@ export function InvoiceFormPanel({
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving}
+          disabled={isSaving}
           className="group relative inline-flex h-10 items-center gap-2 overflow-hidden rounded-xl bg-gradient-to-b from-blue-600 to-indigo-700 px-5 text-sm font-semibold text-white shadow-[0_4px_14px_rgba(37,99,235,0.25)] transition hover:shadow-[0_6px_20px_rgba(37,99,235,0.35)] disabled:opacity-70"
         >
           <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-          {saving ? (
+          {isSaving ? (
             <span className="relative">Enregistrement…</span>
           ) : (
             <span className="relative">{isEdit ? "Enregistrer les modifications" : "Créer la facture"}</span>

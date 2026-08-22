@@ -10,19 +10,24 @@ import type {
 import type { VehicleWithFleetDetails } from "../repositories/cars.repository";
 
 function toIsoDate(value: Date | string | null | undefined) {
-  if (!value) return new Date(0).toISOString();
+  if (!value) return "";
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }
 
 function daysUntil(value: Date | string | null | undefined) {
-  if (!value) return 0;
+  if (!value) return null;
   return Math.ceil((new Date(value).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 }
 
-function documentStatus(daysLeft: number): DocumentStatus {
+function documentStatus(daysLeft: number | null): DocumentStatus {
+  if (daysLeft === null) return "unknown";
   if (daysLeft < 0) return "expired";
   if (daysLeft <= 30) return "warning";
   return "ok";
+}
+
+function documentDaysLeft(daysLeft: number | null) {
+  return daysLeft ?? 0;
 }
 
 function mapStatus(status: VehicleStatus): CarStatus {
@@ -86,10 +91,6 @@ function reservationDays(start: Date, end: Date) {
   return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
-function reservationAmount(reservation: VehicleWithFleetDetails["reservations"][number]) {
-  return Number(reservation.totalAmount ?? 0);
-}
-
 function resolvePricingRule(vehicle: VehicleWithFleetDetails) {
   return (
     vehicle.vehiclePricingRules[0] ??
@@ -108,7 +109,7 @@ function mapReservations(vehicle: VehicleWithFleetDetails): ReservationHistory[]
       startDate: reservation.startsAt.toISOString(),
       endDate: reservation.endsAt.toISOString(),
       days: reservationDays(reservation.startsAt, reservation.endsAt),
-      amount: reservationAmount(reservation),
+      amount: Number(reservation.totalAmount ?? 0),
       status:
         reservation.status === "cancelled"
           ? "cancelled"
@@ -133,13 +134,6 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
   const vignetteDays = daysUntil(vignette?.expiresAt);
   const inspectionDays = daysUntil(inspection?.expiresAt);
   const reservations = mapReservations(vehicle);
-  const revenue = reservations
-    .filter((reservation) => reservation.status !== "cancelled")
-    .reduce((sum, reservation) => sum + reservation.amount, 0);
-  const expenses = vehicle.vehicleMaintenances.reduce(
-    (sum, maintenance) => sum + Number(maintenance.cost ?? 0),
-    0,
-  );
 
   return {
     id: vehicle.id,
@@ -180,7 +174,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: insurance?.currency ?? undefined,
       documentUrl: insurance?.documentUrl ?? undefined,
       status: documentStatus(insuranceDays),
-      daysLeft: insuranceDays,
+      daysLeft: documentDaysLeft(insuranceDays),
     },
     registration: registration
       ? {
@@ -190,7 +184,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
           issuingAuthority: registration.issuingAuthority ?? undefined,
           documentUrl: registration.documentUrl ?? undefined,
           status: documentStatus(registrationDays),
-          daysLeft: registrationDays,
+          daysLeft: documentDaysLeft(registrationDays),
         }
       : null,
     vignette: {
@@ -201,7 +195,7 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: vignette?.currency ?? undefined,
       documentUrl: vignette?.documentUrl ?? undefined,
       status: documentStatus(vignetteDays),
-      daysLeft: vignetteDays,
+      daysLeft: documentDaysLeft(vignetteDays),
     },
     visiteTechnique: {
       lastDate: toIsoDate(inspection?.inspectedAt),
@@ -212,23 +206,18 @@ export function mapVehicleToCar(vehicle: VehicleWithFleetDetails): Car {
       currency: inspection?.currency ?? undefined,
       documentUrl: inspection?.documentUrl ?? undefined,
       status: documentStatus(inspectionDays),
-      daysLeft: inspectionDays,
+      daysLeft: documentDaysLeft(inspectionDays),
     },
     carteGriseUploaded: Boolean(registration?.documentUrl),
     creditAuto: null,
-    revenue,
-    expenses,
+    revenue: 0,
+    expenses: 0,
     occupancyRate: 0,
     totalDays: reservations.reduce(
       (sum, reservation) => sum + (reservation.status !== "cancelled" ? reservation.days : 0),
       0,
     ),
-    recentExpenses: vehicle.vehicleMaintenances.map((maintenance) => ({
-      type: "Maintenance",
-      date: toIsoDate(maintenance.performedAt),
-      amount: Number(maintenance.cost ?? 0),
-      note: maintenance.description ?? maintenance.type,
-    })),
+    recentExpenses: [],
     reservations,
     monthlyRevenue: Array.from({ length: 12 }, () => 0),
   };

@@ -3,8 +3,13 @@ import { AppSidebar } from "@/components/app/app-sidebar"
 import { AppHeader } from "@/components/app/app-header"
 import { SidebarProvider } from "@/components/app/sidebar-context"
 import { AppShell } from "@/components/app/app-shell"
+import { getSidebarPlanUsageData } from "@/components/app/sidebar-plan-data"
 import { AgencyProvider } from "@/contexts/agency-context"
-import { requireCurrentAgencyContext, requireCurrentCompanyContext } from "@/shared/auth"
+import {
+  listCurrentAgencyOptions,
+  requireCurrentAgencyContext,
+  requireCurrentCompanyContext,
+} from "@/shared/auth"
 import { redirect } from "next/navigation"
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -19,10 +24,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     redirect("/blocked-account")
   }
 
-  await requireCurrentAgencyContext()
+  const agencyContext = await requireCurrentAgencyContext()
+  const [agencies, planUsage] = await Promise.all([
+    listCurrentAgencyOptions(),
+    getSidebarPlanUsageData(companyContext),
+  ])
 
   return (
-    <AgencyProvider>
+    <AgencyProvider initialAgencies={agencies} initialAgencyId={agencyContext.agencyId}>
     <SidebarProvider>
       <div className="relative min-h-screen overflow-hidden text-slate-900">
         {/* Light premium ambient background */}
@@ -38,7 +47,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           }}
         />
 
-        <AppSidebar />
+        <AppSidebar planUsage={planUsage} />
         <AppShell header={<AppHeader />}>{children}</AppShell>
       </div>
     </SidebarProvider>

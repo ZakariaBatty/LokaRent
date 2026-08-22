@@ -2,9 +2,19 @@
 
 import { motion } from "motion/react"
 import { ArrowRight, Clock } from "lucide-react"
-import { upcomingReturns } from "@/lib/dashboard-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardReturnRow } from "@/modules/dashboard/services/dashboard.service"
 
-export function UpcomingReturns() {
+function formatReturnTime(value: string, t: (key: string) => string) {
+  const [day, time] = value.split("|")
+  if (day === "today") return `${t("dashboard.returns.today")} · ${time}`
+  if (day === "tomorrow") return `${t("dashboard.returns.tomorrow")} · ${time}`
+  return `${day} · ${time}`
+}
+
+export function UpcomingReturns({ rows }: { rows: DashboardReturnRow[] }) {
+  const { t } = useI18n()
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -14,17 +24,17 @@ export function UpcomingReturns() {
     >
       <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-900">Retours à venir</h3>
-          <p className="mt-0.5 text-xs text-slate-500">Aujourd&apos;hui et demain</p>
+          <h3 className="text-sm font-semibold text-slate-900">{t("dashboard.returns.title")}</h3>
+          <p className="mt-0.5 text-xs text-slate-500">{t("dashboard.returns.subtitle")}</p>
         </div>
         <button className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900">
-          Calendrier
+          {t("dashboard.actions.calendar")}
           <ArrowRight className="h-3 w-3" />
         </button>
       </div>
 
       <ul className="divide-y divide-slate-50">
-        {upcomingReturns.map((r, i) => (
+        {rows.map((r, i) => (
           <motion.li
             key={r.id}
             initial={{ opacity: 0, x: 8 }}
@@ -42,11 +52,13 @@ export function UpcomingReturns() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-slate-900">{r.vehicle}</p>
               <p className="truncate text-xs text-slate-500">
-                {r.client} · <span className="font-mono">{r.plate}</span>
+                {r.client || t("dashboard.labels.client")} · <span className="font-mono">{r.plate}</span>
               </p>
             </div>
             <div className="text-right">
-              <p className={`text-xs font-medium ${r.soon ? "text-amber-700" : "text-slate-700"}`}>{r.time}</p>
+              <p className={`text-xs font-medium ${r.soon ? "text-amber-700" : "text-slate-700"}`}>
+                {formatReturnTime(r.time, t)}
+              </p>
             </div>
           </motion.li>
         ))}

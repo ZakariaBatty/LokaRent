@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { reservationExtraInputSchema } from "./create-reservation.schema";
+import {
+  reservationAuthorizedDriverInputSchema,
+  reservationExtraInputSchema,
+  reservationSelectedExtraInputSchema,
+} from "./create-reservation.schema";
 
 const optionalText = z
   .string()
@@ -31,6 +35,8 @@ export const updateReservationSchema = reservationIdSchema.extend({
   advanceAmount: optionalAmount,
   internalNotes: optionalText,
   extras: z.array(reservationExtraInputSchema).max(20).optional(),
+  selectedExtras: z.array(reservationSelectedExtraInputSchema).max(20).optional(),
+  authorizedDrivers: z.array(reservationAuthorizedDriverInputSchema).max(5).optional(),
 });
 
 export const cancelReservationSchema = reservationIdSchema.extend({

@@ -67,10 +67,12 @@ export async function findReservationById(
       vehicle: { include: { category: true } },
       source: true,
       pricingSnapshots: { orderBy: { createdAt: "desc" } },
-      extras: true,
+      extras: { include: { definition: true }, orderBy: { createdAt: "asc" } },
+      authorizedDrivers: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
       timelineEvents: { orderBy: { createdAt: "desc" } },
-      contract: true,
-      invoice: true,
+      contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
+      invoices: { where: { deletedAt: null }, take: 1 },
+      deposits: { orderBy: { collectedAt: "desc" } },
       driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
     },
   });
@@ -89,10 +91,12 @@ export async function paginateReservations(input: ReservationListInput, db: Data
         vehicle: { include: { category: true } },
         source: true,
         pricingSnapshots: { where: { isCurrent: true }, take: 1 },
-        extras: true,
+        extras: { include: { definition: true }, orderBy: { createdAt: "asc" } },
+        authorizedDrivers: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
         timelineEvents: { orderBy: { createdAt: "desc" }, take: 5 },
         driverAssignments: { where: { deletedAt: null }, include: { driver: true } },
-        contract: true,
+        contracts: { where: { isCurrent: true, deletedAt: null }, orderBy: { versionNumber: "desc" }, take: 1 },
+        deposits: { orderBy: { collectedAt: "desc" } },
       },
       orderBy: [{ [orderField]: direction }, { id: "asc" }],
       skip: pagination.skip,
@@ -159,6 +163,20 @@ export async function lockReservationVehicle(
   `;
 }
 
+export async function lockReservationRow(
+  input: { companyId: string; agencyId: string; reservationId: string },
+  db: DatabaseClient = prisma,
+) {
+  await db.$queryRaw`
+    SELECT id
+    FROM reservations
+    WHERE id = ${input.reservationId}::uuid
+      AND company_id = ${input.companyId}::uuid
+      AND agency_id = ${input.agencyId}::uuid
+    FOR UPDATE
+  `;
+}
+
 export async function countBlockingReservations(
   input: { companyId: string; agencyId: string; reservationId: string },
   db: DatabaseClient = prisma,
@@ -169,7 +187,10 @@ export async function countBlockingReservations(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
-      OR: [{ status: { in: [ReservationStatus.confirmed, ReservationStatus.active] } }, { contract: { isNot: null } }],
+      OR: [
+        { status: { in: [ReservationStatus.confirmed, ReservationStatus.active] } },
+        { contracts: { some: { deletedAt: null } } },
+      ],
     },
   });
 }
@@ -189,6 +210,28 @@ export async function updateReservation(
       companyId: input.companyId,
       agencyId: input.agencyId,
       deletedAt: null,
+    },
+    data: input.data,
+  });
+}
+
+export async function updateReservationStatusConditionally(
+  input: {
+    companyId: string;
+    agencyId: string;
+    reservationId: string;
+    expectedStatuses: ReservationStatus[];
+    data: Prisma.ReservationUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservation.updateMany({
+    where: {
+      id: input.reservationId,
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      deletedAt: null,
+      status: { in: input.expectedStatuses },
     },
     data: input.data,
   });
@@ -305,11 +348,105 @@ export async function listReservationExtras(
   });
 }
 
+export async function listReservationExtraDefinitions(
+  input: { companyId: string; agencyId: string; includeInactive?: boolean; includeDeleted?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtraDefinition.findMany({
+    where: {
+      companyId: input.companyId,
+      OR: [{ agencyId: input.agencyId }, { agencyId: null }],
+      ...(input.includeInactive ? {} : { isActive: true }),
+      ...(input.includeDeleted ? {} : { deletedAt: null }),
+    },
+    orderBy: [{ agencyId: "desc" }, { sortOrder: "asc" }, { label: "asc" }, { id: "asc" }],
+  });
+}
+
+export async function findReservationExtraDefinitionById(
+  input: { companyId: string; agencyId: string; definitionId: string; includeInactive?: boolean },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtraDefinition.findFirst({
+    where: {
+      id: input.definitionId,
+      companyId: input.companyId,
+      OR: [{ agencyId: input.agencyId }, { agencyId: null }],
+      ...(input.includeInactive ? {} : { isActive: true }),
+      deletedAt: null,
+    },
+  });
+}
+
+export async function createReservationExtraDefinition(
+  data: Prisma.ReservationExtraDefinitionUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtraDefinition.create({ data });
+}
+
+export async function updateReservationExtraDefinition(
+  input: {
+    companyId: string;
+    agencyId: string;
+    definitionId: string;
+    data: Prisma.ReservationExtraDefinitionUncheckedUpdateInput;
+  },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtraDefinition.updateMany({
+    where: {
+      id: input.definitionId,
+      companyId: input.companyId,
+      OR: [{ agencyId: input.agencyId }, { agencyId: null }],
+      deletedAt: null,
+    },
+    data: input.data,
+  });
+}
+
+export async function softDeleteReservationExtraDefinition(
+  input: { companyId: string; agencyId: string; definitionId: string; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationExtraDefinition.updateMany({
+    where: {
+      id: input.definitionId,
+      companyId: input.companyId,
+      OR: [{ agencyId: input.agencyId }, { agencyId: null }],
+      deletedAt: null,
+    },
+    data: { deletedAt: new Date(), deletedBy: input.deletedBy ?? null, isActive: false },
+  });
+}
+
 export async function createReservationExtra(
   data: Prisma.ReservationExtraUncheckedCreateInput,
   db: DatabaseClient = prisma,
 ) {
   return db.reservationExtra.create({ data });
+}
+
+export async function createReservationAuthorizedDriver(
+  data: Prisma.ReservationAuthorizedDriverUncheckedCreateInput,
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationAuthorizedDriver.create({ data });
+}
+
+export async function softDeleteReservationAuthorizedDrivers(
+  input: { companyId: string; agencyId: string; reservationId: string; deletedBy?: string | null },
+  db: DatabaseClient = prisma,
+) {
+  return db.reservationAuthorizedDriver.updateMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      reservationId: input.reservationId,
+      deletedAt: null,
+    },
+    data: { deletedAt: new Date(), deletedBy: input.deletedBy ?? null },
+  });
 }
 
 export async function deleteReservationExtras(
@@ -346,8 +483,10 @@ export const reservationsRepository = {
   findReservationCustomer,
   findReservationVehicle,
   lockReservationVehicle,
+  lockReservationRow,
   countBlockingReservations,
   updateReservation,
+  updateReservationStatusConditionally,
   softDeleteReservation,
   restoreReservation,
   findOverlappingReservations,
@@ -357,7 +496,14 @@ export const reservationsRepository = {
   findCurrentPricingSnapshot,
   markPricingSnapshotsNotCurrent,
   listReservationExtras,
+  listReservationExtraDefinitions,
+  findReservationExtraDefinitionById,
+  createReservationExtraDefinition,
+  updateReservationExtraDefinition,
+  softDeleteReservationExtraDefinition,
   createReservationExtra,
+  createReservationAuthorizedDriver,
+  softDeleteReservationAuthorizedDrivers,
   deleteReservationExtras,
   createReservationTimelineEvent,
   listReservationTimeline,

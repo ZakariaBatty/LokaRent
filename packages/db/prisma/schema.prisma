@@ -183,6 +183,11 @@ enum InvoiceStatus {
   voided
 }
 
+enum InvoiceType {
+  rental
+  manual
+}
+
 enum PaymentMethod {
   cash
   bank_transfer
@@ -275,7 +280,9 @@ model Company {
   customerBlacklists           CustomerBlacklist[]
   reservations                 Reservation[]
   reservationPricingSnapshots  ReservationPricingSnapshot[]
+  reservationExtraDefinitions  ReservationExtraDefinition[]
   reservationExtras            ReservationExtra[]
+  reservationAuthorizedDrivers ReservationAuthorizedDriver[]
   reservationTimelineEvents    ReservationTimelineEvent[]
   contractTemplates            ContractTemplate[]
   contractTemplateVersions     ContractTemplateVersion[]
@@ -322,34 +329,36 @@ model Agency {
   deletedAt   DateTime?    @map("deleted_at") @db.Timestamptz()
   deletedBy   String?      @map("deleted_by") @db.Uuid
 
-  company                   Company                    @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agencyMemberships         AgencyMembership[]
-  invitations               Invitation[]
-  vehicles                  Vehicle[]
-  vehiclePhotos             VehiclePhoto[]
-  vehiclePricingRules       VehiclePricingRule[]
-  vehicleInsurances         VehicleInsurance[]
-  vehicleInspections        VehicleInspection[]
-  vehicleMaintenances       VehicleMaintenance[]
-  vehicleAvailabilityBlocks VehicleAvailabilityBlock[]
-  vehicleRegistrations      VehicleRegistration[]
-  vehicleVignettes          VehicleVignette[]
-  customers                 Customer[]
-  reservations              Reservation[]
-  contractTemplates         ContractTemplate[]
-  contracts                 Contract[]
-  invoices                  Invoice[]
-  payments                  Payment[]
-  deposits                  Deposit[]
-  creditNotes               CreditNote[]
-  expenses                  Expense[]
-  driverPayments            DriverPayment[]
-  drivers                   Driver[]
-  numberSequences           NumberSequence[]
-  settings                  Setting[]
-  documents                 Document[]
-  auditLogs                 AuditLog[]
-  activityLogs              ActivityLog[]
+  company                      Company                       @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agencyMemberships            AgencyMembership[]
+  invitations                  Invitation[]
+  vehicles                     Vehicle[]
+  vehiclePhotos                VehiclePhoto[]
+  vehiclePricingRules          VehiclePricingRule[]
+  vehicleInsurances            VehicleInsurance[]
+  vehicleInspections           VehicleInspection[]
+  vehicleMaintenances          VehicleMaintenance[]
+  vehicleAvailabilityBlocks    VehicleAvailabilityBlock[]
+  vehicleRegistrations         VehicleRegistration[]
+  vehicleVignettes             VehicleVignette[]
+  customers                    Customer[]
+  reservations                 Reservation[]
+  reservationExtraDefinitions  ReservationExtraDefinition[]
+  reservationAuthorizedDrivers ReservationAuthorizedDriver[]
+  contractTemplates            ContractTemplate[]
+  contracts                    Contract[]
+  invoices                     Invoice[]
+  payments                     Payment[]
+  deposits                     Deposit[]
+  creditNotes                  CreditNote[]
+  expenses                     Expense[]
+  driverPayments               DriverPayment[]
+  drivers                      Driver[]
+  numberSequences              NumberSequence[]
+  settings                     Setting[]
+  documents                    Document[]
+  auditLogs                    AuditLog[]
+  activityLogs                 ActivityLog[]
 
   @@unique([companyId, code])
   @@index([companyId])
@@ -768,10 +777,11 @@ model VehiclePricingRule {
   deletedAt         DateTime? @map("deleted_at") @db.Timestamptz()
   deletedBy         String?   @map("deleted_by") @db.Uuid
 
-  company         Company          @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agency          Agency           @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  vehicle         Vehicle?         @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  vehicleCategory VehicleCategory? @relation(fields: [vehicleCategoryId], references: [id], onDelete: Cascade)
+  company          Company                      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency           Agency                       @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  vehicle          Vehicle?                     @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleCategory  VehicleCategory?             @relation(fields: [vehicleCategoryId], references: [id], onDelete: Cascade)
+  pricingSnapshots ReservationPricingSnapshot[]
 
   @@index([companyId])
   @@index([agencyId, vehicleId, isCurrent])
@@ -1193,14 +1203,15 @@ model Reservation {
   source             ReservationSource             @relation(fields: [sourceId], references: [id], onDelete: NoAction)
   assignedAgent      User?                         @relation("ReservationAssignedAgent", fields: [assignedAgentId], references: [id], onDelete: NoAction)
   cancelledByUser    User?                         @relation("ReservationCancelledBy", fields: [cancelledBy], references: [id], onDelete: NoAction)
-  contract           Contract?
-  invoice            Invoice?
+  contracts          Contract[]
+  invoices           Invoice[]
   payments           Payment[]
   deposits           Deposit[]
   expenses           Expense[]
   driverPayments     DriverPayment[]
   pricingSnapshots   ReservationPricingSnapshot[]
   extras             ReservationExtra[]
+  authorizedDrivers  ReservationAuthorizedDriver[]
   timelineEvents     ReservationTimelineEvent[]
   availabilityBlocks VehicleAvailabilityBlock[]
   driverAssignments  DriverReservationAssignment[]
@@ -1216,21 +1227,31 @@ model Reservation {
 }
 
 model ReservationPricingSnapshot {
-  id             String   @id @db.Uuid
-  companyId      String   @map("company_id") @db.Uuid
-  reservationId  String   @map("reservation_id") @db.Uuid
-  supersedesId   String?  @map("supersedes_id") @db.Uuid
-  isCurrent      Boolean  @default(true) @map("is_current")
-  pricePerDay    Decimal  @map("price_per_day") @db.Decimal(14, 4)
-  days           Int      @db.SmallInt
-  extrasTotal    Decimal  @map("extras_total") @db.Decimal(14, 4)
-  discountAmount Decimal  @map("discount_amount") @db.Decimal(14, 4)
-  totalAmount    Decimal  @map("total_amount") @db.Decimal(14, 4)
-  currency       String   @db.Char(3)
-  lockedAt       DateTime @map("locked_at") @db.Timestamptz()
-  lockedBy       String   @map("locked_by") @db.Uuid
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+  id               String    @id @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  reservationId    String    @map("reservation_id") @db.Uuid
+  supersedesId     String?   @map("supersedes_id") @db.Uuid
+  isCurrent        Boolean   @default(true) @map("is_current")
+  pricingRuleId    String?   @map("pricing_rule_id") @db.Uuid
+  startsAt         DateTime? @map("starts_at") @db.Timestamptz()
+  endsAt           DateTime? @map("ends_at") @db.Timestamptz()
+  durationValue    Int?      @map("duration_value") @db.SmallInt
+  durationUnit     String?   @map("duration_unit")
+  pricePerDay      Decimal   @map("price_per_day") @db.Decimal(14, 4)
+  days             Int       @db.SmallInt
+  extrasTotal      Decimal   @map("extras_total") @db.Decimal(14, 4)
+  discountAmount   Decimal   @map("discount_amount") @db.Decimal(14, 4)
+  discountReason   String?   @map("discount_reason")
+  totalAmount      Decimal   @map("total_amount") @db.Decimal(14, 4)
+  mileageLimit     Int?      @map("mileage_limit")
+  extraMileageRate Decimal?  @map("extra_mileage_rate") @db.Decimal(14, 4)
+  depositAmount    Decimal?  @map("deposit_amount") @db.Decimal(14, 4)
+  taxRate          Decimal?  @map("tax_rate") @db.Decimal(14, 4)
+  currency         String    @db.Char(3)
+  lockedAt         DateTime  @map("locked_at") @db.Timestamptz()
+  lockedBy         String    @map("locked_by") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
 
   // 1:N supersession chain (NOT 1:1) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 5.
   // Financial columns are immutable; only `is_current` is mutated (carries updatedAt, no soft delete).
@@ -1240,30 +1261,94 @@ model ReservationPricingSnapshot {
   reservation  Reservation                  @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   supersedes   ReservationPricingSnapshot?  @relation("PricingSnapshotSupersession", fields: [supersedesId], references: [id], onDelete: NoAction)
   supersededBy ReservationPricingSnapshot[] @relation("PricingSnapshotSupersession")
+  pricingRule  VehiclePricingRule?          @relation(fields: [pricingRuleId], references: [id], onDelete: NoAction)
   lockedByUser User                         @relation("PricingSnapshotLockedBy", fields: [lockedBy], references: [id], onDelete: NoAction)
+  contracts    Contract[]
 
   @@index([reservationId, createdAt])
+  @@index([pricingRuleId])
   @@map("reservation_pricing_snapshots")
+}
+
+model ReservationExtraDefinition {
+  id          String    @id @db.Uuid
+  companyId   String    @map("company_id") @db.Uuid
+  agencyId    String?   @map("agency_id") @db.Uuid
+  key         String
+  label       String
+  description String?
+  price       Decimal   @db.Decimal(14, 4)
+  currency    String    @db.Char(3)
+  isActive    Boolean   @default(true) @map("is_active")
+  sortOrder   Int       @default(0) @map("sort_order")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy   String?   @map("deleted_by") @db.Uuid
+
+  // Mutable company/agency-scoped catalog for selectable reservation extras.
+  // ReservationExtra stores immutable selected snapshots copied from these definitions.
+  // Raw migration required: partial unique indexes for company-level and agency-level keys.
+
+  company Company            @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency  Agency?            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  extras  ReservationExtra[]
+
+  @@unique([companyId, agencyId, key])
+  @@index([companyId, agencyId, isActive, sortOrder])
+  @@index([companyId, deletedAt])
+  @@map("reservation_extra_definitions")
 }
 
 model ReservationExtra {
   id            String   @id @db.Uuid
   companyId     String   @map("company_id") @db.Uuid
   reservationId String   @map("reservation_id") @db.Uuid
+  definitionId  String?  @map("definition_id") @db.Uuid
   label         String
   unitPrice     Decimal  @map("unit_price") @db.Decimal(14, 4)
   quantity      Int      @default(1) @db.SmallInt
   totalPrice    Decimal  @map("total_price") @db.Decimal(14, 4)
+  currency      String   @default("MAD") @db.Char(3)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
   // Monetary columns are Decimal(14,4) per FINAL_DATABASE_SOURCE_OF_TRUTH.md § 4 (supersedes PHASE1 numeric(10,2)).
 
-  company     Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  company     Company                     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  reservation Reservation                 @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  definition  ReservationExtraDefinition? @relation(fields: [definitionId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([reservationId])
+  @@index([definitionId])
   @@map("reservation_extras")
+}
+
+model ReservationAuthorizedDriver {
+  id               String    @id @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  agencyId         String    @map("agency_id") @db.Uuid
+  reservationId    String    @map("reservation_id") @db.Uuid
+  fullName         String    @map("full_name")
+  licenseNumber    String    @map("license_number")
+  licenseIssuedAt  DateTime? @map("license_issued_at") @db.Date
+  licenseExpiresAt DateTime? @map("license_expires_at") @db.Date
+  documentUrl      String?   @map("document_url")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz()
+  deletedBy        String?   @map("deleted_by") @db.Uuid
+
+  // Renter/customer authorized drivers, distinct from internal DriverReservationAssignment chauffeurs.
+
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency      Agency      @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([agencyId])
+  @@index([reservationId, deletedAt])
+  @@map("reservation_authorized_drivers")
 }
 
 model ReservationTimelineEvent {
@@ -1339,47 +1424,59 @@ model ContractTemplateVersion {
 }
 
 model Contract {
-  id                String         @id @db.Uuid
-  companyId         String         @map("company_id") @db.Uuid
-  agencyId          String         @map("agency_id") @db.Uuid
-  code              String
-  reservationId     String         @unique @map("reservation_id") @db.Uuid
-  customerId        String         @map("customer_id") @db.Uuid
-  vehicleId         String         @map("vehicle_id") @db.Uuid
-  templateId        String?        @map("template_id") @db.Uuid
-  templateVersionId String?        @map("template_version_id") @db.Uuid
-  status            ContractStatus @default(draft)
-  pickupMileage     Int            @map("pickup_mileage")
-  returnMileage     Int?           @map("return_mileage")
-  pickupFuelLevel   Int?           @map("pickup_fuel_level") @db.SmallInt
-  returnFuelLevel   Int?           @map("return_fuel_level") @db.SmallInt
-  pickupAt          DateTime       @map("pickup_at") @db.Timestamptz()
-  returnedAt        DateTime?      @map("returned_at") @db.Timestamptz()
-  notes             String?
-  renderedHtml      String         @map("rendered_html")
-  renderedPdfUrl    String?        @map("rendered_pdf_url")
-  contentSnapshot   Json           @map("content_snapshot") @db.JsonB
-  contentHash       String         @map("content_hash")
-  signedAt          DateTime?      @map("signed_at") @db.Timestamptz()
-  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz()
-  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
-  deletedAt         DateTime?      @map("deleted_at") @db.Timestamptz()
-  deletedBy         String?        @map("deleted_by") @db.Uuid
+  id                   String         @id @db.Uuid
+  companyId            String         @map("company_id") @db.Uuid
+  agencyId             String         @map("agency_id") @db.Uuid
+  code                 String
+  reservationId        String         @map("reservation_id") @db.Uuid
+  pricingSnapshotId    String         @map("pricing_snapshot_id") @db.Uuid
+  supersedesContractId String?        @map("supersedes_contract_id") @db.Uuid
+  versionNumber        Int            @default(1) @map("version_number") @db.SmallInt
+  isCurrent            Boolean        @default(true) @map("is_current")
+  customerId           String         @map("customer_id") @db.Uuid
+  vehicleId            String         @map("vehicle_id") @db.Uuid
+  templateId           String?        @map("template_id") @db.Uuid
+  templateVersionId    String?        @map("template_version_id") @db.Uuid
+  status               ContractStatus @default(draft)
+  pickupMileage        Int            @map("pickup_mileage")
+  returnMileage        Int?           @map("return_mileage")
+  pickupFuelLevel      Int?           @map("pickup_fuel_level") @db.SmallInt
+  returnFuelLevel      Int?           @map("return_fuel_level") @db.SmallInt
+  pickupAt             DateTime       @map("pickup_at") @db.Timestamptz()
+  returnedAt           DateTime?      @map("returned_at") @db.Timestamptz()
+  notes                String?
+  renderedHtml         String         @map("rendered_html")
+  renderedPdfUrl       String?        @map("rendered_pdf_url")
+  contentSnapshot      Json           @map("content_snapshot") @db.JsonB
+  contentHash          String         @map("content_hash")
+  signedAt             DateTime?      @map("signed_at") @db.Timestamptz()
+  createdAt            DateTime       @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt            DateTime       @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt            DateTime?      @map("deleted_at") @db.Timestamptz()
+  deletedBy            String?        @map("deleted_by") @db.Uuid
 
   // Legal-integrity provenance columns per DATABASE_FINAL_REVIEW.md § 2 (rendered_html + content_snapshot + content_hash frozen at signing).
+  // Contract amendment history is 1:N per reservation. Prior versions remain immutable; only isCurrent changes.
 
-  company         Company                  @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agency          Agency                   @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation     Reservation              @relation(fields: [reservationId], references: [id], onDelete: NoAction)
-  customer        Customer                 @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  vehicle         Vehicle                  @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
-  template        ContractTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
-  templateVersion ContractTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
-  inspectionItems ContractInspectionItem[]
-  signatures      ContractSignature[]
+  company            Company                    @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency             Agency                     @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation        Reservation                @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  pricingSnapshot    ReservationPricingSnapshot @relation(fields: [pricingSnapshotId], references: [id], onDelete: NoAction)
+  supersedesContract Contract?                  @relation("ContractSupersession", fields: [supersedesContractId], references: [id], onDelete: NoAction)
+  supersededBy       Contract[]                 @relation("ContractSupersession")
+  customer           Customer                   @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  vehicle            Vehicle                    @relation(fields: [vehicleId], references: [id], onDelete: NoAction)
+  template           ContractTemplate?          @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  templateVersion    ContractTemplateVersion?   @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+  inspectionItems    ContractInspectionItem[]
+  signatures         ContractSignature[]
 
   @@unique([companyId, code])
+  @@unique([reservationId, versionNumber], map: "contracts_reservation_version_number_key")
   @@index([status])
+  @@index([reservationId, createdAt])
+  @@index([pricingSnapshotId])
+  @@index([supersedesContractId])
   @@index([templateVersionId])
   @@index([companyId])
   @@index([agencyId])
@@ -1467,7 +1564,8 @@ model Invoice {
   companyId          String        @map("company_id") @db.Uuid
   agencyId           String        @map("agency_id") @db.Uuid
   code               String
-  reservationId      String        @unique @map("reservation_id") @db.Uuid
+  type               InvoiceType   @default(rental)
+  reservationId      String?       @map("reservation_id") @db.Uuid
   customerId         String        @map("customer_id") @db.Uuid
   customerBusinessId String?       @map("customer_business_id") @db.Uuid
   status             InvoiceStatus
@@ -1479,15 +1577,18 @@ model Invoice {
   issuedAt           DateTime?     @map("issued_at") @db.Date
   dueAt              DateTime?     @map("due_at") @db.Date
   paidAt             DateTime?     @map("paid_at") @db.Timestamptz()
+  documentUrl        String?       @map("document_url")
   notes              String?
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime      @updatedAt @map("updated_at") @db.Timestamptz()
+  deletedAt          DateTime?     @map("deleted_at") @db.Timestamptz()
+  deletedBy          String?       @map("deleted_by") @db.Uuid
 
-  // Immutable after issuance — never soft-deleted (VAT compliance). Corrections create a CreditNote.
+  // Draft invoices may be soft-deleted. Issued financial history is preserved via CreditNote corrections.
 
   company                  Company           @relation(fields: [companyId], references: [id], onDelete: NoAction)
   agency                   Agency            @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation              Reservation       @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  reservation              Reservation?      @relation(fields: [reservationId], references: [id], onDelete: NoAction)
   customer                 Customer          @relation(fields: [customerId], references: [id], onDelete: NoAction)
   customerBusiness         CustomerBusiness? @relation(fields: [customerBusinessId], references: [id], onDelete: NoAction)
   lineItems                InvoiceLineItem[]
@@ -1500,6 +1601,7 @@ model Invoice {
   @@index([dueAt])
   @@index([customerId])
   @@index([customerBusinessId])
+  @@index([companyId, deletedAt])
   @@map("invoices")
 }
 
@@ -1511,6 +1613,8 @@ model InvoiceLineItem {
   quantity    Decimal  @db.Decimal(14, 4)
   unitPrice   Decimal  @map("unit_price") @db.Decimal(14, 4)
   totalPrice  Decimal  @map("total_price") @db.Decimal(14, 4)
+  taxRate     Decimal? @map("tax_rate") @db.Decimal(14, 4)
+  taxAmount   Decimal? @map("tax_amount") @db.Decimal(14, 4)
   sortOrder   Int      @default(0) @map("sort_order") @db.SmallInt
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
 
@@ -1528,7 +1632,7 @@ model Payment {
   id            String        @id @db.Uuid
   companyId     String        @map("company_id") @db.Uuid
   agencyId      String        @map("agency_id") @db.Uuid
-  reservationId String        @map("reservation_id") @db.Uuid
+  reservationId String?       @map("reservation_id") @db.Uuid
   invoiceId     String?       @map("invoice_id") @db.Uuid
   customerId    String        @map("customer_id") @db.Uuid
   method        PaymentMethod
@@ -1545,12 +1649,12 @@ model Payment {
   // NOTE: plan documents @@index([invoiceId, status]) but payments has no `status` column
   //       (no PaymentStatus enum exists); degraded to @@index([invoiceId]).
 
-  company        Company     @relation(fields: [companyId], references: [id], onDelete: NoAction)
-  agency         Agency      @relation(fields: [agencyId], references: [id], onDelete: NoAction)
-  reservation    Reservation @relation(fields: [reservationId], references: [id], onDelete: NoAction)
-  invoice        Invoice?    @relation(fields: [invoiceId], references: [id], onDelete: NoAction)
-  customer       Customer    @relation(fields: [customerId], references: [id], onDelete: NoAction)
-  recordedByUser User        @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
+  company        Company      @relation(fields: [companyId], references: [id], onDelete: NoAction)
+  agency         Agency       @relation(fields: [agencyId], references: [id], onDelete: NoAction)
+  reservation    Reservation? @relation(fields: [reservationId], references: [id], onDelete: NoAction)
+  invoice        Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: NoAction)
+  customer       Customer     @relation(fields: [customerId], references: [id], onDelete: NoAction)
+  recordedByUser User         @relation(fields: [recordedBy], references: [id], onDelete: NoAction)
 
   @@index([invoiceId])
   @@index([agencyId, createdAt])
@@ -1634,6 +1738,8 @@ model Expense {
   occurredAt    DateTime       @map("occurred_at") @db.Date
   method        PaymentMethod?
   reference     String?
+  provider      String?
+  internalNote  String?        @map("internal_note")
   documentUrl   String?        @map("document_url")
   recordedBy    String         @map("recorded_by") @db.Uuid
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz()

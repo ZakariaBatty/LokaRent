@@ -2,13 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@lokarent/db";
+import { z } from "zod";
 import { requireCurrentAgencyContext } from "@/shared/auth";
 import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
+import { recordDriverPaymentService } from "@/modules/finances/services/finances.service";
 import {
   createDriverPricingRuleService,
   createDriverService,
   deactivateDriverService,
+  getDriverService,
   restoreDriverService,
   updateDriverService,
   upsertDriverDocumentByTypeService,
@@ -58,6 +61,14 @@ function hasPricingInput(input: { monthlyRate?: number; hourlyRate?: number; mis
   return [input.monthlyRate, input.hourlyRate, input.missionRate].some((value) => value !== undefined);
 }
 
+const recordDriverPaymentSchema = z.object({
+  driverId: z.string().uuid(),
+  reservationId: z.string().uuid().optional().nullable(),
+  paidAt: z.coerce.date(),
+  amount: z.coerce.number().positive(),
+  notes: z.string().trim().optional().nullable(),
+});
+
 async function syncDriverDocuments(
   context: DriverActor & { companyId: string; agencyId: string },
   driverId: string,
@@ -74,6 +85,38 @@ async function syncDriverDocuments(
         }),
       ),
   );
+}
+
+export async function recordDriverPaymentAction(input: unknown): Promise<DriverActionResult> {
+  const parsed = recordDriverPaymentSchema.safeParse(input);
+  if (!parsed.success) return { success: false, messageKey: "drivers.errors.validation" };
+
+  try {
+    const context = await getActionContext(PERMISSIONS.FINANCE_PAYMENTS_RECORD);
+    const driver = await getDriverService({ ...context, driverId: parsed.data.driverId });
+    const pricingRule = driver.pricingRules.find((rule) => rule.isCurrent) ?? driver.pricingRules[0] ?? null;
+    if (!pricingRule) return { success: false, messageKey: "drivers.errors.pricingAmountRequired" };
+
+    await recordDriverPaymentService({
+      context,
+      data: {
+        driverId: parsed.data.driverId,
+        driverPricingRuleId: pricingRule.id,
+        reservationId: parsed.data.reservationId ?? null,
+        grossAmount: decimal(parsed.data.amount) ?? new Prisma.Decimal(0),
+        netAmount: decimal(parsed.data.amount),
+        currency: pricingRule.currency,
+        paidAt: parsed.data.paidAt,
+        notes: parsed.data.notes || undefined,
+      },
+    });
+    revalidatePath("/drivers");
+    revalidatePath("/finances");
+    revalidatePath("/reports");
+    return { success: true, driverId: parsed.data.driverId };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
 }
 
 export async function createDriverAction(input: unknown): Promise<DriverActionResult> {

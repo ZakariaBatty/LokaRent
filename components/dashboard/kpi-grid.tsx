@@ -3,9 +3,28 @@
 import { motion } from "motion/react"
 import { Car, KeyRound, TrendingUp, RotateCcw, ArrowUpRight, ArrowDownRight } from "lucide-react"
 import { CountUp } from "@/components/app/count-up"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardKpi } from "@/modules/dashboard/services/dashboard.service"
 
 const iconMap = { Car, KeyRound, TrendingUp, RotateCcw }
+const labelKeys: Record<DashboardKpi["id"], string> = {
+  available: "dashboard.kpi.availableCars",
+  active: "dashboard.kpi.activeRentals",
+  revenue: "dashboard.kpi.bookedValue",
+  docs: "dashboard.kpi.documentsToRenew",
+}
+const iconKeys: Record<DashboardKpi["id"], keyof typeof iconMap> = {
+  available: "Car",
+  active: "KeyRound",
+  revenue: "TrendingUp",
+  docs: "RotateCcw",
+}
+const accentKeys: Record<DashboardKpi["id"], keyof typeof accentStyles> = {
+  available: "blue",
+  active: "violet",
+  revenue: "emerald",
+  docs: "amber",
+}
 
 const accentStyles = {
   blue: {
@@ -70,65 +89,20 @@ function Sparkline({ data, color, fill }: { data: number[]; color: string; fill:
   )
 }
 
-export function KpiGrid() {
-  const { agencyData } = useAgency()
-  const dk = agencyData.dashboardKpis
-
-  const kpis = [
-    {
-      id: "available",
-      label: "Voitures disponibles",
-      value: dk.availableCars,
-      suffix: ` / ${dk.totalCars}`,
-      delta: `+${dk.availableCars}`,
-      deltaLabel: "disponibles",
-      trend: "up" as const,
-      icon: "Car",
-      accent: "blue" as const,
-      spark: [dk.availableCars - 2, dk.availableCars - 1, dk.availableCars, dk.availableCars - 1, dk.availableCars, dk.availableCars + 1, dk.availableCars],
-    },
-    {
-      id: "active",
-      label: "Locations actives",
-      value: dk.activeRentals,
-      delta: dk.overdueReturns > 0 ? `${dk.overdueReturns} en retard` : "Tout à jour",
-      deltaLabel: "",
-      trend: dk.overdueReturns > 0 ? ("down" as const) : ("up" as const),
-      icon: "KeyRound",
-      accent: "violet" as const,
-      spark: [dk.activeRentals - 2, dk.activeRentals - 1, dk.activeRentals, dk.activeRentals, dk.activeRentals + 1, dk.activeRentals, dk.activeRentals],
-    },
-    {
-      id: "revenue",
-      label: "CA du mois",
-      value: dk.monthlyRevenue,
-      suffix: " DH",
-      delta: `+${dk.revenueDelta}%`,
-      deltaLabel: "vs mois dernier",
-      trend: "up" as const,
-      icon: "TrendingUp",
-      accent: "emerald" as const,
-      spark: [12, 14, 13, 18, 17, 21, Math.round(dk.monthlyRevenue / 1000)],
-    },
-    {
-      id: "docs",
-      label: "Documents à renouveler",
-      value: dk.expiringDocuments,
-      delta: dk.expiringDocuments > 0 ? "À surveiller" : "Tous valides",
-      deltaLabel: "",
-      trend: dk.expiringDocuments > 2 ? ("down" as const) : ("neutral" as const),
-      icon: "RotateCcw",
-      accent: "amber" as const,
-      spark: [1, 2, 1, 3, 2, dk.expiringDocuments, dk.expiringDocuments],
-    },
-  ]
+export function KpiGrid({ kpis }: { kpis: DashboardKpi[] }) {
+  const { t } = useI18n()
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {kpis.map((kpi, i) => {
-        const Icon = iconMap[kpi.icon as keyof typeof iconMap]
-        const accent = accentStyles[kpi.accent]
+        const Icon = iconMap[iconKeys[kpi.id]]
+        const accent = accentStyles[accentKeys[kpi.id]]
         const TrendIcon = kpi.trend === "up" ? ArrowUpRight : kpi.trend === "down" ? ArrowDownRight : null
+        const compactDelta =
+          kpi.delta === "0" &&
+          (kpi.deltaLabel === "dashboard.kpi.allCurrentDelta" || kpi.deltaLabel === "dashboard.kpi.validDelta")
+        const valueFormat =
+          kpi.id === "revenue" ? (n: number) => Math.round(n).toLocaleString("fr-FR") : undefined
 
         return (
           <motion.div
@@ -151,10 +125,10 @@ export function KpiGrid() {
 
             {/* Value */}
             <div className="mt-5">
-              <p className="text-xs font-medium text-slate-500">{kpi.label}</p>
+              <p className="text-xs font-medium text-slate-500">{t(labelKeys[kpi.id])}</p>
               <div className="mt-1.5 flex items-baseline gap-1">
                 <span className="text-3xl font-semibold tracking-tight text-slate-900">
-                  <CountUp value={kpi.value} />
+                  <CountUp value={kpi.value} format={valueFormat} />
                 </span>
                 {kpi.suffix && <span className="text-sm font-medium text-slate-400">{kpi.suffix}</span>}
               </div>
@@ -172,9 +146,9 @@ export function KpiGrid() {
                 }`}
               >
                 {TrendIcon && <TrendIcon className="h-3 w-3" />}
-                {kpi.delta}
+                {compactDelta ? t(kpi.deltaLabel) : kpi.delta}
               </span>
-              {kpi.deltaLabel && <span className="text-xs text-slate-400">{kpi.deltaLabel}</span>}
+              {kpi.deltaLabel && !compactDelta && <span className="text-xs text-slate-400">{t(kpi.deltaLabel)}</span>}
             </div>
           </motion.div>
         )

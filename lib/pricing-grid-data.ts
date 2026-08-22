@@ -138,10 +138,13 @@ export const defaultSeasons: Season[] = [
 
 export type PricingOption = {
   id: string
+  key?: string
   name: string
   icon: "user-plus" | "navigation" | "baby" | "shield-check" | "truck"
   perDay: number
   included: boolean
+  currency?: string
+  sortOrder?: number
   description?: string
 }
 

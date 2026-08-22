@@ -10,6 +10,7 @@ import type { DriverListDto } from "@/modules/drivers/dto/driver-response.dto"
 import {
   createDriverAction,
   deleteDriverAction,
+  recordDriverPaymentAction,
   updateDriverAction,
 } from "@/modules/drivers/actions/create-driver.action"
 import { DriversKpiBar } from "@/components/drivers/drivers-kpi-bar"
@@ -17,6 +18,7 @@ import { DriversFilters, type DriversFiltersState } from "@/components/drivers/d
 import { DriversTable } from "@/components/drivers/drivers-table"
 import { DriverDetailPanel } from "@/components/drivers/driver-detail-panel"
 import { DriverFormPanel, type DriverFormValues } from "@/components/drivers/driver-form-panel"
+import type { DriverPaymentDraft } from "@/components/drivers/tabs/driver-paiement-tab"
 import fr from "@/translations/fr"
 
 type Props = {
@@ -176,6 +178,23 @@ export function DriversPageClient({ initialResult, initialFilters, canDelete }: 
     return true
   }
 
+  const handleRecordPayment = async (driver: Driver, draft: DriverPaymentDraft) => {
+    const result = await recordDriverPaymentAction({
+      driverId: driver.id,
+      reservationId: draft.reservationId || undefined,
+      paidAt: draft.paidAt,
+      amount: draft.amount,
+      notes: draft.notes || undefined,
+    })
+    if (!result.success) {
+      toast.error(actionMessage(result.messageKey))
+      return false
+    }
+    toast.success(fr.drivers.payments.recorded)
+    router.refresh()
+    return true
+  }
+
   return (
     <div className="flex h-full flex-col gap-5 overflow-hidden p-5">
       <div className="flex items-center justify-between">
@@ -223,6 +242,7 @@ export function DriversPageClient({ initialResult, initialFilters, canDelete }: 
                 onClose={() => setSelectedId(null)}
                 onEdit={() => openEdit(selected)}
                 onDelete={() => handleDelete(selected)}
+                onRecordPayment={handleRecordPayment}
                 canDelete={canDelete}
               />
             </div>

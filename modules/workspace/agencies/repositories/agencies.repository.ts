@@ -92,6 +92,23 @@ export async function listActiveAgencies(companyId: string, db: DatabaseClient =
   });
 }
 
+export async function listWorkspaceAgencies(companyId: string, db: DatabaseClient = prisma) {
+  return db.agency.findMany({
+    where: { companyId, deletedAt: null },
+    include: {
+      _count: {
+        select: {
+          agencyMemberships: { where: { status: "active", deletedAt: null } },
+          vehicles: { where: { deletedAt: null } },
+          reservations: true,
+          customers: { where: { deletedAt: null } },
+        },
+      },
+    },
+    orderBy: { name: "asc" },
+  });
+}
+
 export async function createAgency(
   data: Prisma.AgencyUncheckedCreateInput,
   db: DatabaseClient = prisma,
@@ -147,15 +164,19 @@ export async function hasActiveAgencyMembership(
 }
 
 export async function getCompanyUsageCounts(companyId: string, db: DatabaseClient = prisma) {
-  const [agencies, users, vehicles, reservations, customers] = await Promise.all([
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+  const [agencies, users, vehicles, reservations, reservationsThisMonth, customers] = await Promise.all([
     db.agency.count({ where: { companyId, deletedAt: null } }),
     db.user.count({ where: { companyId, deletedAt: null } }),
     db.vehicle.count({ where: { companyId, deletedAt: null } }),
     db.reservation.count({ where: { companyId, deletedAt: null } }),
+    db.reservation.count({ where: { companyId, deletedAt: null, createdAt: { gte: monthStart } } }),
     db.customer.count({ where: { companyId, deletedAt: null } }),
   ]);
 
-  return { agencies, users, vehicles, reservations, customers };
+  return { agencies, users, vehicles, reservations, reservationsThisMonth, customers };
 }
 
 export const agenciesRepository = {
@@ -168,6 +189,7 @@ export const agenciesRepository = {
   findAgencyById,
   findAgencyByCode,
   listActiveAgencies,
+  listWorkspaceAgencies,
   createAgency,
   updateAgency,
   softDeleteAgency,

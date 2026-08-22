@@ -2,34 +2,30 @@
 
 import { motion } from "motion/react"
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
+import type { DashboardFleetStatus } from "@/modules/dashboard/services/dashboard.service"
 
-function CustomTooltip({ active, payload }: any) {
+function CustomTooltip({ active, payload, t }: any) {
   if (!active || !payload || !payload.length) return null
   const item = payload[0]
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-lg">
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 rounded-full" style={{ background: item.payload.color }} />
-        <span className="text-xs font-medium text-slate-700">{item.name}</span>
+        <span className="text-xs font-medium text-slate-700">{t(`dashboard.fleet.status.${item.payload.id}`)}</span>
       </div>
-      <p className="mt-0.5 text-sm font-semibold text-slate-900">{item.value} véhicules</p>
+      <p className="mt-0.5 text-sm font-semibold text-slate-900">
+        {item.value} {t("dashboard.fleet.vehicles")}
+      </p>
     </div>
   )
 }
 
-export function FleetStatusChart() {
-  const { agencyData } = useAgency()
-  const dk = agencyData.dashboardKpis
-  const fleetStatus = [
-    { name: "Disponible",  value: dk.availableCars,    color: "#10b981" },
-    { name: "Louée",       value: dk.activeRentals,    color: "#3b82f6" },
-    { name: "Maintenance", value: dk.maintenanceCars,  color: "#f59e0b" },
-    ...(dk.outOfServiceCars > 0 ? [{ name: "Hors service", value: dk.outOfServiceCars, color: "#ef4444" }] : []),
-  ].filter((s) => s.value > 0)
-
-  const total = fleetStatus.reduce((acc, s) => acc + s.value, 0)
-  const available = fleetStatus.find((s) => s.name === "Disponible")?.value ?? 0
+export function FleetStatusChart({ data }: { data: DashboardFleetStatus[] }) {
+  const { t } = useI18n()
+  const total = data.reduce((acc, s) => acc + s.value, 0)
+  const available = data.find((s) => s.id === "available")?.value ?? 0
+  const availablePct = total > 0 ? Math.round((available / total) * 100) : 0
 
   return (
     <motion.div
@@ -39,8 +35,10 @@ export function FleetStatusChart() {
       className="rounded-2xl border border-slate-200/70 bg-white p-6 shadow-sm"
     >
       <div>
-        <h3 className="text-sm font-semibold text-slate-900">Répartition de la flotte</h3>
-        <p className="mt-0.5 text-xs text-slate-500">État actuel de vos {total} véhicules</p>
+        <h3 className="text-sm font-semibold text-slate-900">{t("dashboard.fleet.title")}</h3>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {t("dashboard.fleet.subtitle").replace("{total}", String(total))}
+        </p>
       </div>
 
       <div className="mt-4 flex items-center gap-6">
@@ -49,7 +47,7 @@ export function FleetStatusChart() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={fleetStatus}
+                data={data}
                 dataKey="value"
                 innerRadius={58}
                 outerRadius={82}
@@ -57,32 +55,32 @@ export function FleetStatusChart() {
                 stroke="none"
                 animationDuration={900}
               >
-                {fleetStatus.map((entry) => (
-                  <Cell key={entry.name} fill={entry.color} />
+                {data.map((entry) => (
+                  <Cell key={entry.id} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip t={t} />} />
             </PieChart>
           </ResponsiveContainer>
           {/* Center label */}
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-semibold tracking-tight text-slate-900">
-              {Math.round((available / total) * 100)}%
+              {availablePct}%
             </span>
-            <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Dispo</span>
+            <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t("dashboard.fleet.availableShort")}</span>
           </div>
         </div>
 
         {/* Legend */}
         <div className="flex-1 space-y-3">
-          {fleetStatus.map((s) => {
-            const pct = Math.round((s.value / total) * 100)
+          {data.map((s) => {
+            const pct = total > 0 ? Math.round((s.value / total) * 100) : 0
             return (
-              <div key={s.name}>
+              <div key={s.id}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />
-                    <span className="text-sm font-medium text-slate-700">{s.name}</span>
+                    <span className="text-sm font-medium text-slate-700">{t(`dashboard.fleet.status.${s.id}`)}</span>
                   </div>
                   <span className="text-sm font-semibold text-slate-900">{s.value}</span>
                 </div>

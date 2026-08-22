@@ -47,6 +47,23 @@ const customerListSelect = {
 
 export type CustomerListItem = Prisma.CustomerGetPayload<{ select: typeof customerListSelect }>;
 
+export type CustomerReservationSummary = {
+  totalRentals: number;
+  totalSpent: number;
+  lastRentalDate?: Date;
+  monthly: number[];
+  reservations: {
+    id: string;
+    carBrand: string;
+    carModel: string;
+    plate: string;
+    startDate: Date;
+    endDate: Date;
+    amount: number;
+    status: "completed" | "active" | "cancelled" | "upcoming";
+  }[];
+};
+
 function buildCustomerWhere(input: CustomerListInput): Prisma.CustomerWhereInput {
   return {
     companyId: input.companyId,
@@ -418,6 +435,7 @@ export async function findCustomerReservationSummary(
         companyId: input.companyId,
         agencyId: input.agencyId,
         customerId: input.customerId,
+        deletedAt: null,
       },
       _count: true,
       _sum: { totalAmount: true },
@@ -425,6 +443,87 @@ export async function findCustomerReservationSummary(
   ]);
 
   return { reservations, invoices };
+}
+
+function reservationHistoryStatus(status: string): CustomerReservationSummary["reservations"][number]["status"] {
+  if (status === "completed") return "completed";
+  if (status === "active") return "active";
+  if (status === "cancelled" || status === "no_show") return "cancelled";
+  return "upcoming";
+}
+
+function lastSixMonthKeys(now = new Date()) {
+  return Array.from({ length: 6 }, (_, index) => {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (5 - index), 1));
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+}
+
+function monthKey(value: Date) {
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export async function findCustomerReservationSummaries(
+  input: { companyId: string; agencyId: string; customerIds: string[] },
+  db: DatabaseClient = prisma,
+): Promise<Record<string, CustomerReservationSummary>> {
+  if (input.customerIds.length === 0) return {};
+  const reservations = await db.reservation.findMany({
+    where: {
+      companyId: input.companyId,
+      agencyId: input.agencyId,
+      customerId: { in: input.customerIds },
+      deletedAt: null,
+    },
+    select: {
+      id: true,
+      customerId: true,
+      startsAt: true,
+      endsAt: true,
+      status: true,
+      totalAmount: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+    orderBy: [{ startsAt: "desc" }, { id: "asc" }],
+  });
+  const keys = lastSixMonthKeys();
+  const empty = (): CustomerReservationSummary => ({
+    totalRentals: 0,
+    totalSpent: 0,
+    monthly: [0, 0, 0, 0, 0, 0],
+    reservations: [],
+  });
+  const summaries: Record<string, CustomerReservationSummary> = Object.fromEntries(
+    input.customerIds.map((id) => [id, empty()]),
+  );
+
+  for (const reservation of reservations) {
+    const summary = summaries[reservation.customerId] ?? empty();
+    summaries[reservation.customerId] = summary;
+    const amount = Number(reservation.totalAmount);
+    const isCancelled = reservation.status === "cancelled" || reservation.status === "no_show";
+    summary.totalRentals += 1;
+    if (!isCancelled) {
+      summary.totalSpent += amount;
+      const keyIndex = keys.indexOf(monthKey(reservation.startsAt));
+      if (keyIndex >= 0) summary.monthly[keyIndex] += amount;
+    }
+    summary.lastRentalDate ??= reservation.startsAt;
+    if (summary.reservations.length < 10) {
+      summary.reservations.push({
+        id: reservation.id,
+        carBrand: reservation.vehicle.brand,
+        carModel: reservation.vehicle.model,
+        plate: reservation.vehicle.plate,
+        startDate: reservation.startsAt,
+        endDate: reservation.endsAt,
+        amount,
+        status: reservationHistoryStatus(reservation.status),
+      });
+    }
+  }
+
+  return summaries;
 }
 
 export async function countBlockingCustomerReservations(
@@ -484,6 +583,7 @@ export const clientsRepository = {
   createCustomerBlacklistEntry,
   liftCustomerBlacklistEntry,
   findCustomerReservationSummary,
+  findCustomerReservationSummaries,
   countBlockingCustomerReservations,
   countBlockingCustomerContracts,
 };

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@lokarent/db";
+import { z } from "zod";
 import { requireCurrentAgencyContext } from "@/shared/auth";
 import { isAppError } from "@/shared/errors";
 import { PERMISSIONS, requirePermission } from "@/shared/permissions";
@@ -25,6 +26,7 @@ import {
   updateVehicleInspectionService,
   updateVehicleInsuranceService,
   updateVehicleMaintenanceService,
+  updateVehicleVignetteService,
   updateVehicleService,
   type FleetServiceContext,
 } from "../services/cars.service";
@@ -85,6 +87,13 @@ async function getActionContext(permission: (typeof PERMISSIONS)[keyof typeof PE
   } satisfies FleetServiceContext;
 }
 
+function revalidateFleetFinancePaths() {
+  revalidatePath("/cars");
+  revalidatePath("/dashboard");
+  revalidatePath("/finances");
+  revalidatePath("/reports");
+}
+
 function decimal(value?: number) {
   return value === undefined ? undefined : new Prisma.Decimal(value);
 }
@@ -122,6 +131,52 @@ function sameText(left?: string | null, right?: string) {
   return (left ?? "") === (right ?? "");
 }
 
+const emptyToUndefined = (value: unknown) => (value === "" || value === null ? undefined : value);
+const documentUrlValue = z.preprocess(
+  (value) => (value === "" ? null : value),
+  z.string().trim().url().optional().nullable(),
+);
+const updateVehicleDocumentSchema = z.discriminatedUnion("documentType", [
+  z.object({
+    vehicleId: z.string().uuid(),
+    documentType: z.literal("insurance"),
+    provider: z.string().trim().min(1),
+    policyNumber: z.string().trim().min(1),
+    startsAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    expiresAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    premiumAmount: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional()),
+    documentUrl: documentUrlValue,
+  }),
+  z.object({
+    vehicleId: z.string().uuid(),
+    documentType: z.literal("registration"),
+    registrationNumber: z.string().trim().min(1),
+    issuedAt: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+    expiresAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    issuingAuthority: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    documentUrl: documentUrlValue,
+  }),
+  z.object({
+    vehicleId: z.string().uuid(),
+    documentType: z.literal("vignette"),
+    taxYear: z.coerce.number().int().min(2000).max(2100),
+    paidAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    expiresAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    amount: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional()),
+    documentUrl: documentUrlValue,
+  }),
+  z.object({
+    vehicleId: z.string().uuid(),
+    documentType: z.literal("inspection"),
+    inspectedAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    expiresAt: z.preprocess(emptyToUndefined, z.coerce.date()),
+    result: z.enum(["pass", "fail", "conditional"]),
+    center: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    cost: z.preprocess(emptyToUndefined, z.coerce.number().nonnegative().optional()),
+    documentUrl: documentUrlValue,
+  }),
+]);
+
 async function resolveCategoryId(input: {
   companyId: string;
   categoryId?: string;
@@ -134,6 +189,112 @@ async function resolveCategoryId(input: {
   );
   if (existing) return existing.id;
   return (await createVehicleCategoryService({ companyId: input.companyId, data: { name: input.categoryName } })).id;
+}
+
+export async function updateVehicleDocumentAction(input: unknown): Promise<CarActionResult> {
+  const parsed = updateVehicleDocumentSchema.safeParse(input);
+  if (!parsed.success) return { success: false, messageKey: "fleet.errors.validation" };
+
+  try {
+    const context = await getActionContext(PERMISSIONS.FLEET_EDIT);
+    const vehicle = await getVehicleService({ ...context, vehicleId: parsed.data.vehicleId });
+
+    if (parsed.data.documentType === "insurance") {
+      const current = vehicle.vehicleInsurances[0];
+      const payload = {
+        provider: parsed.data.provider,
+        policyNumber: parsed.data.policyNumber,
+        startsAt: parsed.data.startsAt,
+        expiresAt: parsed.data.expiresAt,
+        premiumAmount: decimal(parsed.data.premiumAmount),
+        currency: "MAD",
+        documentUrl: parsed.data.documentUrl,
+      };
+      if (current) {
+        await updateVehicleInsuranceService({
+          companyId: context.companyId,
+          agencyId: context.agencyId,
+          insuranceId: current.id,
+          data: payload,
+        });
+      } else {
+        await createVehicleInsuranceService({
+          context,
+          data: { ...payload, vehicleId: parsed.data.vehicleId },
+        });
+      }
+    }
+
+    if (parsed.data.documentType === "registration") {
+      await createVehicleRegistrationService({
+        context,
+        data: {
+          vehicleId: parsed.data.vehicleId,
+          registrationNumber: parsed.data.registrationNumber,
+          issuedAt: parsed.data.issuedAt,
+          expiresAt: parsed.data.expiresAt,
+          issuingAuthority: parsed.data.issuingAuthority,
+          documentUrl: parsed.data.documentUrl ?? undefined,
+        },
+      });
+    }
+
+    if (parsed.data.documentType === "vignette") {
+      const current = vehicle.vehicleVignettes[0];
+      const payload = {
+        taxYear: parsed.data.taxYear,
+        paidAt: parsed.data.paidAt,
+        expiresAt: parsed.data.expiresAt,
+        amount: decimal(parsed.data.amount),
+        currency: "MAD",
+        documentUrl: parsed.data.documentUrl ?? undefined,
+      };
+      if (current?.taxYear === parsed.data.taxYear) {
+        await updateVehicleVignetteService({
+          companyId: context.companyId,
+          agencyId: context.agencyId,
+          vignetteId: current.id,
+          data: payload,
+        });
+      } else {
+        await createVehicleVignetteService({
+          context,
+          data: { ...payload, vehicleId: parsed.data.vehicleId },
+        });
+      }
+    }
+
+    if (parsed.data.documentType === "inspection") {
+      const current = vehicle.vehicleInspections[0];
+      const payload = {
+        inspectedAt: parsed.data.inspectedAt,
+        expiresAt: parsed.data.expiresAt,
+        result: parsed.data.result,
+        center: parsed.data.center,
+        cost: decimal(parsed.data.cost),
+        currency: "MAD",
+        documentUrl: parsed.data.documentUrl,
+      };
+      if (current) {
+        await updateVehicleInspectionService({
+          companyId: context.companyId,
+          agencyId: context.agencyId,
+          inspectionId: current.id,
+          data: payload,
+        });
+      } else {
+        await createVehicleInspectionService({
+          context,
+          data: { ...payload, vehicleId: parsed.data.vehicleId },
+        });
+      }
+    }
+
+    revalidateFleetFinancePaths();
+    return { success: true, vehicleId: parsed.data.vehicleId };
+  } catch (error) {
+    return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
+  }
 }
 
 export async function createCarAction(input: unknown): Promise<CarActionResult> {
@@ -270,7 +431,7 @@ export async function createCarAction(input: unknown): Promise<CarActionResult> 
         },
       });
     }
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: vehicle.id };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -430,7 +591,21 @@ export async function updateCarAction(input: unknown): Promise<CarActionResult> 
         !sameDecimal(current.amount, vignetteAmount) ||
         !sameText(current.currency, vignetteCurrency ?? "MAD") ||
         !sameText(current.documentUrl, vignetteDocumentUrl);
-      if (changed && current?.taxYear !== vignetteTaxYear) {
+      if (changed && current?.taxYear === vignetteTaxYear) {
+        await updateVehicleVignetteService({
+          companyId: context.companyId,
+          agencyId: context.agencyId,
+          vignetteId: current.id,
+          data: {
+            taxYear: vignetteTaxYear,
+            paidAt: vignettePaidAt,
+            expiresAt: vignetteExpiresAt,
+            amount: decimal(vignetteAmount),
+            currency: vignetteCurrency ?? "MAD",
+            documentUrl: vignetteDocumentUrl,
+          },
+        });
+      } else if (changed) {
         await createVehicleVignetteService({
           context,
           data: {
@@ -556,7 +731,7 @@ export async function createVehicleInsuranceAction(input: unknown): Promise<CarA
       context,
       data: { ...parsed.data, premiumAmount: decimal(parsed.data.premiumAmount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -569,7 +744,7 @@ export async function createVehicleRegistrationAction(input: unknown): Promise<C
   try {
     const context = await getActionContext(PERMISSIONS.FLEET_EDIT);
     await createVehicleRegistrationService({ context, data: parsed.data });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -585,7 +760,7 @@ export async function createVehicleVignetteAction(input: unknown): Promise<CarAc
       context,
       data: { ...parsed.data, amount: decimal(parsed.data.amount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -601,7 +776,7 @@ export async function createVehicleInspectionAction(input: unknown): Promise<Car
       context,
       data: { ...parsed.data, cost: decimal(parsed.data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -630,7 +805,7 @@ export async function createVehicleMaintenanceAction(input: unknown): Promise<Ca
       context,
       data: { ...parsed.data, cost: decimal(parsed.data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true, vehicleId: parsed.data.vehicleId };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -662,7 +837,7 @@ export async function updateVehicleInsuranceAction(input: unknown): Promise<CarA
       insuranceId,
       data: { ...data, premiumAmount: decimal(data.premiumAmount) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -681,7 +856,7 @@ export async function updateVehicleInspectionAction(input: unknown): Promise<Car
       inspectionId,
       data: { ...data, cost: decimal(data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };
@@ -700,7 +875,7 @@ export async function updateVehicleMaintenanceAction(input: unknown): Promise<Ca
       maintenanceId,
       data: { ...data, cost: decimal(data.cost) },
     });
-    revalidatePath("/cars");
+    revalidateFleetFinancePaths();
     return { success: true };
   } catch (error) {
     return { success: false, messageKey: messageKeyForError(error), code: isAppError(error) ? error.code : undefined };

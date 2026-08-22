@@ -4,6 +4,7 @@ import { motion } from "motion/react"
 import { TrendingUp, TrendingDown, Wallet, Wrench, Fuel, ShieldCheck, Stamp } from "lucide-react"
 import { type Car, formatMAD, formatDate } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+import fr from "@/translations/fr"
 
 function KpiCard({
   label,
@@ -118,21 +119,19 @@ export function FinancesTab({ car }: { car: Car }) {
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiCard
-          label="Revenus générés"
+          label={fr.fleet.finance.generatedRevenue}
           value={formatMAD(car.revenue)}
-          trend={{ value: 12.4, positive: true }}
           icon={Wallet}
           accent="indigo"
         />
         <KpiCard
-          label="Total dépenses"
+          label={fr.fleet.finance.totalExpenses}
           value={formatMAD(car.expenses)}
-          trend={{ value: 3.2, positive: false }}
           icon={Wrench}
           accent="amber"
         />
         <KpiCard
-          label={profitable ? "Profit net" : "Perte nette"}
+          label={profitable ? fr.fleet.finance.netProfit : fr.fleet.finance.netLoss}
           value={formatMAD(Math.abs(profit))}
           trend={{ value: Math.abs(margin), positive: profitable }}
           icon={profitable ? TrendingUp : TrendingDown}
@@ -140,7 +139,7 @@ export function FinancesTab({ car }: { car: Car }) {
           highlight
         />
         <KpiCard
-          label="Taux d'occupation"
+          label={fr.fleet.finance.occupancyRate}
           value={`${car.occupancyRate}%`}
           icon={TrendingUp}
           accent="emerald"
@@ -152,10 +151,9 @@ export function FinancesTab({ car }: { car: Car }) {
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:col-span-3">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Évolution des revenus</h3>
-              <p className="text-[11px] text-slate-500">12 derniers mois</p>
+              <h3 className="text-sm font-bold text-slate-900">{fr.fleet.finance.revenueEvolution}</h3>
+              <p className="text-[11px] text-slate-500">{fr.fleet.finance.lastTwelveMonths}</p>
             </div>
-            <p className="text-[11px] font-semibold text-emerald-700">+12.4% YoY</p>
           </div>
           <div className="mt-4">
             <Sparkline data={car.monthlyRevenue} color="#6366f1" />
@@ -170,12 +168,12 @@ export function FinancesTab({ car }: { car: Car }) {
         </div>
 
         <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm lg:col-span-2">
-          <h3 className="text-sm font-bold text-slate-900">Performance</h3>
-          <p className="text-[11px] text-slate-500">Indicateur d&apos;activité</p>
+          <h3 className="text-sm font-bold text-slate-900">{fr.fleet.finance.performance}</h3>
+          <p className="text-[11px] text-slate-500">{fr.fleet.finance.activityIndicator}</p>
 
           <div className="mt-4">
             <div className="flex items-baseline justify-between">
-              <p className="text-xs font-medium text-slate-600">Taux d&apos;occupation</p>
+              <p className="text-xs font-medium text-slate-600">{fr.fleet.finance.occupancyRate}</p>
               <p className="text-2xl font-bold text-slate-900 tabular-nums">{car.occupancyRate}%</p>
             </div>
             <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
@@ -186,12 +184,14 @@ export function FinancesTab({ car }: { car: Car }) {
                 className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"
               />
             </div>
-            <p className="mt-1 text-[10px] text-slate-400">{car.totalDays} jours loués sur 12 mois</p>
+            <p className="mt-1 text-[10px] text-slate-400">
+              {car.totalDays} {fr.fleet.finance.rentedDays}
+            </p>
           </div>
 
           <div className="mt-4">
             <div className="flex items-baseline justify-between">
-              <p className="text-xs font-medium text-slate-600">Marge nette</p>
+              <p className="text-xs font-medium text-slate-600">{fr.fleet.finance.netMargin}</p>
               <p
                 className={cn(
                   "text-2xl font-bold tabular-nums",
@@ -213,7 +213,7 @@ export function FinancesTab({ car }: { car: Car }) {
               />
             </div>
             <p className="mt-1 text-[10px] text-slate-400">
-              {formatMAD(profit)} sur {formatMAD(car.revenue)}
+              {formatMAD(profit)} {fr.fleet.finance.of} {formatMAD(car.revenue)}
             </p>
           </div>
         </div>
@@ -223,15 +223,19 @@ export function FinancesTab({ car }: { car: Car }) {
       <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">Dernières dépenses</h3>
-            <p className="text-[11px] text-slate-500">3 derniers mouvements</p>
+            <h3 className="text-sm font-bold text-slate-900">{fr.fleet.finance.latestExpenses}</h3>
+            <p className="text-[11px] text-slate-500">{fr.fleet.finance.latestMovements}</p>
           </div>
           <button className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-700">
-            Voir tout →
+            {fr.fleet.finance.viewAll} →
           </button>
         </div>
         <div className="space-y-2">
-          {car.recentExpenses.map((exp, i) => {
+          {car.recentExpenses.length === 0 ? (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-center text-xs text-slate-500">
+              {fr.fleet.finance.noExpenses}
+            </p>
+          ) : car.recentExpenses.map((exp, i) => {
             const Icon = expenseIcon[exp.type] || Wrench
             return (
               <motion.div

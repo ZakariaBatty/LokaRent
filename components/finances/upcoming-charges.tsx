@@ -1,34 +1,33 @@
 "use client"
 
 import { motion } from "motion/react"
-import { AlertCircle, CalendarClock, CreditCard, ShieldCheck, Stamp, Wrench } from "lucide-react"
-import { type UpcomingCharge, formatMAD } from "@/lib/finances-data"
+import { AlertCircle, CalendarClock, ShieldCheck, Stamp, Wrench } from "lucide-react"
+import { type UpcomingCharge } from "@/lib/finances-data"
 import { cn } from "@/lib/utils"
-import { useAgency } from "@/contexts/agency-context"
+import { useI18n } from "@/contexts/i18n-context"
 
 const iconMap = {
-  Assurance: ShieldCheck,
-  Vignette: Stamp,
-  "Visite technique": Wrench,
-  "Crédit auto": CreditCard,
-  Entretien: Wrench,
+  insurance: ShieldCheck,
+  vignette: Stamp,
+  inspection: Wrench,
+  maintenance: Wrench,
 } as const
 
 const urgencyStyles = {
   high: {
     chip: "bg-rose-50 text-rose-700 ring-rose-100",
     bar: "bg-rose-500",
-    label: "Urgent",
+    labelKey: "finances.upcoming.urgent",
   },
   medium: {
     chip: "bg-amber-50 text-amber-700 ring-amber-100",
     bar: "bg-amber-500",
-    label: "À venir",
+    labelKey: "finances.upcoming.soon",
   },
   low: {
     chip: "bg-slate-50 text-slate-600 ring-slate-200",
     bar: "bg-slate-400",
-    label: "Planifié",
+    labelKey: "finances.upcoming.planned",
   },
 } as const
 
@@ -36,9 +35,9 @@ function formatShortDate(iso: string) {
   return new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })
 }
 
-export function UpcomingCharges() {
-  const { agencyData } = useAgency()
-  const upcomingCharges: UpcomingCharge[] = agencyData.upcomingCharges
+export function UpcomingCharges({ charges, currency }: { charges: UpcomingCharge[]; currency: string }) {
+  const { t } = useI18n()
+  const upcomingCharges = charges
   const total = upcomingCharges.reduce((acc, c) => acc + c.amount, 0)
   const urgent = upcomingCharges.filter((c) => c.urgency === "high").length
 
@@ -55,18 +54,26 @@ export function UpcomingCharges() {
             <CalendarClock className="h-4 w-4" strokeWidth={2.25} />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Charges à venir</h3>
-            <p className="mt-0.5 text-xs text-slate-500">Prochains 30 jours · {urgent} urgentes</p>
+            <h3 className="text-sm font-semibold text-slate-900">{t("finances.upcoming.title")}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {t("finances.upcoming.subtitle")} · {urgent} {t("finances.upcoming.urgentCount")}
+            </p>
           </div>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">Total prévu</p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">{formatMAD(total)}</p>
+          <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{t("finances.upcoming.forecastTotal")}</p>
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-slate-900">
+            {total.toLocaleString("fr-FR")} {currency}
+          </p>
         </div>
       </div>
 
       <div className="mt-5 space-y-2">
-        {upcomingCharges.map((charge, i) => {
+        {upcomingCharges.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-500">
+            {t("finances.upcoming.empty")}
+          </p>
+        ) : upcomingCharges.map((charge, i) => {
           const Icon = iconMap[charge.type] ?? Wrench
           const urgency = urgencyStyles[charge.urgency]
           return (
@@ -83,14 +90,16 @@ export function UpcomingCharges() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <p className="truncate text-sm font-semibold text-slate-900">{charge.type}</p>
+                  <p className="truncate text-sm font-semibold text-slate-900">
+                    {t(`finances.upcoming.types.${charge.type}`)}
+                  </p>
                   <span
                     className={cn(
                       "rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset",
                       urgency.chip,
                     )}
                   >
-                    {urgency.label}
+                    {t(urgency.labelKey)}
                   </span>
                 </div>
                 <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -99,7 +108,7 @@ export function UpcomingCharges() {
               </div>
               <div className="text-right">
                 <p className="text-sm font-semibold tabular-nums text-slate-900">
-                  -{formatMAD(charge.amount)}
+                  -{charge.amount.toLocaleString("fr-FR")} {currency}
                 </p>
                 <p className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-slate-500">
                   {charge.urgency === "high" && <AlertCircle className="h-3 w-3 text-rose-500" />}

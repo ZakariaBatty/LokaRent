@@ -7,7 +7,7 @@ import { Plus, Car as CarIcon } from "lucide-react"
 import { toast } from "sonner"
 import { type Car, type CarStatus, type CarCategory } from "@/lib/cars-data"
 import type { CarListDto } from "@/modules/cars/dto/car-response.dto"
-import { createCarAction, deleteCarAction, updateCarAction } from "@/modules/cars/actions/create-car.action"
+import { createCarAction, deleteCarAction, updateCarAction, updateVehicleDocumentAction } from "@/modules/cars/actions/create-car.action"
 import { mapUiFuel, mapUiStatus } from "@/modules/cars/mappers/car.mapper"
 import { CarsFilters } from "@/components/cars/cars-filters"
 import { CarCard } from "@/components/cars/car-card"
@@ -19,6 +19,9 @@ import { CarFormPanel, type CarFormDraft } from "@/components/cars/car-form-pane
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import fr from "@/translations/fr"
+
+type DocumentType = "insurance" | "registration" | "vignette" | "inspection"
+type DocumentDraft = Record<string, string | number | undefined>
 
 type Props = {
   initialResult: CarListDto
@@ -155,6 +158,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
   const [smartFilters, setSmartFilters] = useState(false)
   const [view, setView] = useState<"grid" | "list">("grid")
   const [formMode, setFormMode] = useState<"add" | "edit" | null>(null)
+  const [formScope, setFormScope] = useState<"core" | "documents">("core")
   const [editingCar, setEditingCar] = useState<Car | null>(null)
   const [deletingCar, setDeletingCar] = useState<Car | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -219,14 +223,22 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
   }
   const openAddForm = () => {
     setEditingCar(null)
+    setFormScope("core")
     setFormMode("add")
   }
   const openEditForm = (car: Car) => {
     setEditingCar(car)
+    setFormScope("core")
+    setFormMode("edit")
+  }
+  const openDocumentsForm = (car: Car) => {
+    setEditingCar(car)
+    setFormScope("documents")
     setFormMode("edit")
   }
   const closeForm = () => {
     setFormMode(null)
+    setFormScope("core")
     setEditingCar(null)
   }
   const openDelete = (car: Car) => {
@@ -245,6 +257,21 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
     }
     toast.success(formMode === "add" ? fr.fleet.vehicleAdded : fr.fleet.vehicleUpdated)
     closeForm()
+    router.refresh()
+    return true
+  }
+
+  const handleDocumentSave = async (car: Car, documentType: DocumentType, draft: DocumentDraft) => {
+    const result = await updateVehicleDocumentAction({
+      vehicleId: car.id,
+      documentType,
+      ...draft,
+    })
+    if (!result.success) {
+      toast.error(actionMessage(result.messageKey))
+      return false
+    }
+    toast.success(fr.fleet.vehicleUpdated)
     router.refresh()
     return true
   }
@@ -435,6 +462,8 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
                 car={selectedCar}
                 onClose={() => setSelectedId(null)}
                 onEdit={() => openEditForm(selectedCar)}
+                onEditDocuments={() => openDocumentsForm(selectedCar)}
+                onSaveDocument={(documentType, draft) => handleDocumentSave(selectedCar, documentType, draft)}
                 onDelete={() => openDelete(selectedCar)}
                 canDelete={canDelete}
               />
@@ -464,6 +493,7 @@ export function CarsPageClient({ initialResult, initialFilters, categories: cate
             >
               <CarFormPanel
                 mode={formMode}
+                scope={formScope}
                 car={editingCar}
                 onClose={closeForm}
                 onSubmit={handleFormSubmit}

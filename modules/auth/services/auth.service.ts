@@ -19,6 +19,7 @@ import {
   upsertSetting,
 } from "@/modules/workspace/billing/repositories/billing.repository";
 import { createVehicleCategory } from "@/modules/cars/repositories/cars.repository";
+import { createExpenseCategory } from "@/modules/finances/repositories/finances.repository";
 import {
   createAuthAccount,
   createAuthUser,
@@ -34,6 +35,7 @@ import {
 } from "../repositories/auth.repository";
 
 const DEFAULT_VEHICLE_CATEGORIES = ["Economy", "Compact", "Sedan", "SUV", "Van", "Luxury"];
+const DEFAULT_EXPENSE_CATEGORIES = ["Fuel", "Maintenance", "Insurance", "Cleaning", "Parking", "Other"];
 const DEFAULT_AGENCY_SETTINGS = [
   { key: "tax_rate", value: "0", valueType: "number", agencyScoped: true },
   { key: "default_currency", value: "MAD", valueType: "string", agencyScoped: false },
@@ -161,6 +163,7 @@ export async function registerOwnerService(input: RegisterOwnerServiceInput) {
     const agencyId = createId();
     const userId = createId();
     const ownerRoleId = createId();
+    const memberRoleId = createId();
     const adminRoleId = createId();
 
     const company = await createCompany(
@@ -243,6 +246,17 @@ export async function registerOwnerService(input: RegisterOwnerServiceInput) {
       },
       tx,
     );
+    await createRole(
+      {
+        id: memberRoleId,
+        companyId,
+        name: "member",
+        description: "Internal company membership role without workspace administration access",
+        scope: "company",
+        isSystem: true,
+      },
+      tx,
+    );
     const adminRole = await createRole(
       {
         id: adminRoleId,
@@ -294,6 +308,9 @@ export async function registerOwnerService(input: RegisterOwnerServiceInput) {
     await Promise.all([
       ...DEFAULT_VEHICLE_CATEGORIES.map((name) =>
         createVehicleCategory({ id: createId(), companyId, name }, tx),
+      ),
+      ...DEFAULT_EXPENSE_CATEGORIES.map((name) =>
+        createExpenseCategory({ id: createId(), companyId, name, isSystem: true }, tx),
       ),
       ...DEFAULT_AGENCY_SETTINGS.map((setting) =>
         upsertSetting(

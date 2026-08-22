@@ -13,9 +13,10 @@ import {
   Wrench,
   X,
 } from "lucide-react"
-import { formatMAD, getExpenseBreakdown, type CarFinance } from "@/lib/finances-data"
-import { categoryAccent, formatDate } from "@/lib/cars-data"
+import { getExpenseBreakdown, type CarFinance } from "@/lib/finances-data"
+import { categoryAccent, formatDate, type CarCategory } from "@/lib/cars-data"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/contexts/i18n-context"
 
 const MONTH_LABELS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Aoû", "Sep", "Oct", "Nov", "Déc"]
 
@@ -36,18 +37,29 @@ function TooltipDot({ active, payload }: any) {
         <span className="h-2 w-2 rounded-full" style={{ background: item.payload.color }} />
         <span className="text-xs font-medium text-slate-700">{item.payload.type}</span>
       </div>
-      <p className="mt-0.5 text-sm font-semibold text-slate-900">{formatMAD(item.value)}</p>
+      <p className="mt-0.5 text-sm font-semibold text-slate-900">{item.value.toLocaleString("fr-FR")}</p>
     </div>
   )
+}
+
+function formatMoney(amount: number, currency: string) {
+  return `${amount.toLocaleString("fr-FR")} ${currency}`
+}
+
+function carCategoryAccent(category: string) {
+  return categoryAccent[category as CarCategory] ?? "bg-slate-100 text-slate-700 ring-slate-200"
 }
 
 export function CarFinanceDetailPanel({
   car,
   onClose,
+  currency,
 }: {
   car: CarFinance
   onClose: () => void
+  currency: string
 }) {
+  const { t } = useI18n()
   const profitable = car.profit >= 0
   const margin = car.revenue > 0 ? Math.round((car.profit / car.revenue) * 100) : 0
   const breakdown = getExpenseBreakdown(car)
@@ -72,7 +84,7 @@ export function CarFinanceDetailPanel({
           <div
             className={cn(
               "flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold",
-              categoryAccent[car.category],
+              carCategoryAccent(car.category),
             )}
           >
             {car.brand.slice(0, 2).toUpperCase()}
@@ -99,20 +111,20 @@ export function CarFinanceDetailPanel({
         {/* Top KPIs */}
         <div className="grid grid-cols-3 gap-3">
           <KpiTile
-            label="Revenus"
-            value={formatMAD(car.revenue)}
+            label={t("finances.chart.revenue")}
+            value={formatMoney(car.revenue, currency)}
             icon={Wallet}
             accent="bg-blue-50 text-blue-600 ring-blue-100"
           />
           <KpiTile
-            label="Charges"
-            value={formatMAD(car.expenses)}
+            label={t("finances.chart.expenses")}
+            value={formatMoney(car.expenses, currency)}
             icon={Wrench}
             accent="bg-amber-50 text-amber-600 ring-amber-100"
           />
           <KpiTile
-            label={profitable ? "Profit" : "Perte"}
-            value={formatMAD(Math.abs(car.profit))}
+            label={profitable ? t("finances.chart.profit") : t("finances.detail.loss")}
+            value={formatMoney(Math.abs(car.profit), currency)}
             icon={profitable ? ArrowUpRight : ArrowDownRight}
             accent={
               profitable
@@ -127,7 +139,7 @@ export function CarFinanceDetailPanel({
         <div className="mt-5 grid grid-cols-2 gap-3">
           <div className="rounded-xl border border-slate-200/70 bg-white p-4">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Taux d&apos;occupation
+              {t("finances.detail.occupancyRate")}
             </p>
             <p className="mt-1 text-xl font-semibold tabular-nums text-slate-900">
               {car.occupancyRate}%
@@ -143,7 +155,7 @@ export function CarFinanceDetailPanel({
           </div>
           <div className="rounded-xl border border-slate-200/70 bg-white p-4">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Marge nette
+              {t("finances.detail.netMargin")}
             </p>
             <p
               className={cn(
@@ -168,7 +180,7 @@ export function CarFinanceDetailPanel({
         </div>
 
         {/* Monthly breakdown */}
-        <Section title="Évolution mensuelle" subtitle="Revenus, charges et profit sur 12 mois">
+        <Section title={t("finances.detail.monthlyEvolution")} subtitle={t("finances.detail.monthlyEvolutionSubtitle")}>
           <div className="space-y-1.5">
             {monthly.map((m, i) => {
               const revPct = (m.revenue / maxMonthly) * 100
@@ -209,19 +221,19 @@ export function CarFinanceDetailPanel({
           </div>
           <div className="mt-3 flex items-center gap-4 border-t border-slate-100 pt-3 text-[11px]">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-blue-500" /> Revenus
+              <span className="h-2 w-2 rounded-full bg-blue-500" /> {t("finances.chart.revenue")}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-amber-500" /> Charges
+              <span className="h-2 w-2 rounded-full bg-amber-500" /> {t("finances.chart.expenses")}
             </span>
           </div>
         </Section>
 
         {/* Expenses donut + list */}
-        <Section title="Répartition des charges" subtitle="Par catégorie de dépense">
+        <Section title={t("finances.detail.expenseBreakdown")} subtitle={t("finances.detail.expenseBreakdownSubtitle")}>
           {breakdown.length === 0 ? (
             <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-6 text-center text-xs text-slate-500">
-              Aucune charge enregistrée
+              {t("finances.detail.noExpenses")}
             </p>
           ) : (
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -247,10 +259,10 @@ export function CarFinanceDetailPanel({
                 </ResponsiveContainer>
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                   <span className="text-base font-semibold tabular-nums text-slate-900">
-                    {formatMAD(totalExpenses)}
+                    {formatMoney(totalExpenses, currency)}
                   </span>
                   <span className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
-                    Total
+                    {t("finances.detail.total")}
                   </span>
                 </div>
               </div>
@@ -266,7 +278,7 @@ export function CarFinanceDetailPanel({
                           {b.type}
                         </span>
                         <span className="text-sm font-semibold tabular-nums text-slate-900">
-                          {formatMAD(b.amount)}
+                          {formatMoney(b.amount, currency)}
                         </span>
                       </div>
                       <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100">
@@ -287,7 +299,7 @@ export function CarFinanceDetailPanel({
         </Section>
 
         {/* Detailed expenses list */}
-        <Section title="Dernières dépenses" subtitle={`${car.recentExpenses.length} mouvements`}>
+        <Section title={t("finances.detail.latestExpenses")} subtitle={`${car.recentExpenses.length} ${t("finances.detail.movements")}`}>
           <div className="space-y-2">
             {car.recentExpenses.map((exp, i) => {
               const Icon = expenseIcon[exp.type] ?? Wrench
@@ -310,7 +322,7 @@ export function CarFinanceDetailPanel({
                     </p>
                   </div>
                   <p className="text-sm font-semibold tabular-nums text-rose-700">
-                    -{formatMAD(exp.amount)}
+                    -{formatMoney(exp.amount, currency)}
                   </p>
                 </motion.div>
               )

@@ -1,17 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { ChevronsUpDown, Check, Building2 } from 'lucide-react'
+import { ChevronsUpDown, Check } from 'lucide-react'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAgency } from '@/contexts/agency-context'
 import { cn } from '@/lib/utils'
-import type { Agency } from '@/lib/mock-workspaces'
-
-const planBadge: Record<string, { label: string; bg: string; text: string; ring: string }> = {
-  PRO:       { label: 'Pro',     bg: 'bg-blue-50',   text: 'text-blue-600',  ring: 'ring-blue-100' },
-  STARTER:   { label: 'Starter', bg: 'bg-slate-50',  text: 'text-slate-500', ring: 'ring-slate-200' },
-  ENTERPRISE:{ label: 'Ent.',    bg: 'bg-amber-50',  text: 'text-amber-600', ring: 'ring-amber-100' },
-}
+import type { SidebarAgency } from '@/contexts/agency-context'
 
 function agencyInitials(name: string) {
   return name
@@ -34,13 +28,12 @@ function agencyGradient(id: string) {
 }
 
 export function AgencySwitcher() {
-  const { activeAgency, userAgencies, switchAgency, agencyData } = useAgency()
+  const { activeAgency, userAgencies, switchAgency, switchingAgency } = useAgency()
   const [open, setOpen] = useState(false)
 
   if (!activeAgency) return null
 
-  const badge = planBadge[activeAgency.plan] ?? planBadge.PRO
-  const carCount = agencyData.cars.length
+  const carCount = 'vehicleCount' in activeAgency ? activeAgency.vehicleCount : 0
   const initials = agencyInitials(activeAgency.name)
   const gradient = agencyGradient(activeAgency.id)
 
@@ -49,6 +42,7 @@ export function AgencySwitcher() {
       {/* Trigger — mirrors the existing hardcoded card */}
       <button
         onClick={() => setOpen((o) => !o)}
+        disabled={switchingAgency}
         className="group relative flex w-full items-center rounded-xl border border-slate-200/70 bg-white p-2 text-left shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition-all hover:border-blue-200/70 hover:shadow-[0_4px_12px_rgba(59,130,246,0.08)]"
       >
         <div
@@ -60,14 +54,6 @@ export function AgencySwitcher() {
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
               <p className="truncate text-sm font-semibold text-slate-900">{activeAgency.city}</p>
-              <span
-                className={cn(
-                  'rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset',
-                  badge.bg, badge.text, badge.ring
-                )}
-              >
-                {badge.label}
-              </span>
             </div>
             <p className="truncate text-[11px] text-slate-500">
               {activeAgency.city} · {carCount} véhicule{carCount !== 1 ? 's' : ''}
@@ -108,15 +94,14 @@ export function AgencySwitcher() {
             transition={{ duration: 0.15, ease: 'easeOut' }}
             className="absolute left-0 top-[calc(100%+6px)] z-40 w-full overflow-hidden rounded-xl border border-slate-200/70 bg-white/95 p-1.5 shadow-2xl shadow-slate-900/10 backdrop-blur-xl"
           >
-            {userAgencies.map((agency: Agency) => {
+            {userAgencies.map((agency: SidebarAgency) => {
               const isActive = agency.id === activeAgency.id
-              const ab = planBadge[agency.plan] ?? planBadge.PRO
               const ag = agencyGradient(agency.id)
               const ai = agencyInitials(agency.name)
-              const ac = agencyData.cars.length // only accurate for active; just show city
               return (
                 <button
                   key={agency.id}
+                  disabled={switchingAgency}
                   onClick={() => {
                     switchAgency(agency.id)
                     setOpen(false)
@@ -142,14 +127,6 @@ export function AgencySwitcher() {
                         )}
                       >
                         {agency.city}
-                      </span>
-                      <span
-                        className={cn(
-                          'rounded-md px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider ring-1 ring-inset',
-                          ab.bg, ab.text, ab.ring
-                        )}
-                      >
-                        {ab.label}
                       </span>
                     </div>
                     <p className="truncate text-[11px] text-slate-500">{agency.name}</p>

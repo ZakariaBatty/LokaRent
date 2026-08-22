@@ -8,12 +8,12 @@
 
 ## 1. Canonical Table / Model Count
 
-**55 Prisma models = 55 database tables.**
+**57 Prisma models = 57 database tables.**
 
 Reasons earlier figures were wrong:
 1. `driver_payments` was double-counted across the Finance and Drivers domains — it is **one** model whose single home is the **Finance** domain.
 2. `number_sequences` and/or `vehicle_categories` were counted separately from their domain.
-3. `contract_template_versions` was omitted. Per the `DATABASE_FINAL_REVIEW.md` verdict (adjudicating document), template versioning is a **blocking Phase 1 legal-integrity dependency**, so Contracts = 5 and the total is 55. The `DATABASE_DEFENSE.md` "Phase 2" note is superseded by this decision.
+3. `contract_template_versions` was omitted. Per the `DATABASE_FINAL_REVIEW.md` verdict (adjudicating document), template versioning is a **blocking Phase 1 legal-integrity dependency**, so Contracts = 5. Later Reservations CRUD integration added `reservation_extra_definitions` and `reservation_authorized_drivers`, so the current total is 57. The `DATABASE_DEFENSE.md` "Phase 2" note is superseded by this decision.
 
 | # | Domain | Tables | Count |
 |---|---|---|---|
@@ -22,7 +22,7 @@ Reasons earlier figures were wrong:
 | 3 | Subscription | `plans`, `plan_limits`, `plan_features` | 3 |
 | 4 | Fleet | `vehicle_categories`, `vehicles`, `vehicle_registrations`, `vehicle_insurances`, `vehicle_inspections`, `vehicle_vignettes`, `vehicle_maintenances`, `vehicle_mileage_logs`, `vehicle_availability_blocks` | 9 |
 | 5 | Customers | `customers`, `customer_individuals`, `customer_businesses`, `customer_contacts`, `customer_documents`, `customer_blacklist` | 6 |
-| 6 | Reservations | `reservation_sources`, `reservations`, `reservation_pricing_snapshots`, `reservation_extras`, `reservation_timeline_events` | 5 |
+| 6 | Reservations | `reservation_sources`, `reservations`, `reservation_pricing_snapshots`, `reservation_extra_definitions`, `reservation_extras`, `reservation_authorized_drivers`, `reservation_timeline_events` | 7 |
 | 7 | Contracts | `contract_templates`, `contract_template_versions`, `contracts`, `contract_inspection_items`, `contract_signatures` | 5 |
 | 8 | Finance | `invoices`, `invoice_line_items`, `payments`, `deposits`, `credit_notes`, `expense_categories`, `expenses`, **`driver_payments`** | 8 |
 | 9 | Drivers | `drivers`, `driver_pricing_rules`, `driver_documents`, `driver_reservation_assignments` | 4 |
@@ -30,9 +30,9 @@ Reasons earlier figures were wrong:
 | 11 | Audit | `audit_logs`, `activity_logs` | 2 |
 | 12 | Settings | `settings` | 1 |
 | 13 | Utility | `number_sequences` | 1 |
-| | **TOTAL** | | **55** |
+| | **TOTAL** | | **57** |
 
-> The `PRISMA_IMPLEMENTATION_PLAN.md` § 1 enumerated list (#1–#55) is the authoritative per-model source, and this table mirrors it exactly. Note there is **no** `subscriptions`, `user_sessions`, or `translations`/Localization table in Phase 1 — earlier drafts that referenced them were drift. `contract_template_versions` **is** in Phase 1 (Contracts = 5). `activity_logs` lives in the **Audit** domain (not Settings), and `agencies` lives in **Multi-Tenant** (not Access Control).
+> The `PRISMA_IMPLEMENTATION_PLAN.md` § 1 enumerated list is the authoritative per-model source, and this table mirrors it exactly. Note there is **no** `subscriptions`, `user_sessions`, or `translations`/Localization table in Phase 1 — earlier drafts that referenced them were drift. `contract_template_versions` **is** in Phase 1 (Contracts = 5). `activity_logs` lives in the **Audit** domain (not Settings), and `agencies` lives in **Multi-Tenant** (not Access Control). Reservations now include a configurable extras catalog (`reservation_extra_definitions`) and renter/customer authorized-driver rows (`reservation_authorized_drivers`), distinct from internal chauffeur assignment records.
 
 ---
 
@@ -116,7 +116,7 @@ vehicle_maintenances
 
 All money columns are **`NUMERIC(14,4)`** → Prisma `Decimal @db.Decimal(14, 4)`, always paired with a `currency CHAR(3)` column.
 
-Affected models: `Reservation`, `ReservationPricingSnapshot`, `ReservationExtra`, `Invoice`, `InvoiceLineItem`, `CreditNote`, `Payment`, `Deposit`, `Expense`, `DriverPayment` (gross/withheld/net), `Driver`, `DriverPricingRule`.
+Affected models: `Reservation`, `ReservationPricingSnapshot`, `ReservationExtraDefinition`, `ReservationExtra`, `Invoice`, `InvoiceLineItem`, `CreditNote`, `Payment`, `Deposit`, `Expense`, `DriverPayment` (gross/withheld/net), `Driver`, `DriverPricingRule`.
 
 ---
 
@@ -127,7 +127,28 @@ Affected models: `Reservation`, `ReservationPricingSnapshot`, `ReservationExtra`
 - Each row is immutable in its financial columns; a price change **inserts a new row** with `supersedes_id` pointing at the prior row.
 - Exactly one row per reservation has `is_current = true`, enforced by a **partial unique index**: `UNIQUE(reservation_id) WHERE is_current = true` (added via raw migration — Prisma cannot express partial unique).
 - `is_current` is the only mutable field; the model carries `updatedAt` and is therefore NOT in the append-only list.
+- Snapshots preserve the immutable Contract/Invoice reconstruction basis: resolved pricing rule reference, rental period, duration value/unit, base rate, extras total, discount amount/reason, total, currency, mileage terms, and deposit amount.
 - Any document showing `(1:1)` for this relation is stale and superseded by this file.
+
+---
+
+## 5.1 Canonical Contract Template Default Strategy
+
+**Exactly one active default `ContractTemplate` per agency is allowed.**
+
+- The application clears the previous default in the same transaction when a template is made default.
+- PostgreSQL enforces the invariant with a partial unique index on `(company_id, agency_id)` where `is_default = true`, `deleted_at IS NULL`, and `agency_id IS NOT NULL`.
+- Template edits create immutable `ContractTemplateVersion` rows; old versions referenced by generated contracts are never mutated.
+
+## 5.2 Canonical Contract Amendment History
+
+**`Reservation` → `Contract` is 1:N (amendment/version chain), NOT 1:1.**
+
+- Each generated contract row is a frozen legal artifact tied to the exact `reservation_pricing_snapshots.id` used at generation through `contracts.pricing_snapshot_id`.
+- Contract amendments create a new `contracts` row with an incremented `version_number` and `supersedes_contract_id` pointing at the prior contract.
+- Exactly one non-deleted contract per reservation has `is_current = true`, enforced by a PostgreSQL partial unique index.
+- Historical contracts retain their own rendered HTML, content snapshot, hash, template version, signatures, inspections, and documents.
+- Any document showing "one contract per reservation" is stale and superseded by this file.
 
 ---
 
@@ -158,7 +179,7 @@ When documents conflict, resolve in this order:
 
 ## 8. Pre-Generation Checklist
 
-- [x] Count reconciled to 55 across all docs
+- [x] Count reconciled to 57 across active docs
 - [x] `driver_payments` counted once (Finance); Drivers = 4
 - [x] `credit_notes` included in Finance (Phase 1)
 - [x] `contract_template_versions` included in Contracts (Phase 1); Contracts = 5; version rows are immutable. `contracts.template_version_id` is a **nullable provenance FK** with `onDelete: Restrict` (per `DATABASE_FINAL_REVIEW.md`: contracts reproduce from their own frozen `rendered_html` + `content_snapshot` + `hash`, so they do not hard-depend on the version row; the FK exists for provenance and a referenced version can never be deleted)

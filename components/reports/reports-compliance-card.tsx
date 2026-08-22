@@ -2,29 +2,55 @@
 
 import { motion } from "motion/react"
 import { AlertTriangle, ShieldAlert, ShieldCheck } from "lucide-react"
-import { complianceItems, complianceTotalCost, formatDate, formatMAD } from "@/lib/reports-data"
+import { useI18n } from "@/contexts/i18n-context"
+import type { ReportsOverview } from "@/modules/reports/services/reports.service"
 
 const urgencyStyle = {
   expired: {
     bar: "bg-rose-500",
     chip: "bg-rose-50 text-rose-700 ring-rose-100",
-    label: "Expiré",
+    labelKey: "expired",
   },
   urgent: {
     bar: "bg-amber-500",
     chip: "bg-amber-50 text-amber-700 ring-amber-100",
-    label: "Urgent",
+    labelKey: "urgent",
   },
   soon: {
     bar: "bg-blue-400",
     chip: "bg-blue-50 text-blue-700 ring-blue-100",
-    label: "À venir",
+    labelKey: "soon",
   },
 } as const
 
-export function ReportsComplianceCard() {
-  const expiredCount = complianceItems.filter((c) => c.urgency === "expired").length
-  const urgentCount = complianceItems.filter((c) => c.urgency === "urgent").length
+function formatMoney(amount: number, currency: string) {
+  return new Intl.NumberFormat("fr-FR", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  })
+}
+
+export function ReportsComplianceCard({
+  items,
+  totalCost,
+  currency,
+}: {
+  items: ReportsOverview["complianceItems"]
+  totalCost: number
+  currency: string
+}) {
+  const { t } = useI18n()
+  const expiredCount = items.filter((c) => c.urgency === "expired").length
+  const urgentCount = items.filter((c) => c.urgency === "urgent").length
 
   return (
     <motion.div
@@ -39,31 +65,31 @@ export function ReportsComplianceCard() {
             <ShieldAlert className="h-4 w-4 text-rose-600" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Conformité & échéances</h3>
+            <h3 className="text-sm font-semibold text-slate-900">{t("reports.compliance.title")}</h3>
             <p className="mt-0.5 text-xs text-slate-500">
               {expiredCount + urgentCount > 0 ? (
                 <>
-                  <span className="font-semibold text-rose-600">{expiredCount}</span> expirés ·{" "}
-                  <span className="font-semibold text-amber-600">{urgentCount}</span> urgents
+                  <span className="font-semibold text-rose-600">{expiredCount}</span> {t("reports.compliance.expiredCount")} ·{" "}
+                  <span className="font-semibold text-amber-600">{urgentCount}</span> {t("reports.compliance.urgentCount")}
                 </>
               ) : (
-                <span className="text-emerald-600">Tout est en règle</span>
+                <span className="text-emerald-600">{t("reports.compliance.clear")}</span>
               )}
             </p>
           </div>
         </div>
         <div className="text-right">
           <div className="text-sm font-bold tabular-nums text-slate-900">
-            {formatMAD(complianceTotalCost)}
+            {formatMoney(totalCost, currency)}
           </div>
           <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-            Coût estimé
+            {t("reports.compliance.estimatedCost")}
           </div>
         </div>
       </div>
 
       <ul className="divide-y divide-slate-100">
-        {complianceItems.map((item) => {
+        {items.map((item) => {
           const style = urgencyStyle[item.urgency]
           return (
             <li
@@ -80,11 +106,11 @@ export function ReportsComplianceCard() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-900">{item.type}</span>
+                  <span className="text-sm font-semibold text-slate-900">{t(`finances.upcoming.types.${item.type}`)}</span>
                   <span
                     className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${style.chip}`}
                   >
-                    {style.label}
+                    {t(`reports.compliance.urgency.${style.labelKey}`)}
                   </span>
                 </div>
                 <div className="mt-0.5 text-[11px] text-slate-500">
@@ -93,12 +119,12 @@ export function ReportsComplianceCard() {
               </div>
               <div className="text-right">
                 <div className="text-xs font-semibold tabular-nums text-slate-900">
-                  {formatMAD(item.estimatedCost)}
+                  {formatMoney(item.estimatedCost, currency)}
                 </div>
                 <div className="text-[11px] text-slate-500">
                   {item.daysLeft < 0
-                    ? `Échu il y a ${Math.abs(item.daysLeft)}j`
-                    : `Dans ${item.daysLeft}j`}{" "}
+                    ? t("reports.compliance.overdueInDays").replace("{days}", String(Math.abs(item.daysLeft)))
+                    : t("reports.compliance.dueInDays").replace("{days}", String(item.daysLeft))}{" "}
                   · {formatDate(item.expiresAt)}
                 </div>
               </div>

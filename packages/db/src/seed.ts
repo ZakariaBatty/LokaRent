@@ -47,7 +47,11 @@ export type CompanyDefaultSeed = {
 function loadSharedEnv() {
   for (const envPath of [
     resolve(process.cwd(), ".env"),
-    resolve(process.cwd(), ".env"),
+    resolve(process.cwd(), ".env.local"),
+    resolve(process.cwd(), "shared/.env"),
+    resolve(process.cwd(), "../../.env"),
+    resolve(process.cwd(), "../../.env.local"),
+    resolve(process.cwd(), "../../shared/.env"),
   ]) {
     if (!existsSync(envPath)) {
       continue;
@@ -250,6 +254,16 @@ export const permissions: PermissionSeed[] = [
     description: "Add expenses",
   },
   {
+    key: "finance.expenses.edit",
+    domain: "finance",
+    description: "Edit expenses",
+  },
+  {
+    key: "finance.expenses.delete",
+    domain: "finance",
+    description: "Delete expenses",
+  },
+  {
     key: "finance.reports.view",
     domain: "finance",
     description: "View financial reports",
@@ -314,6 +328,8 @@ const accountantPermissions = [
   "finance.deposits.manage",
   "finance.expenses.view",
   "finance.expenses.create",
+  "finance.expenses.edit",
+  "finance.expenses.delete",
   "finance.reports.view",
   "finance.reports.export",
   "reports.view",
@@ -342,6 +358,13 @@ const readonlyPermissions = [
 
 export const companyDefaultSeed: CompanyDefaultSeed = {
   roles: [
+    {
+      name: "member",
+      description: "Internal company membership role without workspace administration access",
+      scope: RoleScope.company,
+      isSystem: true,
+      permissions: [],
+    },
     {
       name: "owner",
       description: "Company owner with workspace and all-agency access",
@@ -483,12 +506,56 @@ export async function seedCore(prisma: PrismaClient) {
     ),
   ]);
 
+  const expenseMutationPermissionKeys = [
+    "finance.expenses.edit",
+    "finance.expenses.delete",
+  ];
+  const expenseMutationRoles = await prisma.role.findMany({
+    where: {
+      isSystem: true,
+      deletedAt: null,
+      name: { in: ["owner", "admin", "accountant"] },
+    },
+    select: { id: true },
+  });
+  if (expenseMutationRoles.length > 0) {
+    await prisma.rolePermission.createMany({
+      data: expenseMutationRoles.flatMap((role) =>
+        expenseMutationPermissionKeys.map((permissionKey) => ({
+          id: createId(),
+          roleId: role.id,
+          permissionKey,
+        })),
+      ),
+      skipDuplicates: true,
+    });
+  }
+
+  const companies = await prisma.company.findMany({
+    where: { deletedAt: null },
+    select: { id: true },
+  });
+  if (companies.length > 0) {
+    await prisma.expenseCategory.createMany({
+      data: companies.flatMap((company) =>
+        companyDefaultSeed.expenseCategories.map((name) => ({
+          id: createId(),
+          companyId: company.id,
+          name,
+          isSystem: true,
+        })),
+      ),
+      skipDuplicates: true,
+    });
+  }
+
   return {
     plans: await prisma.plan.count(),
     planLimits: await prisma.planLimit.count(),
     planFeatures: await prisma.planFeature.count(),
     permissions: await prisma.permission.count(),
     reservationSources: await prisma.reservationSource.count(),
+    expenseCategories: await prisma.expenseCategory.count(),
   };
 }
 

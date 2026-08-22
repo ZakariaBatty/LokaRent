@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { motion } from "motion/react"
 import { ChevronRight, Eye, FileText, RotateCcw } from "lucide-react"
@@ -10,6 +10,12 @@ import {
   type ContractTemplate,
   DEFAULT_TEMPLATE,
 } from "@/lib/contract-template-data"
+import {
+  ensureDefaultContractTemplateAction,
+  listContractTemplatesAction,
+  upsertContractTemplateAction,
+} from "@/modules/contracts/actions/create-contract.action"
+import fr from "@/translations/fr"
 import { HeaderSettingsCard } from "@/components/settings/contract-template/header-settings-card"
 import { TitleSettingsCard } from "@/components/settings/contract-template/title-settings-card"
 import { ClausesSettingsCard } from "@/components/settings/contract-template/clauses-settings-card"
@@ -20,6 +26,7 @@ import { PdfPreviewModal } from "@/components/settings/contract-template/pdf-pre
 import { ResetConfirmDialog } from "@/components/settings/contract-template/reset-confirm-dialog"
 
 export default function ContractTemplatePage() {
+  const [templateId, setTemplateId] = useState<string | null>(null)
   const [baseline, setBaseline] = useState<ContractTemplate>(DEFAULT_TEMPLATE)
   const [template, setTemplate] = useState<ContractTemplate>(DEFAULT_TEMPLATE)
   const [saving, setSaving] = useState(false)
@@ -37,9 +44,48 @@ export default function ContractTemplatePage() {
 
   const enabledClauses = template.clauses.filter((c) => c.enabled).length
 
+  useEffect(() => {
+    let cancelled = false
+    const applyPersistedTemplate = (defaultTemplate: { id: string; versions: { body: unknown }[] }) => {
+      const latestVersion = defaultTemplate?.versions[0]
+      if (!defaultTemplate || !latestVersion || typeof latestVersion.body !== "object" || latestVersion.body === null) return
+      const body = latestVersion.body as ContractTemplate
+      setTemplateId(defaultTemplate.id)
+      setTemplate(body)
+      setBaseline(body)
+    }
+    listContractTemplatesAction().then(async (result) => {
+      if (cancelled || !result.success) return
+      const defaultTemplate = result.templates.find((item) => item.isDefault) ?? result.templates[0]
+      if (defaultTemplate) {
+        applyPersistedTemplate(defaultTemplate)
+        return
+      }
+      const ensured = await ensureDefaultContractTemplateAction()
+      if (cancelled || !ensured.success || !ensured.template) return
+      applyPersistedTemplate(ensured.template)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleSave = async () => {
     setSaving(true)
-    await new Promise((r) => setTimeout(r, 700))
+    const result = await upsertContractTemplateAction({
+      templateId: templateId ?? undefined,
+      name: template.title,
+      content: JSON.stringify(template),
+      body: template,
+      isDefault: true,
+      isActive: true,
+    })
+    if (!result.success) {
+      setSaving(false)
+      toast.error(fr.contracts.errors.generic)
+      return
+    }
+    setTemplateId(result.contractId ?? templateId)
     setBaseline(template)
     setLastSavedAt(new Date())
     setSaving(false)
